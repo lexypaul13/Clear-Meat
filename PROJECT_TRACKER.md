@@ -15,6 +15,12 @@
 - ✅ Added .gitignore file
 - ✅ Initialized Git repository
 - ✅ Pushed code to GitHub
+- ✅ Restructured project to follow FastAPI best practices for larger applications
+
+### 💾 Database Setup
+- ✅ Set up SQLite database for local development
+- ✅ Run database setup script
+- ✅ Test database connection
 
 ## 📝 Next Steps
 
@@ -23,12 +29,6 @@
 - [ ] Configure Firebase Authentication
 - [ ] Uncomment and test authentication code
 - [ ] Create admin endpoints with authentication
-
-### 💾 Database Setup
-- [ ] Set up PostgreSQL database (local or Cloud SQL)
-- [ ] Update DATABASE_URL with actual credentials
-- [ ] Run database setup script
-- [ ] Test database connection
 
 ### 🔍 Data Collection
 - [ ] Run fetch_products.py to populate database
