@@ -28,7 +28,7 @@ class Product(ProductBase):
     last_updated: datetime
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class ProductSearch(BaseModel):
     meat_type: Optional[str] = None

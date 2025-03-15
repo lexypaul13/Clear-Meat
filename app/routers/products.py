@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 import openfoodfacts
 
@@ -9,6 +9,9 @@ from app.schemas.product import Product as ProductSchema
 from app.schemas.product import ProductSearch
 from app.utils.auth import verify_token
 
+# Initialize the OpenFoodFacts API with a user agent
+api = openfoodfacts.API(user_agent="MeatProductsAPI/1.0")
+
 router = APIRouter(
     prefix="/products",
     tags=["products"],
@@ -16,7 +19,7 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
-@router.get("/", response_model=List[ProductSchema])
+@router.get("/", response_model=Dict[str, Any])
 async def search_products(
     meat_type: Optional[str] = Query(None, description="Type of meat (beef, chicken, pork, seafood)"),
     contains_nitrites: Optional[bool] = Query(None, description="Filter by nitrites content"),
@@ -48,28 +51,6 @@ async def search_products(
         }
     }
 
-@router.get("/{barcode}", response_model=ProductSchema)
-async def get_product(
-    barcode: str, 
-    db: Session = Depends(get_db)
-    # user = Depends(verify_token)  # Uncomment when ready to use authentication
-):
-    """
-    Get detailed information about a specific product by barcode
-    """
-    product = openfoodfacts.products.get_product(barcode)
-    if product.get('status') == 1:
-        # Extract relevant information
-        product_data = product.get('product', {})
-        return {
-            "product_name": product_data.get("product_name"),
-            "ingredients": product_data.get("ingredients_text"),
-            "nutritional_info": product_data.get("nutriments"),
-            "image_url": product_data.get("image_url")
-        }
-    else:
-        raise HTTPException(status_code=404, detail="Product not found")
-
 @router.get("/meat-types", response_model=List[str])
 async def get_meat_types(
     db: Session = Depends(get_db)
@@ -78,6 +59,29 @@ async def get_meat_types(
     """
     Get all available meat types
     """
-    return {
-        "meat_types": ["beef", "chicken", "pork", "seafood"]
-    } 
+    return ["beef", "chicken", "pork", "seafood"]
+
+@router.get("/{barcode}", response_model=Dict[str, Any])
+async def get_product(
+    barcode: str, 
+    db: Session = Depends(get_db)
+    # user = Depends(verify_token)  # Uncomment when ready to use authentication
+):
+    """
+    Get detailed information about a specific product by barcode
+    """
+    try:
+        # Use the new API format
+        product_data = api.product.get(barcode, fields=["code", "product_name", "ingredients_text", "nutriments", "image_url"])
+        
+        if not product_data:
+            raise HTTPException(status_code=404, detail="Product not found")
+        
+        return {
+            "product_name": product_data.get("product_name"),
+            "ingredients": product_data.get("ingredients_text"),
+            "nutritional_info": product_data.get("nutriments"),
+            "image_url": product_data.get("image_url")
+        }
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Product not found: {str(e)}") 
