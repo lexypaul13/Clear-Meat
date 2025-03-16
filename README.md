@@ -1,14 +1,47 @@
-# Meat Products API
+# MeatWise API
 
-A FastAPI backend that connects to Open Food Facts to collect data on meat-related products and provides an API to access this data.
+A FastAPI-based backend for the MeatWise application, providing information about meat products, their ingredients, and health implications.
 
 ## Features
 
 - Fetch meat product data from Open Food Facts
-- Store product data in a PostgreSQL database
+- Store product data in Supabase (PostgreSQL)
 - Filter products by various criteria (additives, animal welfare, meat type, risk rating)
-- Authentication using Firebase
-- Deployed on Google Cloud Platform (Cloud Run + Cloud SQL)
+- Authentication using Supabase Auth
+- AI-powered ingredient analysis
+- User history and favorites tracking
+- Alternative product recommendations
+
+## Database Schema
+
+The MeatWise application uses Supabase (PostgreSQL) with the following schema:
+
+### Core Tables
+
+- **profiles**: Extends Supabase auth.users to store user preferences and profile information
+- **products**: Stores meat product information including nutritional data and risk ratings
+- **ingredients**: Contains detailed information about food ingredients and their health implications
+- **product_ingredients**: Junction table linking products to their ingredients
+
+### User Interaction Tables
+
+- **scan_history**: Records user product scan history
+- **user_favorites**: Stores user's favorite products
+- **product_alternatives**: Suggests healthier alternative products
+
+### AI-Related Tables
+
+- **ai_analysis_cache**: Caches results from AI processing to improve performance
+
+### Key Features
+
+- Row-Level Security (RLS) policies to ensure data privacy
+- Full-text search indexes for efficient querying
+- Vector support (pgvector) for AI similarity searches
+- JSON fields for flexible data storage
+- Automatic timestamp management
+
+See `database_schema.sql` for the complete schema definition.
 
 ## Setup Instructions
 
@@ -25,8 +58,9 @@ pip install -r requirements.txt
 Create a `.env` file with the following variables:
 
 ```
-DATABASE_URL=postgresql://username:password@host:5432/meatproducts
-FIREBASE_CREDENTIALS_PATH=path/to/firebase-credentials.json
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=your-supabase-anon-key
+SUPABASE_SERVICE_KEY=your-supabase-service-key
 ```
 
 3. **Set up the database**
@@ -49,65 +83,28 @@ uvicorn main:app --reload
 
 The API will be available at http://localhost:8000
 
-### Google Cloud Platform Deployment
-
-1. **Create a Cloud SQL PostgreSQL instance**
-
-```bash
-gcloud sql instances create meatproducts-db \
-  --database-version=POSTGRES_13 \
-  --tier=db-f1-micro \
-  --region=us-central1
-```
-
-2. **Create a database and user**
-
-```bash
-gcloud sql databases create meatproducts --instance=meatproducts-db
-gcloud sql users create meatproducts-user --instance=meatproducts-db --password=YOUR_PASSWORD
-```
-
-3. **Build and deploy to Cloud Run**
-
-```bash
-gcloud builds submit --tag gcr.io/[PROJECT_ID]/meat-products-api
-gcloud run deploy meat-products-api \
-  --image gcr.io/[PROJECT_ID]/meat-products-api \
-  --platform managed \
-  --region us-central1 \
-  --allow-unauthenticated \
-  --set-env-vars="DATABASE_URL=postgresql://meatproducts-user:YOUR_PASSWORD@/meatproducts?host=/cloudsql/[PROJECT_ID]:us-central1:meatproducts-db"
-```
-
 ## API Endpoints
 
 - `GET /product/{barcode}` - Get product details by barcode
 - `GET /products/search` - Search for products with filters
 - `GET /products/meat-types` - Get all available meat types
-
-## Database Schema
-
-The `products` table contains the following fields:
-
-- `code` (primary key) - Product barcode
-- `name` - Product name
-- `ingredients` - List of ingredients
-- `calories`, `protein`, `fat`, `carbohydrates`, `salt` - Nutritional information
-- `meat_type` - Type of meat (beef, chicken, pork, seafood)
-- `contains_nitrites`, `contains_phosphates`, `contains_preservatives` - Additive flags
-- `antibiotic_free`, `hormone_free`, `pasture_raised` - Animal welfare criteria
-- `risk_rating` - Risk rating (Green, Yellow, Red)
-- `last_updated` - Timestamp of last update
-- `image_url` - URL to product image
+- `GET /ingredients/{id}` - Get ingredient details
+- `GET /user/history` - Get user scan history
+- `GET /user/favorites` - Get user favorites
+- `POST /user/favorites/{barcode}` - Add product to favorites
+- `DELETE /user/favorites/{barcode}` - Remove product from favorites
+- `GET /products/{barcode}/alternatives` - Get healthier alternatives
 
 ## Scheduled Updates
 
-To set up weekly data updates, create a Cloud Scheduler job:
+To set up weekly data updates from Open Food Facts:
 
 ```bash
-gcloud scheduler jobs create http update-meat-products \
-  --schedule="0 0 * * 0" \
-  --uri="https://[CLOUD_RUN_URL]/admin/update-products" \
-  --http-method=POST \
-  --headers="Authorization=Bearer [YOUR_SECRET_KEY]"
-``` 
+# Using Supabase Edge Functions
+supabase functions deploy update-products
+supabase functions schedule update-products --cron "0 0 * * 0"
+```
+
+## License
+
+[License information will go here] 
