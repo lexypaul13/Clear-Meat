@@ -33,7 +33,7 @@
 ## 📝 Next Steps
 
 ### 🗄️ Database Migration
-- [ ] Set up Supabase project
+- 🔄 Set up Supabase project
 - [ ] Migrate models from SQLite to PostgreSQL
 - [ ] Configure row-level security
 - [ ] Test database performance
