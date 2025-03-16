@@ -21,6 +21,7 @@
 - ✅ Set up SQLite database for local development
 - ✅ Run database setup script
 - ✅ Test database connection
+- ✅ Design PostgreSQL schema for Supabase
 
 ### 🔍 API Development
 - ✅ Updated OpenFoodFacts SDK integration to use latest API (v2.5.0)
@@ -32,7 +33,6 @@
 ## 📝 Next Steps
 
 ### 🗄️ Database Migration
-- [ ] Design PostgreSQL schema for Supabase
 - [ ] Set up Supabase project
 - [ ] Migrate models from SQLite to PostgreSQL
 - [ ] Configure row-level security
