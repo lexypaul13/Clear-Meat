@@ -106,4 +106,64 @@ MeatWise API implements several security best practices:
 
 ## License
 
-This project is licensed under the MIT License. 
+This project is licensed under the MIT License.
+
+## Database Audit Tools
+
+The project includes a set of database audit tools to help identify and fix potential security and schema issues.
+
+### Available Audit Scripts
+
+1. **Schema Audit** (`scripts/audit_tables.py`) - Audits the database schema for common issues like:
+   - Missing primary keys and foreign keys
+   - Missing indexes on frequently queried columns
+   - Improper data types
+   - Tables without proper constraints
+   - Column nullability issues
+
+2. **Data Security Audit** (`scripts/data_security_audit.py`) - Identifies data security risks including:
+   - Unprotected PII (Personally Identifiable Information)
+   - Insecure password storage
+   - Missing Row-Level Security (RLS) policies
+   - Unanonymized data in test environments
+   - Missing audit logging for sensitive data access
+
+3. **Combined Audit Runner** (`scripts/run_db_audit.sh`) - Runs both audits and generates comprehensive reports in JSON and HTML formats.
+
+### Running the Audits
+
+To run all database audits and generate reports:
+
+```bash
+./scripts/run_db_audit.sh
+```
+
+This will:
+- Run both schema and data security audits
+- Generate individual JSON reports for each audit
+- Create a combined HTML report with all findings
+- Automatically open the HTML report in your browser (if supported)
+
+The audit tools use database connection parameters from your `.env` file. If no `.env` file is found, default connection parameters will be used.
+
+### Interpreting Results
+
+Audit issues are categorized by severity:
+
+- **High**: Critical issues that require immediate attention
+- **Medium**: Important issues that should be addressed
+- **Low**: Suggestions for best practices
+
+The HTML report provides a summary of issues by table/category and detailed recommendations for each finding.
+
+### Custom Audit Parameters
+
+You can also run individual audit scripts with custom parameters:
+
+```bash
+# Schema audit
+python scripts/audit_tables.py --host localhost --port 5432 --dbname your_db --user your_user --password your_pass --output report.json
+
+# Data security audit
+python scripts/data_security_audit.py --host localhost --port 5432 --dbname your_db --user your_user --password your_pass --output report.json
+``` 

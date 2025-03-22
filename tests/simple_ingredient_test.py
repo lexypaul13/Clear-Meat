@@ -7,7 +7,7 @@ import requests
 import sys
 
 # Configuration
-BASE_URL = "http://127.0.0.1:8080/api/v1"
+BASE_URL = "http://127.0.0.1:8082/api/v1"
 INGREDIENTS_URL = f"{BASE_URL}/ingredients/"
 
 print("🧪 Testing Ingredient API endpoints 🧪")
