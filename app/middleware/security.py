@@ -1,7 +1,7 @@
 """Security middleware for the MeatWise API."""
 
 from fastapi import FastAPI, Request, Response
-from fastapi.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from typing import Callable, Dict, List
 import time
 from starlette.datastructures import Headers

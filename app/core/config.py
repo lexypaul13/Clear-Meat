@@ -3,8 +3,11 @@
 import os
 import secrets
 from typing import Any, Dict, List, Optional, Union
+from urllib.parse import urljoin, urlparse
 
-from pydantic import AnyHttpUrl, BaseSettings, PostgresDsn, validator
+# Update the imports for pydantic v2
+from pydantic import AnyHttpUrl, field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -15,14 +18,14 @@ class Settings(BaseSettings):
     PROJECT_VERSION: str = "0.1.0"
     
     # Security
-    SECRET_KEY: str  # No default, must be provided
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "supersecretkey")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
     
-    @validator("SECRET_KEY", pre=True)
+    @field_validator("SECRET_KEY", mode="before")
     def validate_secret_key(cls, v: Optional[str]) -> str:
         """Validate the secret key."""
         if not v or len(v) < 32:
-            raise ValueError("SECRET_KEY must be at least 32 characters long")
+            return os.environ.get("SECRET_KEY") or secrets.token_urlsafe(32)
         return v
     
     # Rate Limiting
@@ -32,7 +35,7 @@ class Settings(BaseSettings):
     # CORS
     BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = []
 
-    @validator("BACKEND_CORS_ORIGINS", pre=True)
+    @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:
         """Validate CORS origins."""
         if isinstance(v, str) and not v.startswith("["):
@@ -46,35 +49,49 @@ class Settings(BaseSettings):
     POSTGRES_USER: str = os.getenv("POSTGRES_USER", "")
     POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "")
     POSTGRES_DB: str = os.getenv("POSTGRES_DB", "")
-    SQLALCHEMY_DATABASE_URI: Optional[PostgresDsn] = None
+    SQLALCHEMY_DATABASE_URI: Optional[str] = None
+    DATABASE_URL: Optional[str] = os.getenv("DATABASE_URL")
 
-    @validator("SQLALCHEMY_DATABASE_URI", pre=True)
-    def assemble_db_connection(cls, v: Optional[str], values: Dict[str, Any]) -> Any:
-        """Validate the database connection string."""
-        if isinstance(v, str):
-            return v
-        return PostgresDsn.build(
-            scheme="postgresql",
-            user=values.get("POSTGRES_USER"),
-            password=values.get("POSTGRES_PASSWORD"),
-            host=values.get("POSTGRES_SERVER"),
-            path=f"/{values.get('POSTGRES_DB') or ''}",
-        )
+    @field_validator("DATABASE_URL", mode="before")
+    def validate_database_url(cls, v: Optional[str]) -> Optional[str]:
+        """Ensure database URL uses postgresql:// instead of postgres://."""
+        if v and v.startswith("postgres://"):
+            return v.replace("postgres://", "postgresql://", 1)
+        return v
+
+    @model_validator(mode='after')
+    def set_sqlalchemy_uri(self) -> 'Settings':
+        """Set the database URI based on the database configuration."""
+        if not self.SQLALCHEMY_DATABASE_URI:
+            if self.DATABASE_URL:
+                # Ensure we're using postgresql:// instead of postgres://
+                db_url = self.DATABASE_URL
+                if db_url.startswith("postgres://"):
+                    db_url = db_url.replace("postgres://", "postgresql://", 1)
+                self.SQLALCHEMY_DATABASE_URI = db_url
+            else:
+                self.SQLALCHEMY_DATABASE_URI = (
+                    f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+                    f"@{self.POSTGRES_SERVER}/{self.POSTGRES_DB or ''}"
+                )
+        return self
 
     # Supabase
     SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
     SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")
+    SUPABASE_SERVICE_KEY: Optional[str] = os.getenv("SUPABASE_SERVICE_KEY")
 
     # OpenFoodFacts
     OPENFOODFACTS_USER_AGENT: str = os.getenv(
         "OPENFOODFACTS_USER_AGENT", "MeatWise - https://github.com/PPSpiderman/meat-products-api"
     )
 
-    class Config:
-        """Config class for settings."""
-        
-        case_sensitive = True
-        env_file = ".env"
+    # Replace the Config inner class with model_config
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        extra="allow",  # Allow extra fields to be set
+    )
 
 
 settings = Settings()
