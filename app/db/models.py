@@ -72,6 +72,8 @@ class Ingredient(Base):
     description = Column(Text)
     category = Column(String)
     risk_level = Column(String)
+    concerns = Column(ARRAY(String), nullable=True)
+    alternatives = Column(ARRAY(String), nullable=True)
     
     # Metadata
     created_at = Column(DateTime(timezone=True), server_default=func.now())

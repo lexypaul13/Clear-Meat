@@ -196,4 +196,86 @@ class UserFavorite(UserFavoriteBase):
 
     class Config:
         """Pydantic config."""
-        from_attributes = True 
+        from_attributes = True
+
+
+# Structured product response models
+class ProductNutrition(BaseModel):
+    """Nutrition information model."""
+    calories: Optional[float] = None
+    protein: Optional[float] = None
+    fat: Optional[float] = None
+    carbohydrates: Optional[float] = None
+    salt: Optional[float] = None
+
+
+class AdditiveInfo(BaseModel):
+    """Additive information model."""
+    name: str
+    category: Optional[str] = None
+    risk_level: Optional[str] = None
+    concerns: Optional[List[str]] = None
+    alternatives: Optional[List[str]] = None
+
+
+class ProductCriteria(BaseModel):
+    """Product criteria model."""
+    risk_rating: Optional[str] = None
+    risk_score: Optional[int] = None
+    contains_nitrites: Optional[bool] = False
+    contains_phosphates: Optional[bool] = False
+    contains_preservatives: Optional[bool] = False
+    antibiotic_free: Optional[bool] = None
+    hormone_free: Optional[bool] = None
+    pasture_raised: Optional[bool] = None
+    additives: Optional[List[AdditiveInfo]] = None
+
+
+class ProductHealth(BaseModel):
+    """Product health model."""
+    nutrition: Optional[ProductNutrition] = None
+    health_concerns: Optional[List[str]] = None
+
+
+class ProductEnvironment(BaseModel):
+    """Product environment model."""
+    impact: Optional[str] = None
+    details: Optional[str] = None
+    sustainability_practices: Optional[List[str]] = None
+
+
+class ProductInfo(BaseModel):
+    """Basic product information model."""
+    code: str
+    name: str
+    brand: Optional[str] = None
+    description: Optional[str] = None
+    ingredients_text: Optional[str] = None
+    image_url: Optional[str] = None
+    source: Optional[str] = "openfoodfacts"
+    meat_type: Optional[str] = None
+
+
+class ProductMetadata(BaseModel):
+    """Product metadata model."""
+    last_updated: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+
+
+class ProductStructured(BaseModel):
+    """Structured product response model."""
+    product: ProductInfo
+    criteria: ProductCriteria
+    health: ProductHealth
+    environment: ProductEnvironment
+    metadata: ProductMetadata
+
+
+# Problem report models
+class ProductProblemReport(BaseModel):
+    """Product problem report model."""
+    problem_type: str = Field(..., description="Type of problem (incorrect_info, missing_info, other)")
+    description: str = Field(..., description="Description of the problem")
+    reporter_email: Optional[EmailStr] = Field(None, description="Email of the person reporting the problem")
+    want_feedback: Optional[bool] = Field(False, description="Whether the reporter wants to be contacted about the resolution")
+    report_id: Optional[str] = None 
