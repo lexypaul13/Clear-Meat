@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
-from app.models import Token
+from app.models import Token, UserCreate
 from app.core import security
 from app.core.config import settings
 from app.db import models as db_models
@@ -66,7 +66,7 @@ def login_access_token(
 
 @router.post("/register", response_model=Token)
 def register_user(
-    user_in: db_models.UserCreate,
+    user_in: UserCreate,
     db: Session = Depends(get_db),
 ) -> Any:
     """

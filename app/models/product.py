@@ -3,14 +3,16 @@
 from datetime import datetime
 from typing import Dict, List, Optional, ForwardRef, TYPE_CHECKING
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+# Fix imports to directly import AdditiveInfo
+from app.models.ingredient import AdditiveInfo
 
 # Forward references for circular imports
 if TYPE_CHECKING:
-    from app.models.ingredient import Ingredient, AdditiveInfo
+    from app.models.ingredient import Ingredient
 else:
     Ingredient = ForwardRef("Ingredient")
-    AdditiveInfo = ForwardRef("AdditiveInfo")
 
 
 class ProductBase(BaseModel):
@@ -107,7 +109,7 @@ class ProductCriteria(BaseModel):
     antibiotic_free: Optional[bool] = None
     hormone_free: Optional[bool] = None
     pasture_raised: Optional[bool] = None
-    additives: Optional[List["AdditiveInfo"]] = None
+    additives: Optional[List[AdditiveInfo]] = Field(default_factory=list)
 
 
 class ProductHealth(BaseModel):
@@ -147,13 +149,4 @@ class ProductStructured(BaseModel):
     criteria: ProductCriteria
     health: ProductHealth
     environment: ProductEnvironment
-    metadata: ProductMetadata
-
-
-class ProductProblemReport(BaseModel):
-    """Product problem report model."""
-    problem_type: str
-    description: str
-    reporter_email: Optional[str] = None
-    want_feedback: Optional[bool] = False
-    report_id: Optional[str] = None 
+    metadata: ProductMetadata 

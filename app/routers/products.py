@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.models import (
-    Product, ProductStructured, ProductProblemReport, 
+    Product, ProductStructured, 
     ProductAlternative, AdditiveInfo
 )
 from app.db import models as db_models
@@ -234,84 +234,6 @@ def get_product(
             status_code=500,
             detail=f"Error processing product data: {str(e)}"
         )
-
-
-@router.post("/{code}/report", response_model=Dict[str, Any])
-def report_product_problem(
-    code: str,
-    report: ProductProblemReport,
-    db: Session = Depends(get_db),
-) -> Dict[str, Any]:
-    """
-    Report a problem with a product.
-    
-    Args:
-        code: Product barcode
-        report: Problem report details
-        db: Database session
-        
-    Returns:
-        dict: Success message and report ID
-        
-    Raises:
-        HTTPException: If product not found
-    """
-    # Check if product exists
-    product = db.query(db_models.Product).filter(db_models.Product.code == code).first()
-    if not product:
-        raise HTTPException(status_code=404, detail="Product not found")
-    
-    # Generate a random ID for the report if not provided
-    if not report.report_id:
-        report.report_id = helpers.generate_random_id()
-    
-    # In a real application, save the report to a database
-    # For now, we'll just return a successful response
-    
-    return {
-        "message": "Problem report submitted successfully",
-        "report_id": report.report_id
-    }
-
-
-@router.get("/{code}/contribution", response_model=Dict[str, Any])
-def get_product_contribution(
-    code: str,
-    db: Session = Depends(get_db),
-) -> Dict[str, Any]:
-    """
-    Get contribution information for a product.
-    
-    Args:
-        code: Product barcode
-        db: Database session
-        
-    Returns:
-        dict: Contribution information
-        
-    Raises:
-        HTTPException: If product not found
-    """
-    # Check if product exists
-    product = db.query(db_models.Product).filter(db_models.Product.code == code).first()
-    if not product:
-        raise HTTPException(status_code=404, detail="Product not found")
-    
-    # In a real application, fetch actual contribution data
-    # For now, we'll return placeholder information
-    
-    return {
-        "added_by": "MeatWise Database Team",
-        "last_edited_by": "Community Member",
-        "data_source": product.source if product.source else "OpenFoodFacts",
-        "last_updated": product.last_updated,
-        "contribution_count": 5,
-        "contributors": [
-            "MeatWise Database Team",
-            "Community Member",
-            "Nutrition Specialist"
-        ]
-    }
 
 
 @router.get("/{code}/alternatives", response_model=List[ProductAlternative])

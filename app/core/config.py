@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     # API settings
     API_V1_STR: str = "/api/v1"
     PROJECT_NAME: str = "MeatWise API"
+    PROJECT_VERSION: str = "0.1.0"
     
     # Database settings
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./meatwise.db")
@@ -29,6 +30,9 @@ class Settings(BaseSettings):
     SECRET_KEY: str = os.getenv("SECRET_KEY", "supersecretkey")
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    
+    # CORS settings
+    BACKEND_CORS_ORIGINS: list = []
     
     class Config:
         """Pydantic config."""
