@@ -1,0 +1,159 @@
+"""Product models for the MeatWise API."""
+
+from datetime import datetime
+from typing import Dict, List, Optional, ForwardRef, TYPE_CHECKING
+
+from pydantic import BaseModel
+
+# Forward references for circular imports
+if TYPE_CHECKING:
+    from app.models.ingredient import Ingredient, AdditiveInfo
+else:
+    Ingredient = ForwardRef("Ingredient")
+    AdditiveInfo = ForwardRef("AdditiveInfo")
+
+
+class ProductBase(BaseModel):
+    """Base Product model."""
+    name: str
+    brand: Optional[str] = None
+    description: Optional[str] = None
+    ingredients_text: Optional[str] = None
+    
+    # Nutritional information
+    calories: Optional[float] = None
+    protein: Optional[float] = None
+    fat: Optional[float] = None
+    carbohydrates: Optional[float] = None
+    salt: Optional[float] = None
+    
+    # Meat-specific information
+    meat_type: Optional[str] = None
+    
+    # Additives and criteria
+    contains_nitrites: Optional[bool] = False
+    contains_phosphates: Optional[bool] = False
+    contains_preservatives: Optional[bool] = False
+    
+    # Animal welfare criteria
+    antibiotic_free: Optional[bool] = None
+    hormone_free: Optional[bool] = None
+    pasture_raised: Optional[bool] = None
+    
+    # Risk rating
+    risk_rating: Optional[str] = None
+    risk_score: Optional[int] = None
+    
+    # Additional fields
+    image_url: Optional[str] = None
+    source: Optional[str] = "openfoodfacts"
+
+
+class ProductCreate(ProductBase):
+    """Product creation model."""
+    code: str
+
+
+class ProductUpdate(ProductBase):
+    """Product update model."""
+    pass
+
+
+class ProductInDB(ProductBase):
+    """Product database model."""
+    code: str
+    last_updated: datetime
+    created_at: datetime
+
+
+class Product(ProductInDB):
+    """Product response model."""
+    ingredients: Optional[List[Ingredient]] = None
+
+    class Config:
+        """Pydantic config."""
+        from_attributes = True
+
+
+class ProductAlternative(BaseModel):
+    """Product alternative model."""
+    product_code: str
+    alternative_code: str
+    similarity_score: float
+    reason: Optional[str] = None
+    alternative: Optional[Product] = None
+
+    class Config:
+        """Pydantic config."""
+        from_attributes = True
+
+
+class ProductNutrition(BaseModel):
+    """Nutrition information model."""
+    calories: Optional[float] = None
+    protein: Optional[float] = None
+    fat: Optional[float] = None
+    carbohydrates: Optional[float] = None
+    salt: Optional[float] = None
+
+
+class ProductCriteria(BaseModel):
+    """Product criteria model."""
+    risk_rating: Optional[str] = None
+    risk_score: Optional[int] = None
+    contains_nitrites: Optional[bool] = False
+    contains_phosphates: Optional[bool] = False
+    contains_preservatives: Optional[bool] = False
+    antibiotic_free: Optional[bool] = None
+    hormone_free: Optional[bool] = None
+    pasture_raised: Optional[bool] = None
+    additives: Optional[List["AdditiveInfo"]] = None
+
+
+class ProductHealth(BaseModel):
+    """Product health model."""
+    nutrition: Optional[ProductNutrition] = None
+    health_concerns: Optional[List[str]] = None
+
+
+class ProductEnvironment(BaseModel):
+    """Product environment model."""
+    impact: Optional[str] = None
+    details: Optional[str] = None
+    sustainability_practices: Optional[List[str]] = None
+
+
+class ProductInfo(BaseModel):
+    """Basic product information model."""
+    code: str
+    name: str
+    brand: Optional[str] = None
+    description: Optional[str] = None
+    ingredients_text: Optional[str] = None
+    image_url: Optional[str] = None
+    source: Optional[str] = "openfoodfacts"
+    meat_type: Optional[str] = None
+
+
+class ProductMetadata(BaseModel):
+    """Product metadata model."""
+    last_updated: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+
+
+class ProductStructured(BaseModel):
+    """Structured product response model."""
+    product: ProductInfo
+    criteria: ProductCriteria
+    health: ProductHealth
+    environment: ProductEnvironment
+    metadata: ProductMetadata
+
+
+class ProductProblemReport(BaseModel):
+    """Product problem report model."""
+    problem_type: str
+    description: str
+    reporter_email: Optional[str] = None
+    want_feedback: Optional[bool] = False
+    report_id: Optional[str] = None 

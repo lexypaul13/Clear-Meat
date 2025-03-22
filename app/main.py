@@ -1,54 +1,34 @@
-"""Main module for the MeatWise API."""
+"""Main application module."""
 
+import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1.endpoints import ingredients, products, users
 from app.core.config import settings
+from app.routers import api_router
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
+    version=settings.PROJECT_VERSION,
+    description="API for the MeatWise application",
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    docs_url=f"{settings.API_V1_STR}/docs",
+    redoc_url=f"{settings.API_V1_STR}/redoc",
 )
 
-# Set up CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # TODO: Update with specific origins in production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Set all CORS enabled origins
+if settings.BACKEND_CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
-# Include API routers
-app.include_router(
-    products.router,
-    prefix=f"{settings.API_V1_STR}/products",
-    tags=["products"],
-)
-app.include_router(
-    ingredients.router,
-    prefix=f"{settings.API_V1_STR}/ingredients",
-    tags=["ingredients"],
-)
-app.include_router(
-    users.router,
-    prefix=f"{settings.API_V1_STR}/users",
-    tags=["users"],
-)
-
-
-@app.get("/")
-def root():
-    """Root endpoint."""
-    return {
-        "message": "Welcome to the MeatWise API",
-        "docs": "/docs",
-        "version": "1.0.0",
-    }
+# Include API router
+app.include_router(api_router, prefix=settings.API_V1_STR)
 
 
 if __name__ == "__main__":
-    import uvicorn
-    
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True) 

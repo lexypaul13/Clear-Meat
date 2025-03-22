@@ -1,110 +1,65 @@
 # MeatWise API
 
-A FastAPI-based backend for the MeatWise application, providing information about meat products, their ingredients, and health implications.
+The MeatWise API is a backend application that helps users understand the health implications and additives in meat products by scanning them.
+
+## Project Structure
+
+The project is organized into the following directories:
+
+- `app/`: Core application code
+  - `api/`: API endpoints and routes
+  - `core/`: Core configuration and settings
+  - `db/`: Database connection and models
+  - `internal/`: Internal utilities and dependencies
+  - `models/`: Data models
+  - `routers/`: API routers for different resources
+  - `utils/`: Utility functions
+
+- `data/`: Data files
+  - `json/`: JSON examples and templates
+  - `sql/`: SQL schema and seed data
+
+- `docs/`: Documentation
+  - `API_README.md`: Detailed API documentation
+  - `PROJECT_TRACKER.md`: Project tracking and progress
+
+- `scripts/`: Utility scripts
+
+- `src/tests/`: Test files
+  - `add_test_product.py`: Script to add test products
+  - `simple_test.py`: Basic test suite
+  - `test_api.py`: API tests
+
+- `supabase/`: Supabase configuration
+  - `migrations/`: Database migration files
+  - `seed.sql`: Seed data
 
 ## Features
 
-- Fetch meat product data from Open Food Facts
-- Store product data in Supabase (PostgreSQL)
-- Filter products by various criteria (additives, animal welfare, meat type, risk rating)
-- Authentication using Supabase Auth
-- AI-powered ingredient analysis
-- User history and favorites tracking
-- Alternative product recommendations
-
-## Database Schema
-
-The MeatWise application uses Supabase (PostgreSQL) with the following schema:
-
-### Core Tables
-
-- **profiles**: Extends Supabase auth.users to store user preferences and profile information
-- **products**: Stores meat product information including nutritional data and risk ratings
-- **ingredients**: Contains detailed information about food ingredients and their health implications
-- **product_ingredients**: Junction table linking products to their ingredients
-
-### User Interaction Tables
-
-- **scan_history**: Records user product scan history
-- **user_favorites**: Stores user's favorite products
-- **product_alternatives**: Suggests healthier alternative products
-
-### AI-Related Tables
-
-- **ai_analysis_cache**: Caches results from AI processing to improve performance
-
-### Key Features
-
-- Row-Level Security (RLS) policies to ensure data privacy
-- Full-text search indexes for efficient querying
-- Vector support (pgvector) for AI similarity searches
-- JSON fields for flexible data storage
-- Automatic timestamp management
-
-See `database_schema.sql` for the complete schema definition.
-
-## Setup Instructions
-
-### Local Development
-
-1. **Install dependencies**
-
-```bash
-pip install -r requirements.txt
-```
-
-2. **Configure environment variables**
-
-Create a `.env` file with the following variables:
-
-```
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_KEY=your-supabase-anon-key
-SUPABASE_SERVICE_KEY=your-supabase-service-key
-```
-
-3. **Set up the database**
-
-```bash
-python db_setup.py
-```
-
-4. **Fetch initial product data**
-
-```bash
-python fetch_products.py
-```
-
-5. **Run the application**
-
-```bash
-uvicorn main:app --reload
-```
-
-The API will be available at http://localhost:8000
+- Product scanning
+- Health risk assessment
+- Additives information
+- User accounts
+- Favorites and history
 
 ## API Endpoints
 
-- `GET /product/{barcode}` - Get product details by barcode
-- `GET /products/search` - Search for products with filters
-- `GET /products/meat-types` - Get all available meat types
-- `GET /ingredients/{id}` - Get ingredient details
-- `GET /user/history` - Get user scan history
-- `GET /user/favorites` - Get user favorites
-- `POST /user/favorites/{barcode}` - Add product to favorites
-- `DELETE /user/favorites/{barcode}` - Remove product from favorites
-- `GET /products/{barcode}/alternatives` - Get healthier alternatives
+- `/auth`: Authentication endpoints
+- `/users`: User management
+- `/products`: Product information
+- `/ingredients`: Ingredient details
 
-## Scheduled Updates
+## Development Setup
 
-To set up weekly data updates from Open Food Facts:
-
-```bash
-# Using Supabase Edge Functions
-supabase functions deploy update-products
-supabase functions schedule update-products --cron "0 0 * * 0"
-```
+1. Clone the repository
+2. Create a virtual environment: `python -m venv venv`
+3. Activate the virtual environment:
+   - Windows: `venv\Scripts\activate`
+   - Unix/MacOS: `source venv/bin/activate`
+4. Install dependencies: `pip install -r requirements.txt`
+5. Set up environment variables in `.env`
+6. Run the development server: `uvicorn app.main:app --reload`
 
 ## License
 
-[License information will go here] 
+This project is licensed under the MIT License. 
