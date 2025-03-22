@@ -18,6 +18,7 @@ class UserBase(BaseModel):
     full_name: Optional[str] = None
     is_active: bool = True
     is_superuser: bool = False
+    role: Optional[str] = "basic"
 
 
 class UserCreate(UserBase):

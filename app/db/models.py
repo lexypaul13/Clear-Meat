@@ -123,6 +123,7 @@ class User(Base):
     hashed_password = Column(String)
     is_active = Column(Boolean, default=True)
     is_superuser = Column(Boolean, default=False)
+    role = Column(String, default="basic")  # Role: basic, contributor, moderator, admin
     
     # Metadata
     created_at = Column(DateTime(timezone=True), server_default=func.now())

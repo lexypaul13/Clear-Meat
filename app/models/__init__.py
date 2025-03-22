@@ -18,7 +18,6 @@ from app.models.product import (
     ProductInDB,
     ProductMetadata,
     ProductNutrition,
-    ProductProblemReport,
     ProductStructured,
     ProductUpdate,
 )

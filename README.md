@@ -49,6 +49,50 @@ The project is organized into the following directories:
 - `/products`: Product information
 - `/ingredients`: Ingredient details
 
+## Environment Variables
+
+This application requires several environment variables to be set for proper operation. You can create a `.env` file in the root directory of the project with the following variables:
+
+```bash
+# Copy .env.example to .env and fill in the required values
+cp .env.example .env
+```
+
+**Required environment variables:**
+
+- `SECRET_KEY`: A secure random key used for JWT token signing (minimum 32 characters)
+  - Generate with: `python -c 'import secrets; print(secrets.token_hex(32))'`
+- `SUPABASE_URL`: The URL of your Supabase instance
+- `SUPABASE_KEY`: The API key for your Supabase instance
+
+For a complete list of environment variables, see the `.env.example` file.
+
+## Security Features
+
+MeatWise API implements several security best practices:
+
+### Authentication & Authorization
+- JWT-based authentication
+- Role-Based Access Control with granular permissions
+- Token expiration and validation
+
+### Protection Against Common Attacks
+- Input validation and sanitization
+- Protection against SQL injection
+- XSS protection via Content Security Policy headers
+- CSRF protection
+- Rate limiting to prevent brute force attacks
+
+### Data Security
+- Secure password hashing with bcrypt
+- Environment-based configuration with .env file
+- No hardcoded secrets
+
+### API Security
+- Request validation middleware
+- Security headers (X-Content-Type-Options, X-Frame-Options, etc.)
+- Proper error handling
+
 ## Development Setup
 
 1. Clone the repository
