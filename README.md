@@ -1,6 +1,97 @@
 # MeatWise API
 
-The MeatWise API is a backend application that helps users understand the health implications and additives in meat products by scanning them.
+A specialized API for meat products with intelligent analysis capabilities using Google's Gemini LLM.
+
+## Project Overview
+
+MeatWise is a specialized database and API focused on meat products, providing detailed information about:
+- Product descriptions and ingredients
+- Nutritional information
+- Risk ratings and preservative content
+- Processing methods and quality indicators
+
+### Key Features
+
+- **Specialized Meat Product Database**: Currently tracking 1,161 products across different meat types
+- **Smart Description Generation**: Uses Gemini LLM for generating detailed product descriptions
+- **Efficient Caching System**: Implements aggressive caching to minimize API costs
+- **RAG-Optimized Data**: Structured for effective Retrieval Augmented Generation
+
+## Technical Implementation
+
+### Database Structure
+
+- PostgreSQL database with specialized tables for meat products
+- Efficient caching system for AI-generated content
+- Text similarity indexing for better product matching
+
+### AI Integration
+
+- Uses Google's Gemini for natural language processing
+- Implements RAG (Retrieval Augmented Generation) for accurate responses
+- Includes caching mechanisms to optimize API usage and costs
+
+### Data Structure
+
+#### Product Descriptions
+- Original descriptions preserved in `description` column
+- Enhanced descriptions stored in `enhanced_description`
+- Confidence scoring for AI-generated content
+- Timestamp tracking for enhancements
+
+#### Caching System
+- Two-level caching strategy:
+  - Direct product matches
+  - Similar product matches by meat type
+- 30-day cache expiration
+- Confidence scoring for matches
+
+### Data Quality Statistics
+- Total Products: 1,161
+- Products with Original Descriptions: 139
+- Products Needing Enhancement: 1,022
+- Average Description Length: 85 characters
+- Description Quality Distribution:
+  - High Quality (>200 chars): 12%
+  - Medium Quality (100-200 chars): 23%
+  - Low Quality (<100 chars): 65%
+
+## Getting Started
+
+1. Clone the repository
+2. Copy `.env.example` to `.env` and fill in your credentials
+3. Install dependencies: `pip install -r requirements.txt`
+4. Run migrations: `python scripts/apply_migrations.py`
+
+## Configuration
+
+Required environment variables:
+```env
+DATABASE_URL=your_supabase_connection_string
+GEMINI_API_KEY=your_gemini_api_key
+```
+
+## Development Status
+
+### Completed
+- ✅ Initial database schema and migrations
+- ✅ Product data collection from Open Food Facts
+- ✅ Description enhancement infrastructure
+- ✅ Caching system for AI responses
+
+### In Progress
+- 🔄 Generating enhanced descriptions using Gemini
+- 🔄 RAG implementation for product queries
+- 🔄 API endpoint development
+
+### Planned
+- ⏳ Frontend integration
+- ⏳ User feedback system
+- ⏳ Advanced analytics features
+
+## Contributing
+
+Contributions are welcome! Please read our contributing guidelines for details on our code of conduct and the process for submitting pull requests.
 
 ## Project Structure
 
@@ -102,68 +193,3 @@ MeatWise API implements several security best practices:
    - Unix/MacOS: `source venv/bin/activate`
 4. Install dependencies: `pip install -r requirements.txt`
 5. Set up environment variables in `.env`
-6. Run the development server: `uvicorn app.main:app --reload`
-
-## License
-
-This project is licensed under the MIT License.
-
-## Database Audit Tools
-
-The project includes a set of database audit tools to help identify and fix potential security and schema issues.
-
-### Available Audit Scripts
-
-1. **Schema Audit** (`scripts/audit_tables.py`) - Audits the database schema for common issues like:
-   - Missing primary keys and foreign keys
-   - Missing indexes on frequently queried columns
-   - Improper data types
-   - Tables without proper constraints
-   - Column nullability issues
-
-2. **Data Security Audit** (`scripts/data_security_audit.py`) - Identifies data security risks including:
-   - Unprotected PII (Personally Identifiable Information)
-   - Insecure password storage
-   - Missing Row-Level Security (RLS) policies
-   - Unanonymized data in test environments
-   - Missing audit logging for sensitive data access
-
-3. **Combined Audit Runner** (`scripts/run_db_audit.sh`) - Runs both audits and generates comprehensive reports in JSON and HTML formats.
-
-### Running the Audits
-
-To run all database audits and generate reports:
-
-```bash
-./scripts/run_db_audit.sh
-```
-
-This will:
-- Run both schema and data security audits
-- Generate individual JSON reports for each audit
-- Create a combined HTML report with all findings
-- Automatically open the HTML report in your browser (if supported)
-
-The audit tools use database connection parameters from your `.env` file. If no `.env` file is found, default connection parameters will be used.
-
-### Interpreting Results
-
-Audit issues are categorized by severity:
-
-- **High**: Critical issues that require immediate attention
-- **Medium**: Important issues that should be addressed
-- **Low**: Suggestions for best practices
-
-The HTML report provides a summary of issues by table/category and detailed recommendations for each finding.
-
-### Custom Audit Parameters
-
-You can also run individual audit scripts with custom parameters:
-
-```bash
-# Schema audit
-python scripts/audit_tables.py --host localhost --port 5432 --dbname your_db --user your_user --password your_pass --output report.json
-
-# Data security audit
-python scripts/data_security_audit.py --host localhost --port 5432 --dbname your_db --user your_user --password your_pass --output report.json
-``` 
