@@ -144,6 +144,7 @@ class Token(BaseModel):
     """Token model."""
     access_token: str
     token_type: str
+    message: Optional[str] = None
 
 
 class TokenPayload(BaseModel):

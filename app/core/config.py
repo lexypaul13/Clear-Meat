@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     # Security
     SECRET_KEY: str = os.getenv("SECRET_KEY", "supersecretkey")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+    ALGORITHM: str = "HS256"  # Algorithm for JWT encoding
     
     @field_validator("SECRET_KEY", mode="before")
     def validate_secret_key(cls, v: Optional[str]) -> str:
