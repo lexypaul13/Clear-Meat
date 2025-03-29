@@ -26,16 +26,21 @@ class UserCreate(UserBase):
     password: str
 
 
-class UserUpdate(UserBase):
+class UserUpdate(BaseModel):
     """User update model."""
+    email: Optional[EmailStr] = None
+    full_name: Optional[str] = None
     password: Optional[str] = None
+    is_active: Optional[bool] = None
+    is_superuser: Optional[bool] = None
+    role: Optional[str] = None
 
 
 class User(UserBase):
     """User response model."""
     id: str
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     class Config:
         """Pydantic config."""

@@ -27,7 +27,19 @@ def get_current_user(
     Returns:
         User: Current user details
     """
-    return current_user
+    # Convert UUID fields to strings to ensure compatibility
+    user_dict = {
+        "id": str(current_user.id),
+        "email": current_user.email,
+        "full_name": current_user.full_name,
+        "is_active": current_user.is_active,
+        "is_superuser": current_user.is_superuser,
+        "role": current_user.role,
+        "created_at": current_user.created_at,
+        "updated_at": current_user.updated_at
+    }
+    
+    return user_dict
 
 
 @router.put("/me", response_model=User)
@@ -47,12 +59,17 @@ def update_current_user(
     Returns:
         User: Updated user details
     """
-    update_data = user_in.model_dump(exclude_unset=True)
+    update_data = user_in.model_dump(exclude_unset=True, exclude_none=True)
     
     # Hash password if provided
     if "password" in update_data and update_data["password"]:
         update_data["hashed_password"] = security.get_password_hash(update_data["password"])
         del update_data["password"]
+    
+    # Only superusers can change is_superuser and role
+    if not current_user.is_superuser:
+        update_data.pop("is_superuser", None)
+        update_data.pop("role", None)
     
     for key, value in update_data.items():
         setattr(current_user, key, value)
@@ -60,7 +77,20 @@ def update_current_user(
     db.add(current_user)
     db.commit()
     db.refresh(current_user)
-    return current_user
+    
+    # Convert UUID fields to strings to ensure compatibility
+    user_dict = {
+        "id": str(current_user.id),
+        "email": current_user.email,
+        "full_name": current_user.full_name,
+        "is_active": current_user.is_active,
+        "is_superuser": current_user.is_superuser,
+        "role": current_user.role,
+        "created_at": current_user.created_at,
+        "updated_at": current_user.updated_at
+    }
+    
+    return user_dict
 
 
 @router.get("/history", response_model=List[ScanHistory])
