@@ -2,6 +2,7 @@
 
 import os
 import secrets
+import sys
 from typing import Any, Dict, List, Optional, Union
 from urllib.parse import urljoin, urlparse
 
@@ -18,7 +19,7 @@ class Settings(BaseSettings):
     PROJECT_VERSION: str = "0.1.0"
     
     # Security
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "2LdGKQmRzjeV78qDZUol+A5UqsJWjS")  # Supabase JWT Secret
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
     ALGORITHM: str = "HS256"  # Algorithm for JWT encoding
     
@@ -26,12 +27,20 @@ class Settings(BaseSettings):
     def validate_secret_key(cls, v: Optional[str]) -> str:
         """Validate the secret key."""
         if not v or len(v) < 32:
-            return os.environ.get("SECRET_KEY") or secrets.token_urlsafe(32)
+            if not os.environ.get("SECRET_KEY"):
+                # Warn that we're using a generated key
+                print("WARNING: No SECRET_KEY environment variable set! Using a randomly generated key.", file=sys.stderr)
+                print("This is insecure for production environments - set a SECRET_KEY environment variable.", file=sys.stderr)
+            return secrets.token_urlsafe(32)
         return v
     
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = int(os.getenv("RATE_LIMIT_PER_MINUTE", "60"))
     RATE_LIMIT_BY_IP: bool = os.getenv("RATE_LIMIT_BY_IP", "true").lower() == "true"
+    
+    # Redis Configuration
+    REDIS_URL: Optional[str] = os.getenv("REDIS_URL")
+    REDIS_TTL: int = int(os.getenv("REDIS_TTL", "3600"))  # Default TTL for cached items
     
     # CORS
     BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = []

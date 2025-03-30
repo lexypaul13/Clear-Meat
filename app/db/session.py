@@ -1,17 +1,30 @@
 """Database session management for the MeatWise application."""
 
 import logging
+import os
 import socket
 from urllib.parse import urlparse
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+from contextlib import contextmanager
 
 from app.core.config import settings
 
-# Configure logging
-logging.basicConfig(level=logging.DEBUG)
+# Environment detection
+IS_PRODUCTION = os.getenv("ENVIRONMENT", "development").lower() == "production"
+
+# Configure logging with a more structured approach for production
 logger = logging.getLogger(__name__)
+if IS_PRODUCTION:
+    # More structured logging for production
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    )
+else:
+    # More verbose logging for development
+    logging.basicConfig(level=logging.DEBUG)
 
 # Log the database URL (with password masked)
 db_url = settings.DATABASE_URL
@@ -32,16 +45,32 @@ if db_url:
     except Exception as e:
         logger.error(f"Unexpected error while resolving hostname: {str(e)}")
 
+# Adjust pool settings based on environment
+if IS_PRODUCTION:
+    # Production settings with larger pool
+    pool_size = int(os.getenv("DB_POOL_SIZE", "20"))
+    max_overflow = int(os.getenv("DB_MAX_OVERFLOW", "30"))
+    pool_timeout = int(os.getenv("DB_POOL_TIMEOUT", "30"))
+    pool_recycle = int(os.getenv("DB_POOL_RECYCLE", "300"))
+else:
+    # Development settings
+    pool_size = 5
+    max_overflow = 10
+    pool_timeout = 30
+    pool_recycle = 900  # 15 minutes
+
 # Create SQLAlchemy engine
 try:
     engine = create_engine(
         settings.DATABASE_URL,
         pool_pre_ping=True,  # Enable connection health checks
-        echo=True,  # Enable SQL query logging
-        pool_size=5,  # Set a reasonable pool size
-        max_overflow=10,  # Maximum number of connections to overflow
-        pool_timeout=30  # Timeout for getting a connection from pool
+        echo=not IS_PRODUCTION,  # Enable SQL query logging in development
+        pool_size=pool_size,
+        max_overflow=max_overflow,
+        pool_timeout=pool_timeout,
+        pool_recycle=pool_recycle  # Recycle connections after this many seconds
     )
+    logger.info(f"Database engine created with pool_size={pool_size}, max_overflow={max_overflow}")
 except Exception as e:
     logger.error(f"Failed to create database engine: {str(e)}")
     raise
@@ -66,4 +95,30 @@ def get_db():
     try:
         yield db
     finally:
-        db.close() 
+        db.close()
+
+@contextmanager
+def get_db_context():
+    """
+    Get a database session with context manager.
+    
+    Yields:
+        Session: A SQLAlchemy session
+        
+    Example:
+        with get_db_context() as db:
+            db.query(Model).all()
+    """
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# Graceful shutdown handling
+def close_db_connections():
+    """Close database connections on application shutdown."""
+    logger.info("Closing database connections...")
+    if hasattr(engine, 'dispose'):
+        engine.dispose()
+        logger.info("Database connections closed") 
