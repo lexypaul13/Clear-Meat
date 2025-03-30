@@ -7,19 +7,28 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Initialize Supabase client
+# Initialize Supabase clients
 supabase = None
+admin_supabase = None
 
 try:
     # Print debug information
     logger.info(f"Attempting to connect to Supabase with URL: {settings.SUPABASE_URL}")
-    logger.info(f"Using API key (first 4 chars): {settings.SUPABASE_KEY[:4] if settings.SUPABASE_KEY else 'None'}")
     
-    # Create the client
+    # Create client with anon key for token verification & user operations
+    logger.info(f"Initializing public client with anon key (first 4 chars): {settings.SUPABASE_KEY[:4] if settings.SUPABASE_KEY else 'None'}")
     supabase: Client = create_client(
         settings.SUPABASE_URL,
         settings.SUPABASE_KEY
     )
+    
+    # Create admin client with service role key for privileged operations
+    if hasattr(settings, 'SUPABASE_SERVICE_KEY') and settings.SUPABASE_SERVICE_KEY:
+        logger.info(f"Initializing admin client with service role key")
+        admin_supabase: Client = create_client(
+            settings.SUPABASE_URL,
+            settings.SUPABASE_SERVICE_KEY
+        )
     
     # Test connection with a simpler approach
     logger.info("Testing Supabase connection...")
@@ -31,4 +40,5 @@ try:
 except Exception as e:
     logger.error(f"Failed to initialize Supabase client: {str(e)}")
     # Initialize a None client to avoid errors when importing
-    supabase = None 
+    supabase = None
+    admin_supabase = None 

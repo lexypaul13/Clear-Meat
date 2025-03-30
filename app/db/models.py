@@ -4,6 +4,7 @@ from sqlalchemy import Boolean, Column, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+import uuid
 
 from app.db.session import Base
 
@@ -113,21 +114,22 @@ class ProductAlternative(Base):
 
 
 class User(Base):
-    """User model."""
+    """User model that maps to Supabase profiles table."""
     
-    __tablename__ = "users"
+    __tablename__ = "profiles"
     
-    id = Column(String, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True, nullable=False)
-    full_name = Column(String)
-    hashed_password = Column(String)
-    is_active = Column(Boolean, default=True)
-    is_superuser = Column(Boolean, default=False)
-    role = Column(String, default="basic")  # Role: basic, contributor, moderator, admin
+    id = Column(String, primary_key=True, index=True)  # This is the Supabase user ID
+    email = Column(String, unique=True, index=True, nullable=True)  # Managed by Supabase Auth
+    full_name = Column(String, nullable=True)
+    
+    # Add our application-specific fields to the profiles table
+    is_active = Column(Boolean, default=True, nullable=True)
+    is_superuser = Column(Boolean, default=False, nullable=True)
+    role = Column(String, default="basic", nullable=True)  # basic, contributor, moderator, admin
     
     # Metadata
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=True)
     
     # Relationships
     scan_history = relationship("ScanHistory", back_populates="user")
@@ -139,10 +141,12 @@ class ScanHistory(Base):
     
     __tablename__ = "scan_history"
     
-    id = Column(String, primary_key=True, index=True)
-    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"))
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey("profiles.id", ondelete="CASCADE"))
     product_code = Column(String, ForeignKey("products.code", ondelete="SET NULL"))
     scanned_at = Column(DateTime(timezone=True), server_default=func.now())
+    location = Column(Text) # JSON stored as text
+    device_info = Column(Text)
     
     # Relationships
     user = relationship("User", back_populates="scan_history")
@@ -154,7 +158,7 @@ class UserFavorite(Base):
     
     __tablename__ = "user_favorites"
     
-    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    user_id = Column(String, ForeignKey("profiles.id", ondelete="CASCADE"), primary_key=True)
     product_code = Column(String, ForeignKey("products.code", ondelete="CASCADE"), primary_key=True)
     added_at = Column(DateTime(timezone=True), server_default=func.now())
     notes = Column(Text)

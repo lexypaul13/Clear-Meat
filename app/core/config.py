@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     PROJECT_VERSION: str = "0.1.0"
     
     # Security
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "supersecretkey")
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "2LdGKQmRzjeV78qDZUol+A5UqsJWjS")  # Supabase JWT Secret
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
     ALGORITHM: str = "HS256"  # Algorithm for JWT encoding
     

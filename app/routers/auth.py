@@ -10,11 +10,13 @@ from sqlalchemy.orm import Session
 from app.models import Token, UserCreate
 from app.core import security
 from app.core.config import settings
-from app.core.supabase import supabase
+from app.core.supabase import supabase, admin_supabase
 from app.db import models as db_models
 from app.db.session import get_db
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.post("/login", response_model=Token)
@@ -84,72 +86,69 @@ def register_user(
     user_in: UserCreate,
 ) -> Any:
     """
-    Register a new user and return an access token.
+    Register a new user.
     
     Args:
-        user_in: User creation data
+        user_in: User data
         
     Returns:
         Token: Access token
         
     Raises:
-        HTTPException: If user already exists or registration fails
+        HTTPException: If registration fails
     """
+            
     try:
-        # Check if Supabase client is initialized
-        if not supabase or not hasattr(supabase, 'auth'):
+        # Use the admin API to create a user directly
+        if not admin_supabase:
+            logger.error("Admin Supabase client not available for user creation")
             raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Registration service unavailable. Please try again later.",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Could not create user. Server configuration error."
             )
             
-        # Use Supabase to sign up with email and password
-        response = supabase.auth.sign_up({
+        admin_response = admin_supabase.auth.admin.create_user({
             "email": user_in.email,
             "password": user_in.password,
-            "options": {
-                "data": {
-                    "full_name": user_in.full_name,
-                    "role": "basic",
-                }
-            }
+            "user_metadata": {
+                "full_name": user_in.full_name,
+                "role": "basic"
+            },
+            "email_confirm": True,
+            "ban_duration": "none"
         })
         
-        # Safer error checking - don't assume response structure
-        # Check if there's an error dict or attribute in the response
-        if hasattr(response, 'error') and response.error:
-            error_message = getattr(response.error, 'message', str(response.error))
+        if hasattr(admin_response, 'error') and admin_response.error:
+            error_message = getattr(admin_response.error, 'message', str(admin_response.error))
+            logger.error(f"Admin user creation failed: {error_message}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Registration failed: {error_message}",
             )
         
-        # Check if the session is None, which means the user needs to confirm their email
-        if hasattr(response, 'session'):
-            if not response.session:
-                return {
-                    "access_token": "",
-                    "token_type": "bearer",
-                    "message": "Please confirm your email address to complete registration"
-                }
-            
+        # Now login the user to get a session using the public client
+        login_response = supabase.auth.sign_in_with_password({
+            "email": user_in.email,
+            "password": user_in.password,
+        })
+        
+        if hasattr(login_response, 'session') and login_response.session:
             return {
-                "access_token": response.session.access_token,
+                "access_token": login_response.session.access_token,
                 "token_type": "bearer",
+                "message": "User registered successfully"
             }
-        
-        # If we can't determine the session state, return a generic success
-        return {
-            "access_token": "",
-            "token_type": "bearer",
-            "message": "Registration processed successfully. Please check your email for confirmation."
-        }
-        
+        else:
+            return {
+                "access_token": "",
+                "token_type": "bearer",
+                "message": "User registered successfully. Please login."
+            }
     except HTTPException:
-        # Re-raise HTTP exceptions
         raise
     except Exception as e:
+        logger.exception(f"Unexpected error during registration: {str(e)}")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Registration failed: {str(e)}",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Registration failed due to an unexpected error.",
         ) 
