@@ -11,7 +11,6 @@ import asyncio
 import aiohttp
 import json
 import logging
-import random
 from typing import Dict, List, Set, Optional
 from datetime import datetime, timezone
 from dotenv import load_dotenv
@@ -47,7 +46,6 @@ class DataEnricher:
             'missing_records': set(),
             'invalid_meat_types': set(),
             'invalid_processing_methods': set(),
-            'duplicate_prices': set(),
             'invalid_nutrition': set(),
             'invalid_environmental': set()
         }
@@ -127,30 +125,6 @@ class DataEnricher:
             logging.error(f"Error calculating environmental impact: {str(e)}")
             return self.calculate_environmental_impact('unknown', 'unknown')
 
-    async def generate_price_data(self, product_code: str) -> List[Dict]:
-        """Generate simulated price data across stores and regions"""
-        stores = ['Walmart', 'Kroger', 'Whole Foods', 'Target']
-        regions = ['Northeast', 'Southeast', 'Midwest', 'West']
-        
-        prices = []
-        base_price = random.uniform(5, 30)
-        
-        for store in stores:
-            for region in regions:
-                variation = random.uniform(0.8, 1.2)
-                prices.append({
-                    'product_code': product_code,
-                    'price': base_price * variation,
-                    'currency': 'USD',
-                    'store': store,
-                    'region': region,
-                    'unit': 'per_kg',
-                    'quantity': 1.0,
-                    'timestamp': datetime.now(timezone.utc)
-                })
-        
-        return prices
-
     async def determine_supply_chain(self, product: Dict) -> Dict:
         """Determine supply chain information based on product data"""
         meat_type = product.get('meat_type', '').lower()
@@ -167,7 +141,7 @@ class DataEnricher:
         origins = origin_mapping.get(meat_type, ['United States'])
         
         return {
-            'origin_country': random.choice(origins),
+            'origin_country': 'Unknown',
             'processing_location': product.get('manufacturing_places', 'Unknown'),
             'distribution_method': 'refrigerated_transport',
             'storage_requirements': 'refrigerated',
@@ -280,16 +254,6 @@ class DataEnricher:
                         WHERE code = $1
                     """, code)
 
-                # Remove duplicate price entries
-                if self.inconsistencies['duplicate_prices']:
-                    await conn.execute("""
-                        DELETE FROM price_history ph1 USING price_history ph2
-                        WHERE ph1.ctid < ph2.ctid 
-                        AND ph1.product_code = ph2.product_code
-                        AND ph1.store = ph2.store
-                        AND ph1.region = ph2.region
-                    """)
-
                 # Fix invalid nutrition data
                 for code in self.inconsistencies['invalid_nutrition']:
                     await conn.execute("""
@@ -313,7 +277,6 @@ class DataEnricher:
         try:
             # Fetch all data concurrently
             nutrition_task = self.fetch_nutrition_data(product_code)
-            price_task = self.generate_price_data(product_code)
             
             # Get base product data from database
             async with self.pool.acquire() as conn:
@@ -323,6 +286,7 @@ class DataEnricher:
                 )
                 
                 if not product:
+                    logging.warning(f"Product {product_code} not found in database.")
                     return
                 
                 # Convert to dict for easier handling
@@ -330,7 +294,6 @@ class DataEnricher:
                 
                 # Wait for async tasks
                 nutrition_data = await nutrition_task
-                price_data = await price_task
                 
                 # Calculate environmental impact
                 env_impact = self.calculate_environmental_impact(
@@ -347,7 +310,6 @@ class DataEnricher:
                     product_code,
                     nutrition_data,
                     env_impact,
-                    price_data,
                     supply_chain
                 )
                 
@@ -360,7 +322,6 @@ class DataEnricher:
         product_code: str,
         nutrition_data: Optional[Dict],
         env_impact: Dict,
-        price_data: List[Dict],
         supply_chain: Dict
     ):
         """Save all enriched data to database"""
@@ -411,27 +372,6 @@ class DataEnricher:
                 env_impact['source'],
                 env_impact['calculation_method']
                 )
-                
-                # Save price data
-                await conn.executemany("""
-                    INSERT INTO price_history (
-                        product_code, price, currency, store,
-                        region, unit, quantity, timestamp
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                """,
-                [
-                    (
-                        p['product_code'],
-                        p['price'],
-                        p['currency'],
-                        p['store'],
-                        p['region'],
-                        p['unit'],
-                        p['quantity'],
-                        p['timestamp']
-                    )
-                    for p in price_data
-                ])
                 
                 # Save supply chain data
                 await conn.execute("""
