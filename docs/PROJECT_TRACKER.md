@@ -45,6 +45,71 @@
 - ✅ Configure row-level security
 - ✅ Test database performance
 
+### 📊 Database Schema
+- ✅ Designed and implemented the following entity relationship model:
+
+```
+User
+├── id (PK)
+├── email, full_name
+├── is_active, is_superuser, role
+└── relationships:
+    ├── ScanHistory (one-to-many)
+    └── UserFavorite (one-to-many)
+
+Product
+├── code (PK)
+├── name, brand, description
+├── nutritional info (calories, protein, etc.)
+├── meat details (type, nitrites, etc.)
+├── risk_rating, risk_score
+└── relationships:
+    ├── ProductIngredient (one-to-many)
+    ├── ProductAlternative (one-to-many)
+    ├── ScanHistory (one-to-many)
+    └── UserFavorite (one-to-many)
+
+Ingredient
+├── id (PK)
+├── name, description, category
+├── risk_level, concerns
+└── relationships:
+    └── ProductIngredient (one-to-many)
+
+ProductIngredient
+├── product_code (PK, FK)
+├── ingredient_id (PK, FK)
+└── position
+
+ProductAlternative
+├── product_code (PK, FK)
+├── alternative_code (PK, FK)
+├── similarity_score
+└── reason
+
+ScanHistory
+├── id (PK)
+├── user_id (FK)
+├── product_code (FK)
+├── scanned_at
+└── location, device_info
+
+UserFavorite
+├── user_id (PK, FK)
+├── product_code (PK, FK)
+├── added_at
+└── notes
+```
+
+**Key Relationships:**
+1. **User to ScanHistory**: One-to-many. A user can scan many products.
+2. **User to UserFavorite**: One-to-many. A user can have many favorite products.
+3. **Product to ProductIngredient**: One-to-many. A product can contain many ingredients.
+4. **Ingredient to ProductIngredient**: One-to-many. An ingredient can be in many products.
+5. **Product to ProductAlternative**: One-to-many. A product can have many alternative suggestions.
+6. **Product to ScanHistory**: One-to-many. A product can be scanned multiple times.
+7. **Product to UserFavorite**: One-to-many. A product can be favorited by multiple users.
+
 ### 🔐 Authentication
 - [ ] Configure Supabase authentication
 - [ ] Set up email and Apple Sign-In
