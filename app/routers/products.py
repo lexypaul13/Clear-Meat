@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     Product, ProductStructured, 
-    ProductAlternative, AdditiveInfo
+    AdditiveInfo
 )
 from app.db import models as db_models
 from app.db.session import get_db
@@ -233,38 +233,4 @@ def get_product(
         raise HTTPException(
             status_code=500,
             detail=f"Error processing product data: {str(e)}"
-        )
-
-
-@router.get("/{code}/alternatives", response_model=List[ProductAlternative])
-def get_product_alternatives(
-    code: str,
-    db: Session = Depends(get_db),
-) -> Any:
-    """
-    Get alternative products for a specific product.
-    
-    Args:
-        code: Product barcode
-        db: Database session
-        
-    Returns:
-        List[ProductAlternative]: List of product alternatives
-        
-    Raises:
-        HTTPException: If product not found
-    """
-    # Check if product exists
-    product = db.query(db_models.Product).filter(db_models.Product.code == code).first()
-    if not product:
-        raise HTTPException(status_code=404, detail="Product not found")
-    
-    # Get product alternatives
-    alternatives_query = (
-        db.query(db_models.ProductAlternative)
-        .filter(db_models.ProductAlternative.product_code == code)
-        .all()
-    )
-    
-    # Return alternatives
-    return alternatives_query 
+        ) 
