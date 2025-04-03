@@ -8,7 +8,6 @@ from app.models.ingredient import (
 )
 from app.models.product import (
     Product,
-    ProductAlternative,
     ProductBase,
     ProductCreate,
     ProductCriteria,

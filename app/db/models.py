@@ -54,11 +54,6 @@ class Product(Base):
     
     # Relationships
     ingredients = relationship("ProductIngredient", back_populates="product")
-    alternatives = relationship(
-        "ProductAlternative",
-        foreign_keys="ProductAlternative.product_code",
-        back_populates="product"
-    )
     scan_history = relationship("ScanHistory", back_populates="product")
     user_favorites = relationship("UserFavorite", back_populates="product")
 
@@ -96,21 +91,6 @@ class ProductIngredient(Base):
     # Relationships
     product = relationship("Product", back_populates="ingredients")
     ingredient = relationship("Ingredient", back_populates="products")
-
-
-class ProductAlternative(Base):
-    """Product alternative suggestion model."""
-    
-    __tablename__ = "product_alternatives"
-    
-    product_code = Column(String, ForeignKey("products.code", ondelete="CASCADE"), primary_key=True)
-    alternative_code = Column(String, ForeignKey("products.code", ondelete="CASCADE"), primary_key=True)
-    similarity_score = Column(Float)
-    reason = Column(Text)
-    
-    # Relationships
-    product = relationship("Product", foreign_keys=[product_code], back_populates="alternatives")
-    alternative = relationship("Product", foreign_keys=[alternative_code])
 
 
 class User(Base):

@@ -77,19 +77,6 @@ class Product(ProductInDB):
         from_attributes = True
 
 
-class ProductAlternative(BaseModel):
-    """Product alternative model."""
-    product_code: str
-    alternative_code: str
-    similarity_score: float
-    reason: Optional[str] = None
-    alternative: Optional[Product] = None
-
-    class Config:
-        """Pydantic config."""
-        from_attributes = True
-
-
 class ProductNutrition(BaseModel):
     """Nutrition information model."""
     calories: Optional[float] = None
