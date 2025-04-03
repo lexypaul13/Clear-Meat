@@ -2,21 +2,27 @@
 
 from fastapi import FastAPI, Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Set, Tuple
 import time
 import json
+import logging
 from datetime import datetime
 from starlette.datastructures import Headers
 from starlette.types import ASGIApp
 from app.core.config import settings
 from fastapi.responses import JSONResponse
 
+# Configure logger
+logger = logging.getLogger(__name__)
+
 # Redis imports - will be conditionally used
 try:
     import redis
     REDIS_AVAILABLE = True
+    logger.info("Redis package is installed. Distributed rate limiting is available.")
 except ImportError:
     REDIS_AVAILABLE = False
+    logger.warning("Redis package not installed. Rate limiting will use in-memory storage.")
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -66,7 +72,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         limit: int = 60,  # Default: 60 requests
         window: int = 60,  # Default: per minute
         by_ip: bool = True,
-        redis_url: Optional[str] = None
+        redis_url: Optional[str] = None,
+        exempt_patterns: Optional[List[str]] = None,
+        exempt_ips: Optional[List[str]] = None,
+        include_headers: bool = True,
+        debug_mode: bool = False
     ):
         """
         Initialize rate limiter.
@@ -77,12 +87,20 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             window: Time window in seconds
             by_ip: Whether to track by IP address
             redis_url: Optional Redis URL for distributed rate limiting
+            exempt_patterns: URL patterns to exempt from rate limiting
+            exempt_ips: IP addresses to exempt from rate limiting
+            include_headers: Whether to include rate limit headers in responses
+            debug_mode: Enable debug logging for rate limiting
         """
         super().__init__(app)
         self.limit = limit
         self.window = window
         self.by_ip = by_ip
         self.requests: Dict[str, List[float]] = {}
+        self.exempt_patterns = exempt_patterns or ["/health", "/docs", "/openapi.json"]
+        self.exempt_ips = set(exempt_ips or [])  # Empty set - no exempt IPs for testing
+        self.include_headers = include_headers
+        self.debug_mode = debug_mode
         
         # Set up Redis connection if URL provided and Redis is available
         self.redis_client = None
@@ -91,63 +109,163 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 self.redis_client = redis.from_url(redis_url)
                 # Test connection
                 self.redis_client.ping()
-                print("Connected to Redis for distributed rate limiting")
+                logger.info("Connected to Redis for distributed rate limiting")
             except Exception as e:
-                print(f"Failed to connect to Redis: {str(e)}")
+                logger.error(f"Failed to connect to Redis: {str(e)}")
                 self.redis_client = None
-    
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        """Apply rate limiting logic."""
-        key = request.client.host if self.by_ip else "global"
         
-        # Use Redis for distributed rate limiting if available
+        logger.info(f"Rate limiter initialized: {limit} requests per {window} seconds")
+        
+        # Debug counters for monitoring
+        if self.debug_mode:
+            self.total_requests = 0
+            self.exempt_requests = 0
+            self.rate_limited_requests = 0
+    
+    def _log_debug(self, message: str):
+        """Log debug message if debug mode is enabled."""
+        if self.debug_mode:
+            logger.debug(message)
+    
+    def _is_exempt(self, request: Request) -> bool:
+        """Check if request is exempt from rate limiting."""
+        # Check exempt patterns
+        path = request.url.path
+        for pattern in self.exempt_patterns:
+            if pattern in path:
+                self._log_debug(f"Request to {path} is exempt (matched pattern {pattern})")
+                return True
+                
+        # Check exempt IPs
+        client_host = request.client.host
+        if client_host in self.exempt_ips:
+            self._log_debug(f"Request from {client_host} is exempt (ip in exempt list)")
+            return True
+            
+        return False
+    
+    def _get_rate_limit_info(self, key: str) -> Tuple[int, int]:
+        """Get current rate limit info (requests_count, remaining)."""
         if self.redis_client:
             redis_key = f"ratelimit:{key}"
             current_time = time.time()
             
-            # Using Redis sorted set to track timestamps
-            # Remove expired timestamps (older than window)
+            # Remove expired timestamps
             self.redis_client.zremrangebyscore(redis_key, 0, current_time - self.window)
             
             # Count remaining valid timestamps
             request_count = self.redis_client.zcard(redis_key)
+            remaining = max(0, self.limit - request_count)
             
-            # Check if rate limit exceeded
-            if request_count >= self.limit:
-                return JSONResponse(
-                    content={"detail": "Rate limit exceeded. Please try again later."},
-                    status_code=429,
-                    headers={"Retry-After": str(self.window)}
-                )
+            return request_count, remaining
+        else:
+            # In-memory storage
+            now = time.time()
+            if key not in self.requests:
+                self.requests[key] = []
+                return 0, self.limit
+                
+            # Filter out expired timestamps
+            valid_requests = [
+                timestamp for timestamp in self.requests[key]
+                if now - timestamp < self.window
+            ]
             
+            # Update the requests list with only valid timestamps
+            self.requests[key] = valid_requests
+            
+            return len(valid_requests), max(0, self.limit - len(valid_requests))
+    
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        """Apply rate limiting logic."""
+        # Track request in debug mode
+        if self.debug_mode:
+            self.total_requests += 1
+            self._log_debug(f"Processing request #{self.total_requests}: {request.method} {request.url.path}")
+            
+        # Skip rate limiting for exempt requests
+        if self._is_exempt(request):
+            if self.debug_mode:
+                self.exempt_requests += 1
+                self._log_debug(f"Request exempt from rate limiting. Total exempt: {self.exempt_requests}")
+            return await call_next(request)
+            
+        # Get client identifier
+        client_ip = request.client.host
+        key = client_ip if self.by_ip else "global"
+        
+        # Log the request for debugging
+        self._log_debug(f"Rate limit check for {key} (URL: {request.url.path})")
+        
+        # Check if rate limit exceeded
+        request_count, remaining = self._get_rate_limit_info(key)
+        
+        # Add this request immediately to prevent race conditions
+        now = time.time()
+        if self.redis_client:
+            redis_key = f"ratelimit:{key}"
             # Add current request timestamp
-            self.redis_client.zadd(redis_key, {str(current_time): current_time})
+            self.redis_client.zadd(redis_key, {str(now): now})
             # Set expiration on the key to auto-cleanup
             self.redis_client.expire(redis_key, self.window * 2)
+            # Count is now one higher
+            request_count += 1
+            remaining = max(0, self.limit - request_count)
         else:
             # Fallback to in-memory rate limiting
-            now = time.time()
-            if key in self.requests:
-                self.requests[key] = [
-                    timestamp for timestamp in self.requests[key]
-                    if now - timestamp < self.window
-                ]
-            else:
+            if key not in self.requests:
                 self.requests[key] = []
-            
-            # Check if rate limit exceeded
-            if len(self.requests[key]) >= self.limit:
-                return JSONResponse(
-                    content={"detail": "Rate limit exceeded. Please try again later."},
-                    status_code=429,
-                    headers={"Retry-After": str(self.window)}
-                )
-            
             # Add current request timestamp
             self.requests[key].append(now)
+            # Update count
+            request_count += 1
+            remaining = max(0, self.limit - request_count)
+        
+        # Time until the oldest request expires
+        time_to_reset = int(self.window - (now - min(self.requests[key]))) if self.requests[key] else self.window
+        reset_time = int(time.time() + time_to_reset)
+        
+        self._log_debug(f"Current request count for {key}: {request_count}/{self.limit}, remaining: {remaining}, reset in {time_to_reset}s")
+        
+        # Check if over limit
+        if request_count > self.limit:
+            if self.debug_mode:
+                self.rate_limited_requests += 1
+                self._log_debug(f"Rate limit exceeded for {key}. Total limited: {self.rate_limited_requests}")
+                
+            logger.warning(f"Rate limit exceeded for {key} ({request_count}/{self.limit} requests)")
+            
+            response = JSONResponse(
+                content={
+                    "detail": "Rate limit exceeded. Please try again later.",
+                    "status": "error",
+                    "code": "TOO_MANY_REQUESTS",
+                    "retry_after": time_to_reset
+                },
+                status_code=429,
+                headers={"Retry-After": str(time_to_reset)}
+            )
+            
+            # Add rate limit headers
+            if self.include_headers:
+                response.headers["X-RateLimit-Limit"] = str(self.limit)
+                response.headers["X-RateLimit-Remaining"] = "0"
+                response.headers["X-RateLimit-Reset"] = str(reset_time)
+                response.headers["X-RateLimit-Reset-After"] = str(time_to_reset)
+                
+            return response
         
         # Process the request
-        return await call_next(request)
+        response = await call_next(request)
+        
+        # Add rate limit headers to response
+        if self.include_headers:
+            response.headers["X-RateLimit-Limit"] = str(self.limit)
+            response.headers["X-RateLimit-Remaining"] = str(max(0, self.limit - request_count))
+            response.headers["X-RateLimit-Reset"] = str(reset_time)
+            response.headers["X-RateLimit-Reset-After"] = str(time_to_reset)
+        
+        return response
 
 
 class JWTErrorHandlerMiddleware(BaseHTTPMiddleware):
@@ -191,12 +309,22 @@ def add_security_middleware(app: FastAPI) -> None:
     # Add JWT error handler middleware
     app.add_middleware(JWTErrorHandlerMiddleware)
     
-    # Add rate limiting middleware
+    # Add rate limiting middleware - IMPORTANT: Add this BEFORE other middleware to ensure it's applied first
     redis_url = getattr(settings, "REDIS_URL", None)
+    rate_limit = getattr(settings, "RATE_LIMIT_PER_MINUTE", 10)
+    rate_limit_by_ip = getattr(settings, "RATE_LIMIT_BY_IP", True)
+    
+    # Print rate limit configuration for debugging
+    logger.info(f"Configuring rate limiting: {rate_limit} requests per minute, by IP: {rate_limit_by_ip}, Redis: {redis_url}")
+    
     app.add_middleware(
         RateLimitMiddleware,
-        limit=settings.RATE_LIMIT_PER_MINUTE,
+        limit=rate_limit,
         window=60,  # per minute
-        by_ip=settings.RATE_LIMIT_BY_IP,
-        redis_url=redis_url
+        by_ip=rate_limit_by_ip,
+        redis_url=redis_url,
+        exempt_patterns=["/health", "/docs", "/openapi.json", "/redoc"],
+        exempt_ips=[],  # No exempt IPs for testing
+        include_headers=True,
+        debug_mode=True
     ) 
