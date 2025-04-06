@@ -182,6 +182,47 @@ class JSONLProductImporter:
             # Extract nutrients
             nutrients = raw_product.get('nutriments', {})
             
+            # Extract image URL from the complex images structure
+            image_url = ""
+            images = raw_product.get('images', {})
+            
+            # First try to get front image URL directly if it exists
+            if 'image_url' in raw_product:
+                image_url = raw_product['image_url']
+            elif 'image_front_url' in raw_product:
+                image_url = raw_product['image_front_url']
+            # Try to construct using the correct format with dashes
+            elif images:
+                # Format product code with dashes for URL (every 3 digits)
+                formatted_code = '/'.join([code[i:i+3] for i in range(0, len(code), 3)])
+                
+                # Try to find the front image
+                front_key = None
+                for key in images.keys():
+                    if key.startswith('front'):
+                        front_key = key
+                        break
+                
+                # If we found a front image, construct the URL
+                if front_key:
+                    # Use language 'en' or extract from key
+                    lang = 'en'
+                    if '_' in front_key:
+                        lang = front_key.split('_')[1]
+                    
+                    # Get revision if available
+                    rev = images[front_key].get('rev', '1')
+                    
+                    # Construct URL with the format: .../front_en.{rev}.400.jpg
+                    image_url = f"https://images.openfoodfacts.org/images/products/{formatted_code}/front_{lang}.{rev}.400.jpg"
+                # Otherwise use the default image if available
+                elif '1' in images:
+                    image_url = f"https://images.openfoodfacts.org/images/products/{formatted_code}/1.400.jpg"
+            
+            # Debug log for image extraction
+            if image_url:
+                logger.debug(f"Extracted image URL for product {code}: {image_url}")
+            
             # Create structured product data
             structured_data = {
                 'code': code,
@@ -196,7 +237,7 @@ class JSONLProductImporter:
                 'fat': nutrients.get('fat_100g'),
                 'carbohydrates': nutrients.get('carbohydrates_100g'),
                 'salt': nutrients.get('salt_100g'),
-                'image_url': raw_product.get('image_url', ''),
+                'image_url': image_url,
                 'source': 'OpenFoodFacts',
             }
             
