@@ -16,7 +16,9 @@ try:
     logger.info(f"Attempting to connect to Supabase with URL: {settings.SUPABASE_URL}")
     
     # Create client with anon key for token verification & user operations
-    logger.info(f"Initializing public client with anon key (first 4 chars): {settings.SUPABASE_KEY[:4] if settings.SUPABASE_KEY else 'None'}")
+    key_info = settings.SUPABASE_KEY[:4] if settings.SUPABASE_KEY else 'None'
+    logger.info(f"Initializing public client with anon key (first 4 chars): {key_info}")
+    
     supabase: Client = create_client(
         settings.SUPABASE_URL,
         settings.SUPABASE_KEY
@@ -24,7 +26,7 @@ try:
     
     # Create admin client with service role key for privileged operations
     if hasattr(settings, 'SUPABASE_SERVICE_KEY') and settings.SUPABASE_SERVICE_KEY:
-        logger.info(f"Initializing admin client with service role key")
+        logger.info("Initializing admin client with service role key")
         admin_supabase: Client = create_client(
             settings.SUPABASE_URL,
             settings.SUPABASE_SERVICE_KEY
@@ -39,6 +41,6 @@ try:
         
 except Exception as e:
     logger.error(f"Failed to initialize Supabase client: {str(e)}")
-    # Initialize a None client to avoid errors when importing
+    # Initialize as None to avoid errors when importing
     supabase = None
     admin_supabase = None 

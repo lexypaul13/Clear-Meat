@@ -1,17 +1,32 @@
 """User router for the MeatWise API."""
 
-from typing import Any, List
-
+from typing import Any, List, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+import logging
+import json
+from datetime import datetime
+import uuid
 
-from app.models import User, UserUpdate, ScanHistory, ScanHistoryCreate, UserFavorite, UserFavoriteCreate
+from app.models import (
+    User, UserUpdate, 
+    ScanHistory, ScanHistoryCreate, 
+    UserFavorite, UserFavoriteCreate
+)
 from app.core import security
 from app.db import models as db_models
 from app.db.session import get_db
 from app.internal.dependencies import get_current_active_user
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _convert_uuid_to_str(obj_id):
+    """Helper to convert UUID objects to strings."""
+    if hasattr(obj_id, 'hex'):
+        return str(obj_id)
+    return obj_id
 
 
 @router.get("/me", response_model=User)
@@ -29,7 +44,7 @@ def get_current_user(
     """
     # Convert UUID fields to strings to ensure compatibility
     user_dict = {
-        "id": str(current_user.id),
+        "id": _convert_uuid_to_str(current_user.id),
         "email": current_user.email,
         "full_name": current_user.full_name,
         "is_active": current_user.is_active,
@@ -80,7 +95,7 @@ def update_current_user(
     
     # Convert UUID fields to strings to ensure compatibility
     user_dict = {
-        "id": str(current_user.id),
+        "id": _convert_uuid_to_str(current_user.id),
         "email": current_user.email,
         "full_name": current_user.full_name,
         "is_active": current_user.is_active,
@@ -94,45 +109,62 @@ def update_current_user(
 
 
 @router.get("/history", response_model=List[ScanHistory])
-def get_user_scan_history(
+async def get_user_scan_history(
     db: Session = Depends(get_db),
     current_user: db_models.User = Depends(get_current_active_user),
-    skip: int = 0,
-    limit: int = 100,
 ) -> Any:
     """
-    Get current user's scan history.
+    Get scan history for the current user.
     
     Args:
         db: Database session
         current_user: Current user from auth dependency
-        skip: Number of records to skip
-        limit: Maximum number of records to return
         
     Returns:
-        List[ScanHistory]: User's scan history
+        List[ScanHistory]: List of scan history entries for the user
     """
-    return (
-        db.query(db_models.ScanHistory)
-        .filter(db_models.ScanHistory.user_id == current_user.id)
-        .order_by(db_models.ScanHistory.scanned_at.desc())
-        .offset(skip)
-        .limit(limit)
-        .all()
-    )
+    try:
+        scan_history = (
+            db.query(db_models.ScanHistory)
+            .filter(db_models.ScanHistory.user_id == current_user.id)
+            .order_by(db_models.ScanHistory.scanned_at.desc())
+            .all()
+        )
+        
+        # Load products for each scan history entry
+        result = []
+        for scan in scan_history:
+            product = db.query(db_models.Product).filter(db_models.Product.code == scan.product_code).first()
+            
+            # Create a dict with all necessary fields converted properly
+            scan_dict = {
+                "id": _convert_uuid_to_str(scan.id),
+                "user_id": _convert_uuid_to_str(scan.user_id),
+                "product_code": scan.product_code,
+                "location": json.loads(scan.location) if scan.location and isinstance(scan.location, str) else scan.location,
+                "device_info": scan.device_info,
+                "scanned_at": scan.scanned_at,
+                "product": product
+            }
+            result.append(scan_dict)
+                
+        return result
+    except Exception as e:
+        logger.error(f"Error getting user scan history: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get scan history: {str(e)}")
 
 
 @router.post("/history", response_model=ScanHistory)
-def add_scan_history(
-    scan_in: ScanHistoryCreate,
+async def add_scan_history(
+    scan_data: ScanHistoryCreate,
     db: Session = Depends(get_db),
     current_user: db_models.User = Depends(get_current_active_user),
-) -> Any:
+):
     """
-    Add a scan to user's history.
+    Add an item to user's scan history.
     
     Args:
-        scan_in: Scan data
+        scan_data: Scan history data to add
         db: Database session
         current_user: Current user from auth dependency
         
@@ -140,25 +172,63 @@ def add_scan_history(
         ScanHistory: Created scan history entry
         
     Raises:
-        HTTPException: If product not found
+        HTTPException: If product not found or error occurs
     """
-    # Check if product exists
-    product = db.query(db_models.Product).filter(db_models.Product.code == scan_in.product_code).first()
-    if not product:
-        raise HTTPException(status_code=404, detail="Product not found")
-    
-    scan = db_models.ScanHistory(
-        user_id=current_user.id,
-        **scan_in.model_dump(),
-    )
-    db.add(scan)
-    db.commit()
-    db.refresh(scan)
-    return scan
+    try:
+        # Check if product exists
+        product = db.query(db_models.Product).filter(db_models.Product.code == scan_data.product_code).first()
+        if not product:
+            raise HTTPException(status_code=404, detail="Product not found")
+        
+        # Ensure location is a string for database storage
+        location_data = None
+        if scan_data.location:
+            if isinstance(scan_data.location, dict):
+                location_data = json.dumps(scan_data.location)
+            else:
+                location_data = scan_data.location
+                
+        # Generate UUID as string to avoid conversion issues
+        scan_id = str(uuid.uuid4())
+        user_id = _convert_uuid_to_str(current_user.id)
+            
+        # Create scan history entry
+        scan_history = db_models.ScanHistory(
+            id=scan_id,
+            product_code=scan_data.product_code,
+            user_id=user_id,
+            location=location_data,
+            device_info=scan_data.device_info,
+            scanned_at=datetime.now()
+        )
+        
+        db.add(scan_history)
+        db.commit()
+        db.refresh(scan_history)
+        
+        # Make a dict to return with the proper data types
+        response_dict = {
+            "id": scan_id,
+            "user_id": user_id,
+            "product_code": scan_data.product_code,
+            "location": scan_data.location,
+            "device_info": scan_data.device_info,
+            "scanned_at": scan_history.scanned_at,
+            "product": product
+        }
+            
+        return response_dict
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error adding scan history: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to add scan history: {str(e)}")
 
 
 @router.get("/favorites", response_model=List[UserFavorite])
-def get_user_favorites(
+async def get_user_favorites(
     db: Session = Depends(get_db),
     current_user: db_models.User = Depends(get_current_active_user),
 ) -> Any:
@@ -172,15 +242,37 @@ def get_user_favorites(
     Returns:
         List[UserFavorite]: User's favorite products
     """
-    return (
-        db.query(db_models.UserFavorite)
-        .filter(db_models.UserFavorite.user_id == current_user.id)
-        .all()
-    )
+    try:
+        favorites = (
+            db.query(db_models.UserFavorite)
+            .filter(db_models.UserFavorite.user_id == current_user.id)
+            .all()
+        )
+        
+        # Load product details for each favorite
+        result = []
+        for favorite in favorites:
+            # Get the product data
+            product = db.query(db_models.Product).filter(db_models.Product.code == favorite.product_code).first()
+            
+            # Create a dict with all necessary fields converted properly
+            favorite_dict = {
+                "product_code": favorite.product_code,
+                "notes": favorite.notes,
+                "user_id": _convert_uuid_to_str(favorite.user_id),
+                "added_at": favorite.added_at,
+                "product": product
+            }
+            result.append(favorite_dict)
+        
+        return result
+    except Exception as e:
+        logger.error(f"Error retrieving favorites: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve favorites: {str(e)}")
 
 
 @router.post("/favorites", response_model=UserFavorite)
-def add_favorite(
+async def add_favorite(
     favorite_in: UserFavoriteCreate,
     db: Session = Depends(get_db),
     current_user: db_models.User = Depends(get_current_active_user),
@@ -199,31 +291,53 @@ def add_favorite(
     Raises:
         HTTPException: If product not found or already in favorites
     """
-    # Check if product exists
-    product = db.query(db_models.Product).filter(db_models.Product.code == favorite_in.product_code).first()
-    if not product:
-        raise HTTPException(status_code=404, detail="Product not found")
-    
-    # Check if already in favorites
-    existing = (
-        db.query(db_models.UserFavorite)
-        .filter(
-            db_models.UserFavorite.user_id == current_user.id,
-            db_models.UserFavorite.product_code == favorite_in.product_code,
+    try:
+        # Check if product exists
+        product = db.query(db_models.Product).filter(db_models.Product.code == favorite_in.product_code).first()
+        if not product:
+            raise HTTPException(status_code=404, detail="Product not found")
+        
+        # Check if already in favorites
+        existing = (
+            db.query(db_models.UserFavorite)
+            .filter(
+                db_models.UserFavorite.user_id == current_user.id,
+                db_models.UserFavorite.product_code == favorite_in.product_code,
+            )
+            .first()
         )
-        .first()
-    )
-    if existing:
-        raise HTTPException(status_code=400, detail="Product already in favorites")
-    
-    favorite = db_models.UserFavorite(
-        user_id=current_user.id,
-        **favorite_in.model_dump(),
-    )
-    db.add(favorite)
-    db.commit()
-    db.refresh(favorite)
-    return favorite
+        if existing:
+            raise HTTPException(status_code=400, detail="Product already in favorites")
+        
+        # Convert user_id to string
+        user_id = _convert_uuid_to_str(current_user.id)
+        
+        favorite = db_models.UserFavorite(
+            user_id=user_id,
+            **favorite_in.model_dump(),
+        )
+        
+        db.add(favorite)
+        db.commit()
+        db.refresh(favorite)
+        
+        # Create a response dictionary with properly formatted fields
+        response = {
+            "product_code": favorite.product_code,
+            "notes": favorite.notes,
+            "user_id": user_id,
+            "added_at": favorite.added_at,
+            "product": product
+        }
+        
+        return response
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error adding favorite: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to add favorite: {str(e)}")
 
 
 @router.delete("/favorites/{product_code}")
@@ -246,17 +360,24 @@ def remove_favorite(
     Raises:
         HTTPException: If favorite not found
     """
-    favorite = (
-        db.query(db_models.UserFavorite)
-        .filter(
-            db_models.UserFavorite.user_id == current_user.id,
-            db_models.UserFavorite.product_code == product_code,
+    try:
+        favorite = (
+            db.query(db_models.UserFavorite)
+            .filter(
+                db_models.UserFavorite.user_id == current_user.id,
+                db_models.UserFavorite.product_code == product_code,
+            )
+            .first()
         )
-        .first()
-    )
-    if not favorite:
-        raise HTTPException(status_code=404, detail="Favorite not found")
-    
-    db.delete(favorite)
-    db.commit()
-    return {"message": "Favorite removed successfully"} 
+        if not favorite:
+            raise HTTPException(status_code=404, detail="Favorite not found")
+        
+        db.delete(favorite)
+        db.commit()
+        return {"message": "Favorite removed successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error removing favorite: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to remove favorite: {str(e)}") 

@@ -21,15 +21,30 @@ class IngredientCreate(IngredientBase):
     pass
 
 
+class IngredientUpdate(BaseModel):
+    """Ingredient update model."""
+    name: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    risk_level: Optional[str] = None
+    concerns: Optional[List[str]] = None
+    alternatives: Optional[List[str]] = None
+
+
 class Ingredient(IngredientBase):
     """Ingredient response model."""
     id: str
     created_at: datetime
     updated_at: datetime
-
-    class Config:
-        """Pydantic config."""
-        from_attributes = True
+    
+    model_config = {
+        "from_attributes": True,
+        "populate_by_name": True,
+        "json_encoders": {
+            # Handle SQLAlchemy UUID objects
+            "UUID": lambda v: str(v),
+        }
+    }
 
 
 class AdditiveInfo(BaseModel):

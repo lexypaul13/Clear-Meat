@@ -1,7 +1,7 @@
 """Product models for the MeatWise API."""
 
 from datetime import datetime
-from typing import Dict, List, Optional, ForwardRef, TYPE_CHECKING
+from typing import Dict, List, Optional, ForwardRef, TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
@@ -70,11 +70,16 @@ class ProductInDB(ProductBase):
 
 class Product(ProductInDB):
     """Product response model."""
-    ingredients: Optional[List[Ingredient]] = None
+    ingredients: Optional[List["Ingredient"]] = None
 
-    class Config:
-        """Pydantic config."""
-        from_attributes = True
+    model_config = {
+        "from_attributes": True,
+        "populate_by_name": True,
+        "json_encoders": {
+            # Handle SQLAlchemy UUID objects
+            "UUID": lambda v: str(v),
+        }
+    }
 
 
 class ProductNutrition(BaseModel):
@@ -136,4 +141,12 @@ class ProductStructured(BaseModel):
     criteria: ProductCriteria
     health: ProductHealth
     environment: ProductEnvironment
-    metadata: ProductMetadata 
+    metadata: ProductMetadata
+
+
+# Update forward references
+try:
+    from app.models.ingredient import Ingredient
+    Product.model_rebuild()
+except ImportError:
+    pass 

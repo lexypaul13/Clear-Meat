@@ -1,11 +1,11 @@
 """User models for the MeatWise API."""
 
 from datetime import datetime
-from typing import Dict, List, Optional, Any, ForwardRef, TYPE_CHECKING
+from typing import Dict, List, Optional, Any, ForwardRef, TYPE_CHECKING, Union
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Json
 
-# Forward references for circular imports
+# Import Product model properly
 if TYPE_CHECKING:
     from app.models.product import Product
 else:
@@ -13,7 +13,7 @@ else:
 
 
 class UserBase(BaseModel):
-    """Base User model."""
+    """Base User model with common fields."""
     email: EmailStr
     full_name: Optional[str] = None
     is_active: bool = True
@@ -22,12 +22,12 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    """User creation model."""
+    """User creation model with password field."""
     password: str
 
 
 class UserUpdate(BaseModel):
-    """User update model."""
+    """User update model for partial updates."""
     email: Optional[EmailStr] = None
     full_name: Optional[str] = None
     password: Optional[str] = None
@@ -37,7 +37,7 @@ class UserUpdate(BaseModel):
 
 
 class User(UserBase):
-    """User response model."""
+    """User response model with ID and timestamps."""
     id: str
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -49,22 +49,22 @@ class User(UserBase):
 
 # Token models
 class Token(BaseModel):
-    """Token model."""
+    """Token model for authentication responses."""
     access_token: str
     token_type: str
     message: Optional[str] = None
 
 
 class TokenPayload(BaseModel):
-    """Token payload model."""
+    """Token payload model for JWT contents."""
     sub: Optional[str] = None
 
 
 # Scan history models
 class ScanHistoryBase(BaseModel):
-    """Base Scan History model."""
+    """Base Scan History model with common fields."""
     product_code: str
-    location: Optional[Dict[str, Any]] = None
+    location: Optional[Union[Dict[str, Any], str]] = None
     device_info: Optional[str] = None
 
 
@@ -74,20 +74,25 @@ class ScanHistoryCreate(ScanHistoryBase):
 
 
 class ScanHistory(ScanHistoryBase):
-    """Scan History response model."""
+    """Scan History response model with ID, user_id and timestamps."""
     id: str
     user_id: str
     scanned_at: datetime
-    product: Optional[Product] = None
+    product: Optional["Product"] = None
 
-    class Config:
-        """Pydantic config."""
-        from_attributes = True
+    model_config = {
+        "from_attributes": True,
+        "populate_by_name": True,
+        "json_encoders": {
+            # Handle SQLAlchemy UUID objects
+            "UUID": lambda v: str(v),
+        }
+    }
 
 
 # User favorite models
 class UserFavoriteBase(BaseModel):
-    """Base User Favorite model."""
+    """Base User Favorite model with common fields."""
     product_code: str
     notes: Optional[str] = None
 
@@ -98,12 +103,25 @@ class UserFavoriteCreate(UserFavoriteBase):
 
 
 class UserFavorite(UserFavoriteBase):
-    """User Favorite response model."""
-    id: str
+    """User Favorite response model with user_id and timestamps."""
     user_id: str
-    created_at: datetime
-    product: Optional[Product] = None
+    added_at: datetime
+    product: Optional["Product"] = None
 
-    class Config:
-        """Pydantic config."""
-        from_attributes = True 
+    model_config = {
+        "from_attributes": True,
+        "populate_by_name": True,
+        "json_encoders": {
+            # Handle SQLAlchemy UUID objects
+            "UUID": lambda v: str(v),
+        }
+    }
+
+
+# Update forward references
+try:
+    from app.models.product import Product
+    ScanHistory.model_rebuild()
+    UserFavorite.model_rebuild()
+except ImportError:
+    pass 
