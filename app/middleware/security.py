@@ -25,6 +25,79 @@ except ImportError:
     logger.warning("Redis package not installed. Rate limiting will use in-memory storage.")
 
 
+class RedisManager:
+    """Manages Redis connections with fallback and reconnection support."""
+    
+    def __init__(self, redis_url: str):
+        """Initialize Redis manager with the given URL."""
+        self.redis_url = redis_url
+        self.client = None
+        self.last_error_time = 0
+        self.error_count = 0
+        self.max_errors = 3
+        self.retry_interval = 10  # seconds
+        self.connected = False
+        self.initialize()
+    
+    def initialize(self) -> None:
+        """Initialize the Redis client if Redis is available."""
+        if not REDIS_AVAILABLE or not self.redis_url:
+            logger.warning("Redis is not available or URL not provided. Using in-memory storage.")
+            return
+            
+        try:
+            logger.info(f"Connecting to Redis at {self.redis_url}")
+            self.client = redis.from_url(
+                self.redis_url,
+                socket_timeout=2.0,
+                socket_connect_timeout=2.0,
+                health_check_interval=30
+            )
+            # Test connection
+            self.client.ping()
+            self.connected = True
+            self.error_count = 0
+            logger.info("Successfully connected to Redis")
+        except Exception as e:
+            self.connected = False
+            self.error_count += 1
+            self.last_error_time = time.time()
+            logger.error(f"Failed to connect to Redis: {str(e)}")
+    
+    def is_available(self) -> bool:
+        """Check if Redis is available for use."""
+        # If Redis package is not installed, it's not available
+        if not REDIS_AVAILABLE:
+            return False
+            
+        # If we've had too many errors, check if we should retry
+        if self.error_count >= self.max_errors:
+            now = time.time()
+            if now - self.last_error_time >= self.retry_interval:
+                # Try to reconnect
+                logger.info("Attempting to reconnect to Redis after errors")
+                self.initialize()
+            
+        # Return current connection status
+        return self.connected and self.client is not None
+    
+    def execute(self, operation: str, *args, **kwargs):
+        """Execute a Redis operation with error handling and fallback."""
+        if not self.is_available():
+            return None
+            
+        try:
+            # Get the operation method from the client
+            method = getattr(self.client, operation)
+            return method(*args, **kwargs)
+        except Exception as e:
+            logger.warning(f"Redis operation {operation} failed: {str(e)}")
+            self.connected = False
+            self.error_count += 1
+            self.last_error_time = time.time()
+            return None
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Middleware to add security headers to responses."""
     
@@ -102,19 +175,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.include_headers = include_headers
         self.debug_mode = debug_mode
         
-        # Set up Redis connection if URL provided and Redis is available
-        self.redis_client = None
-        if redis_url and REDIS_AVAILABLE:
-            try:
-                self.redis_client = redis.from_url(redis_url)
-                # Test connection
-                self.redis_client.ping()
-                logger.info("Connected to Redis for distributed rate limiting")
-            except Exception as e:
-                logger.error(f"Failed to connect to Redis: {str(e)}")
-                self.redis_client = None
+        # Set up Redis connection if URL provided
+        self.redis_manager = RedisManager(redis_url) if redis_url else None
         
-        logger.info(f"Rate limiter initialized: {limit} requests per {window} seconds")
+        logger.info(f"Configuring rate limiting: {limit} requests per {window} seconds, by IP: {by_ip}, Redis: {redis_url or 'not available'}")
         
         # Debug counters for monitoring
         if self.debug_mode:
@@ -146,15 +210,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     
     def _get_rate_limit_info(self, key: str) -> Tuple[int, int]:
         """Get current rate limit info (requests_count, remaining)."""
-        if self.redis_client:
+        if self.redis_manager and self.redis_manager.is_available():
             redis_key = f"ratelimit:{key}"
             current_time = time.time()
             
             # Remove expired timestamps
-            self.redis_client.zremrangebyscore(redis_key, 0, current_time - self.window)
+            self.redis_manager.execute('zremrangebyscore', redis_key, 0, current_time - self.window)
             
             # Count remaining valid timestamps
-            request_count = self.redis_client.zcard(redis_key)
+            request_count = self.redis_manager.execute('zcard', redis_key) or 0
             remaining = max(0, self.limit - request_count)
             
             return request_count, remaining
@@ -202,12 +266,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         
         # Add this request immediately to prevent race conditions
         now = time.time()
-        if self.redis_client:
+        if self.redis_manager and self.redis_manager.is_available():
             redis_key = f"ratelimit:{key}"
             # Add current request timestamp
-            self.redis_client.zadd(redis_key, {str(now): now})
+            self.redis_manager.execute('zadd', redis_key, {str(now): now})
             # Set expiration on the key to auto-cleanup
-            self.redis_client.expire(redis_key, self.window * 2)
+            self.redis_manager.execute('expire', redis_key, self.window * 2)
             # Count is now one higher
             request_count += 1
             remaining = max(0, self.limit - request_count)
@@ -326,5 +390,5 @@ def add_security_middleware(app: FastAPI) -> None:
         exempt_patterns=["/health", "/docs", "/openapi.json", "/redoc"],
         exempt_ips=[],  # No exempt IPs for testing
         include_headers=True,
-        debug_mode=True
+        debug_mode=settings.DEBUG
     ) 
