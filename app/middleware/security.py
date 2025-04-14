@@ -390,5 +390,5 @@ def add_security_middleware(app: FastAPI) -> None:
         exempt_patterns=["/health", "/docs", "/openapi.json", "/redoc"],
         exempt_ips=[],  # No exempt IPs for testing
         include_headers=True,
-        debug_mode=settings.DEBUG
+        debug_mode=getattr(settings, "DEBUG", False)  # Default to False if DEBUG not set
     ) 
