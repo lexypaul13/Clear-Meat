@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 import uuid
 import logging
 from datetime import datetime
+from typing import Optional
 
 from app.core.config import settings
 from app.core.supabase import supabase, admin_supabase
@@ -151,4 +152,24 @@ def get_current_active_admin(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="The user doesn't have enough privileges",
         )
-    return current_user 
+    return current_user
+
+
+def get_current_user_optional(
+    db: Session = Depends(get_db),
+    token: str = Depends(oauth2_scheme),
+) -> Optional[db_models.User]:
+    """
+    Get the current user from the token, but return None if token is invalid or missing.
+    
+    Args:
+        db: Database session
+        token: OAuth2 token
+        
+    Returns:
+        Optional[User]: User object or None if token is invalid
+    """
+    try:
+        return get_current_user(db, token)
+    except HTTPException:
+        return None 

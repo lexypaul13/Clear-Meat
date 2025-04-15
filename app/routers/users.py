@@ -13,10 +13,12 @@ from app.models import (
     ScanHistory, ScanHistoryCreate, 
     UserFavorite, UserFavoriteCreate
 )
+from app.models.product import Product
 from app.core import security
 from app.db import models as db_models
 from app.db.session import get_db
 from app.internal.dependencies import get_current_active_user
+from app.services.ai_service import generate_personalized_insights
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -51,7 +53,8 @@ def get_current_user(
         "is_superuser": current_user.is_superuser,
         "role": current_user.role,
         "created_at": current_user.created_at,
-        "updated_at": current_user.updated_at
+        "updated_at": current_user.updated_at,
+        "preferences": current_user.preferences
     }
     
     return user_dict
@@ -75,6 +78,18 @@ def update_current_user(
         User: Updated user details
     """
     update_data = user_in.model_dump(exclude_unset=True, exclude_none=True)
+    
+    # Extract preferences to handle separately
+    preferences = update_data.pop("preferences", None)
+    if preferences:
+        # Merge with existing preferences if any
+        existing_preferences = getattr(current_user, "preferences", {}) or {}
+        if isinstance(existing_preferences, str):
+            existing_preferences = json.loads(existing_preferences)
+        
+        # Update with new preferences
+        merged_preferences = {**existing_preferences, **preferences}
+        current_user.preferences = merged_preferences
     
     # Hash password if provided
     if "password" in update_data and update_data["password"]:
@@ -102,7 +117,8 @@ def update_current_user(
         "is_superuser": current_user.is_superuser,
         "role": current_user.role,
         "created_at": current_user.created_at,
-        "updated_at": current_user.updated_at
+        "updated_at": current_user.updated_at,
+        "preferences": current_user.preferences
     }
     
     return user_dict
@@ -191,6 +207,13 @@ async def add_scan_history(
         # Generate UUID as string to avoid conversion issues
         scan_id = str(uuid.uuid4())
         user_id = _convert_uuid_to_str(current_user.id)
+        
+        # Generate personalized insights if user has preferences
+        insights_data = None
+        if hasattr(current_user, 'preferences') and current_user.preferences:
+            insights = generate_personalized_insights(product, current_user.preferences)
+            if insights:
+                insights_data = insights.model_dump()
             
         # Create scan history entry
         scan_history = db_models.ScanHistory(
@@ -199,7 +222,8 @@ async def add_scan_history(
             user_id=user_id,
             location=location_data,
             device_info=scan_data.device_info,
-            scanned_at=datetime.now()
+            scanned_at=datetime.now(),
+            personalized_insights=insights_data
         )
         
         db.add(scan_history)
@@ -214,7 +238,8 @@ async def add_scan_history(
             "location": scan_data.location,
             "device_info": scan_data.device_info,
             "scanned_at": scan_history.scanned_at,
-            "product": product
+            "product": product,
+            "personalized_insights": insights_data
         }
             
         return response_dict
@@ -380,4 +405,130 @@ def remove_favorite(
     except Exception as e:
         db.rollback()
         logger.error(f"Error removing favorite: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to remove favorite: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"Failed to remove favorite: {str(e)}")
+
+
+@router.get("/recommendations", response_model=List[Product])
+async def get_recommendations(
+    db: Session = Depends(get_db),
+    current_user: db_models.User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Get personalized product recommendations.
+    
+    This endpoint provides personalized product recommendations based on:
+    1. User's preference settings from onboarding
+    2. User's favorites
+    3. User's scan history
+    
+    Args:
+        db: Database session
+        current_user: Current user from auth dependency
+        
+    Returns:
+        List[Product]: List of recommended products
+        
+    Raises:
+        HTTPException: If error occurs generating recommendations
+    """
+    try:
+        # Default results if no personalization is possible
+        query = db.query(db_models.Product)
+        
+        # Apply personalization if user has preferences
+        if hasattr(current_user, "preferences") and current_user.preferences:
+            preferences = current_user.preferences
+            
+            # Apply filters based on health goals
+            if preferences.get("health_goal") == "heart_healthy":
+                query = query.filter(db_models.Product.contains_nitrites == False)
+                
+            elif preferences.get("health_goal") == "weight_loss":
+                # For weight loss, prioritize lower-fat products
+                query = query.order_by(db_models.Product.fat)
+                
+            elif preferences.get("health_goal") == "muscle_building":
+                # For muscle building, prioritize high-protein products
+                query = query.order_by(db_models.Product.protein.desc())
+            
+            # Apply filters based on additives preferences
+            if preferences.get("additive_preference") == "avoid_antibiotics":
+                query = query.filter(db_models.Product.antibiotic_free == True)
+                
+            elif preferences.get("additive_preference") == "avoid_hormones":
+                query = query.filter(db_models.Product.hormone_free == True)
+                
+            elif preferences.get("additive_preference") == "organic":
+                query = query.filter(
+                    db_models.Product.contains_preservatives == False,
+                    db_models.Product.antibiotic_free == True,
+                    db_models.Product.hormone_free == True
+                )
+            
+            # Apply filters based on ethical concerns
+            ethical_concerns = preferences.get("ethical_concerns", [])
+            if "animal_welfare" in ethical_concerns:
+                query = query.filter(db_models.Product.pasture_raised == True)
+        
+        # Look at user's scan history to further personalize results
+        scan_history = db.query(db_models.ScanHistory).filter(
+            db_models.ScanHistory.user_id == current_user.id
+        ).order_by(db_models.ScanHistory.scanned_at.desc()).limit(5).all()
+        
+        if scan_history:
+            # Extract meat types from recent scans
+            meat_types = []
+            for scan in scan_history:
+                product = db.query(db_models.Product).filter(
+                    db_models.Product.code == scan.product_code
+                ).first()
+                if product and product.meat_type and product.meat_type not in meat_types:
+                    meat_types.append(product.meat_type)
+            
+            # Prioritize recently scanned meat types
+            if meat_types:
+                query = query.filter(db_models.Product.meat_type.in_(meat_types))
+        
+        # Get products from database, limiting to 10 recommendations
+        recommended_products = query.limit(10).all()
+        
+        # Manually create Pydantic models
+        from app.models.product import Product as ProductModel
+        result = []
+        for product in recommended_products:
+            result.append(
+                ProductModel(
+                    code=product.code,
+                    name=product.name,
+                    brand=product.brand,
+                    description=product.description,
+                    ingredients_text=product.ingredients_text,
+                    calories=product.calories,
+                    protein=product.protein,
+                    fat=product.fat,
+                    carbohydrates=product.carbohydrates,
+                    salt=product.salt,
+                    meat_type=product.meat_type,
+                    contains_nitrites=product.contains_nitrites,
+                    contains_phosphates=product.contains_phosphates,
+                    contains_preservatives=product.contains_preservatives,
+                    antibiotic_free=product.antibiotic_free,
+                    hormone_free=product.hormone_free,
+                    pasture_raised=product.pasture_raised,
+                    risk_rating=product.risk_rating,
+                    risk_score=product.risk_score,
+                    image_url=product.image_url,
+                    source=product.source,
+                    last_updated=product.last_updated,
+                    created_at=product.created_at,
+                    ingredients=[]
+                )
+            )
+        
+        return result
+    except Exception as e:
+        logger.error(f"Error generating recommendations: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to generate recommendations: {str(e)}"
+        ) 

@@ -125,3 +125,70 @@
    - Add analytics dashboard
    - Implement advanced AI features
    - Scale infrastructure 
+
+### Personalization System Architecture (April 15, 2024)
+
+#### System Architecture Diagram
+```
+                 +-------------+
+                 | Mobile App  |
+                 |  Frontend   |
+                 +------+------+
+                        |
+                        | HTTP Requests/Responses
+                        | (Products, Scans, User Prefs)
+                        v
+           +------------+--------------+
+           |        API Backend        |
+           | (FastAPI)                 |
+           |                           |
+           +---+---------------+-------+
+               |               |
+               |               |
+    +----------v----+    +-----v--------+
+    |   Database    |    |   Gemini AI  |
+    | (PostgreSQL)  |<-->| (Google API) |
+    |               |    |              |
+    +---------------+    +--------------+
+    | - Products    |    | - Enhanced   |
+    | - Users       |    |   Insights   |
+    | - Preferences |    | - Smart Recs |
+    | - Scan History|    | - Natural    |
+    +---------------+    |   Language   |
+                         +--------------+
+
+Data Flow:
+1. Mobile app sends scan/product requests to API
+2. API fetches product/user data from database
+3. API sends relevant context to Gemini AI
+4. Gemini generates personalized insights
+5. API combines database & AI data
+6. Mobile app displays personalized results
+```
+
+#### Current Status
+- ✅ Basic personalization system implemented with rule-based logic
+- ✅ User preferences stored and retrieved from database
+- ✅ Product endpoint returns personalized insights
+- ✅ Scan history records personalized data
+- ✅ Recommendations endpoint filters based on user preferences
+
+#### Next Steps
+
+1. **Gemini Integration**
+   - [ ] Replace rule-based personalization with Gemini AI
+   - [ ] Implement context-aware prompting
+   - [ ] Add user preference analysis
+   - [ ] Create personalized recommendation generation
+
+2. **Enhanced Personalization**
+   - [ ] Generate natural language explanations
+   - [ ] Implement pattern recognition for user behavior
+   - [ ] Add adaptive recommendation system
+   - [ ] Create preference suggestion system
+
+3. **Testing and Validation**
+   - [ ] Develop test suite for personalization quality
+   - [ ] Implement A/B testing framework
+   - [ ] Create monitoring for AI response quality
+   - [ ] Set up user feedback collection 

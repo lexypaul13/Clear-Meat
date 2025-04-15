@@ -135,6 +135,13 @@ class ProductMetadata(BaseModel):
     created_at: Optional[datetime] = None
 
 
+class PersonalizedInsight(BaseModel):
+    """Personalized insights for a product based on user preferences."""
+    health_risks: List[Dict[str, str]] = Field(default_factory=list)
+    flagged_ingredients: List[Dict[str, str]] = Field(default_factory=list)
+    alternatives: List[Dict[str, str]] = Field(default_factory=list)
+
+
 class ProductStructured(BaseModel):
     """Structured product response model."""
     product: ProductInfo
@@ -142,6 +149,7 @@ class ProductStructured(BaseModel):
     health: ProductHealth
     environment: ProductEnvironment
     metadata: ProductMetadata
+    personalized_insights: Optional[PersonalizedInsight] = None
 
 
 # Update forward references

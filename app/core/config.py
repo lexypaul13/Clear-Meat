@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "MeatWise API"
     PROJECT_VERSION: str = "0.1.0"
     
+    # Debug mode
+    DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
+    
     # Security
     SECRET_KEY: str = os.getenv("SECRET_KEY", "")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days

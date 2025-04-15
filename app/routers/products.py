@@ -12,6 +12,8 @@ from app.models import (
 from app.db import models as db_models
 from app.db.session import get_db
 from app.utils import helpers
+from app.services.ai_service import generate_personalized_insights
+from app.internal.dependencies import get_current_user_optional
 
 router = APIRouter()
 
@@ -19,6 +21,7 @@ router = APIRouter()
 @router.get("/", response_model=List[Product])
 def get_products(
     db: Session = Depends(get_db),
+    current_user: Optional[db_models.User] = Depends(get_current_user_optional),
     skip: int = 0,
     limit: int = 100,
     meat_type: Optional[str] = None,
@@ -32,6 +35,7 @@ def get_products(
     
     Args:
         db: Database session
+        current_user: Optional current user for personalized filtering
         skip: Number of records to skip
         limit: Maximum number of records to return
         meat_type: Filter by meat type
@@ -57,6 +61,24 @@ def get_products(
             query = query.filter(db_models.Product.contains_phosphates == contains_phosphates)
         if contains_preservatives is not None:
             query = query.filter(db_models.Product.contains_preservatives == contains_preservatives)
+        
+        # Apply user preference-based filtering if user is logged in and has preferences
+        if current_user and hasattr(current_user, "preferences") and current_user.preferences:
+            preferences = current_user.preferences
+            
+            # Example: Filter by dietary goal
+            if preferences.get("dietary_goal") == "keto":
+                # For keto, prioritize high-protein, low-carb options
+                query = query.order_by(db_models.Product.protein.desc())
+            
+            # Example: Filter by additive preference
+            if preferences.get("additive_preference") == "avoid_antibiotics":
+                query = query.filter(db_models.Product.antibiotic_free == True)
+                
+            # Example: Filter by ethical concerns
+            ethical_concerns = preferences.get("ethical_concerns", [])
+            if "animal_welfare" in ethical_concerns:
+                query = query.filter(db_models.Product.pasture_raised == True)
         
         # Get products from database
         products = query.offset(skip).limit(limit).all()
@@ -123,6 +145,7 @@ def get_products(
 def get_product(
     code: str,
     db: Session = Depends(get_db),
+    current_user: Optional[db_models.User] = Depends(get_current_user_optional),
 ) -> Any:
     """
     Get a specific product by barcode with a structured response format.
@@ -130,6 +153,7 @@ def get_product(
     Args:
         code: Product barcode
         db: Database session
+        current_user: Optional current user for personalized insights
         
     Returns:
         dict: Structured product details
@@ -221,6 +245,11 @@ def get_product(
                 created_at=product.created_at
             )
         )
+        
+        # Add personalized insights if user is logged in and has preferences
+        if current_user and hasattr(current_user, "preferences") and current_user.preferences:
+            personalized_insights = generate_personalized_insights(product, current_user.preferences)
+            structured_response.personalized_insights = personalized_insights
         
         return structured_response
         

@@ -12,6 +12,31 @@ else:
     Product = ForwardRef("Product")
 
 
+class UserPreferences(BaseModel):
+    """User preferences from onboarding."""
+    health_goal: Optional[str] = None  # "weight_loss", "muscle_building", "heart_healthy", etc.
+    sourcing_preference: Optional[str] = None  # "local", "organic", "grass_fed", "convenient", etc.
+    cooking_style: Optional[str] = None  # "grill", "quick", "weekend_chef", "meal_prep", etc.
+    ethical_concerns: Optional[List[str]] = None  # ["animal_welfare", "sustainability", "local_farms", etc.]
+    additive_preference: Optional[str] = None  # "organic", "avoid_antibiotics", "avoid_hormones", etc.
+    dietary_goal: Optional[str] = None  # "keto", "muscle_building", "active_lifestyle", etc.
+    
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "health_goal": "heart_healthy",
+                    "sourcing_preference": "local",
+                    "cooking_style": "grill",
+                    "ethical_concerns": ["animal_welfare", "sustainability"],
+                    "additive_preference": "avoid_antibiotics",
+                    "dietary_goal": "active_lifestyle"
+                }
+            ]
+        }
+    }
+
+
 class UserBase(BaseModel):
     """Base User model with common fields."""
     email: EmailStr
@@ -34,6 +59,7 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = None
     is_superuser: Optional[bool] = None
     role: Optional[str] = None
+    preferences: Optional[UserPreferences] = None
 
 
 class User(UserBase):
@@ -41,6 +67,7 @@ class User(UserBase):
     id: str
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    preferences: Optional[UserPreferences] = None
 
     class Config:
         """Pydantic config."""
@@ -79,6 +106,7 @@ class ScanHistory(ScanHistoryBase):
     user_id: str
     scanned_at: datetime
     product: Optional["Product"] = None
+    personalized_insights: Optional[Dict[str, Any]] = None
 
     model_config = {
         "from_attributes": True,

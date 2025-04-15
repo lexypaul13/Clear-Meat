@@ -107,6 +107,9 @@ class User(Base):
     is_superuser = Column(Boolean, default=False, nullable=True)
     role = Column(String, default="basic", nullable=True)  # basic, contributor, moderator, admin
     
+    # User preferences from onboarding
+    preferences = Column(JSONB, nullable=True)
+    
     # Metadata
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=True)
@@ -127,6 +130,7 @@ class ScanHistory(Base):
     scanned_at = Column(DateTime(timezone=True), server_default=func.now())
     location = Column(Text) # JSON stored as text
     device_info = Column(Text)
+    personalized_insights = Column(JSONB, nullable=True)
     
     # Relationships
     user = relationship("User", back_populates="scan_history")
