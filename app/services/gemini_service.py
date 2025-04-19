@@ -42,59 +42,76 @@ def _build_recommendation_prompt(user_preferences, available_products, recent_sc
     if recent_scans:
         recent_scans_summary = ", ".join([f"{scan.product.name} ({scan.product.brand})" for scan in recent_scans[:5]])
     
-    # Construct the prompt using the template
-    prompt = f"""
-    You are a personalized meat product advisor for ClearCut AI, specializing in nutrition, health impact, and ethical sourcing. Your role is to recommend meat-based products from a structured dataset that best match the user's profile. Each recommendation must feel curated, thoughtful, and aligned with the user's goals and values.
+    # Build user profile section
+    user_profile = f"""## User Profile
+- Health Goals: {user_preferences.get('health_goal', 'Not specified')}  
+- Sourcing Preferences: {user_preferences.get('sourcing_preference', 'Not specified')}  
+- Cooking Style: {user_preferences.get('cooking_style', 'Not specified')}  
+- Ethical Concerns: {', '.join(user_preferences.get('ethical_concerns', []))}  
+- Additive Preferences: {user_preferences.get('additive_preference', 'Not specified')}  
+- Dietary Goals: {user_preferences.get('dietary_goal', 'Not specified')}  
+- Recent Scans: {recent_scans_summary}"""
     
-    ## User Profile
-    - Health Goals: {user_preferences.get('health_goal', 'Not specified')}  
-    - Sourcing Preferences: {user_preferences.get('sourcing_preference', 'Not specified')}  
-    - Cooking Style: {user_preferences.get('cooking_style', 'Not specified')}  
-    - Ethical Concerns: {', '.join(user_preferences.get('ethical_concerns', []))}  
-    - Additive Preferences: {user_preferences.get('additive_preference', 'Not specified')}  
-    - Dietary Goals: {user_preferences.get('dietary_goal', 'Not specified')}  
-    - Recent Scans: {recent_scans_summary}  
+    # Build product data section
+    product_data = f"## Available Products\n{json.dumps(available_products, indent=2)}"
     
-    ## Available Products
-    {json.dumps(available_products, indent=2)}
-    
-    ## Instructions:
-    1. Analyze the products and select 4–8 that best match the user's goals and values.
-    2. If limited matches exist, prioritize health goals and additive avoidance.
-    3. Group the results into 2–4 relevant sections based on the user's profile.
-    4. For each product, provide:
-       - A short human-like reason for recommendation
-       - One highlight tag (e.g., "Antibiotic-Free," "Keto-Friendly")
-    5. Format your response in structured JSON for easy rendering in a mobile Explore page.
-    
-    ## Response Format (JSON):
+    # Build instructions section
+    instructions = """## Instructions:
+1. Analyze the products and select 4–8 that best match the user's goals and values.
+2. If limited matches exist, prioritize health goals and additive avoidance.
+3. Group the results into 2–4 relevant sections based on the user's profile.
+4. For each product, provide:
+   - A short one-line reason (max 12 words)
+   - A simple highlight tag (max 2-3 words)
+5. Keep all text concise and focused - section titles should be 2-4 words.
+6. Format your response in structured JSON for easy rendering in a mobile Explore page."""
+
+    # Build response format section
+    response_format = """## Response Format (JSON):
+{
+  "sections": [
     {
-      "sections": [
+      "title": "Heart-Healthy Picks",
+      "description": "Low-sodium, lean meats aligned with your goals",
+      "products": [
         {
-          "title": "Clean & Heart-Healthy Choices",
-          "description": "Products low in sodium and free of risky preservatives—great for cardiovascular health",
-          "products": [
-            {
-              "code": "123456789",
-              "name": "Grass-Fed Ground Beef",
-              "reason": "This beef supports your heart-health goal and avoids nitrites, making it a clean protein choice.",
-              "highlight": "Pasture-Raised"
-            }
-          ]
+          "code": "123456789",
+          "name": "Grass-Fed Ground Beef",
+          "reason": "Great for heart health and ethically sourced",
+          "highlight": "Antibiotic-Free"
         }
       ]
     }
+  ]
+}
+
+Respond with valid JSON only."""
     
-    Respond with valid JSON only.
-    """
+    # Combine all sections
+    prompt = f"""You are a personalized meat product advisor for ClearCut AI, specializing in nutrition, health impact, and ethical sourcing. Your role is to recommend meat-based products from a structured dataset that best match the user's profile. Each recommendation must feel curated, thoughtful, and aligned with the user's goals and values.
+
+{user_profile}
+
+{product_data}
+
+{instructions}
+
+{response_format}"""
     
     return prompt
 
 def _parse_gemini_response(response_text):
     """Parse Gemini response into structured format."""
     try:
-        # Extract and parse JSON from the response
-        recommendations = json.loads(response_text)
+        # Check if the response is wrapped in Markdown code blocks
+        text = response_text.strip()
+        if text.startswith("```json") and text.endswith("```"):
+            # Extract the JSON content from the Markdown code block
+            json_content = text[7:-3].strip()  # Remove ```json and ``` markers
+            recommendations = json.loads(json_content)
+        else:
+            # Try direct JSON parsing
+            recommendations = json.loads(text)
         
         # Basic validation
         if not isinstance(recommendations, dict) or "sections" not in recommendations:
@@ -102,6 +119,6 @@ def _parse_gemini_response(response_text):
             return {"sections": []}
         
         return recommendations
-    except json.JSONDecodeError:
-        logger.error("Failed to parse Gemini response as JSON")
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse Gemini response as JSON: {e}")
         return {"sections": []} 
