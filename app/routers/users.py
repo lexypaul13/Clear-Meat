@@ -19,6 +19,7 @@ from app.db import models as db_models
 from app.db.session import get_db
 from app.internal.dependencies import get_current_active_user
 from app.services.ai_service import generate_personalized_insights
+from app.services.gemini_service import get_personalized_recommendations
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -531,4 +532,68 @@ async def get_recommendations(
         raise HTTPException(
             status_code=500, 
             detail=f"Failed to generate recommendations: {str(e)}"
-        ) 
+        )
+
+
+@router.get("/explore")
+async def get_personalized_explore(
+    db: Session = Depends(get_db),
+    current_user: db_models.User = Depends(get_current_active_user),
+):
+    """Get personalized product recommendations for explore page."""
+    try:
+        # Get user preferences
+        user_preferences = current_user.preferences or {}
+        
+        # Get recent scan history
+        recent_scans = (
+            db.query(db_models.ScanHistory)
+            .filter(db_models.ScanHistory.user_id == current_user.id)
+            .order_by(db_models.ScanHistory.scanned_at.desc())
+            .limit(5)
+            .all()
+        )
+        
+        # Get available products
+        products = db.query(db_models.Product).all()
+        
+        # Format products for Gemini prompt
+        formatted_products = []
+        for product in products:
+            formatted_products.append({
+                "code": product.code,
+                "name": product.name,
+                "brand": product.brand,
+                "description": product.description,
+                "ingredients": product.ingredients_text,
+                "meat_type": product.meat_type,
+                "nutrition": {
+                    "calories": product.calories,
+                    "protein": product.protein,
+                    "fat": product.fat,
+                    "carbohydrates": product.carbohydrates,
+                    "salt": product.salt
+                },
+                "attributes": {
+                    "contains_nitrites": product.contains_nitrites,
+                    "contains_phosphates": product.contains_phosphates,
+                    "contains_preservatives": product.contains_preservatives,
+                    "antibiotic_free": product.antibiotic_free,
+                    "hormone_free": product.hormone_free,
+                    "pasture_raised": product.pasture_raised
+                },
+                "risk_rating": product.risk_rating
+            })
+        
+        # Generate recommendations with Gemini
+        recommendations = get_personalized_recommendations(
+            user_preferences, 
+            formatted_products, 
+            recent_scans
+        )
+        
+        return recommendations
+        
+    except Exception as e:
+        logger.error(f"Error in personalized explore: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) 

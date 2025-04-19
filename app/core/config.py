@@ -98,6 +98,10 @@ class Settings(BaseSettings):
     OPENFOODFACTS_USER_AGENT: str = os.getenv(
         "OPENFOODFACTS_USER_AGENT", "MeatWise - https://github.com/PPSpiderman/meat-products-api"
     )
+    
+    # Gemini AI
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
     # Replace the Config inner class with model_config
     model_config = SettingsConfigDict(
