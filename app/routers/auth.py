@@ -148,7 +148,31 @@ def register_user(
         raise
     except Exception as e:
         logger.exception(f"Unexpected error during registration: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Registration failed due to an unexpected error.",
-        ) 
+        
+        # Check for specific error message patterns
+        error_message = str(e).lower()
+        
+        # Check for duplicate user/email errors
+        if "already been registered" in error_message or "already exists" in error_message:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"A user with this email address already exists. Please login or use a different email."
+            )
+        # Handle password strength errors
+        elif "password" in error_message and ("weak" in error_message or "requirements" in error_message):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Password does not meet requirements: {str(e)}"
+            )
+        # Handle email validation errors
+        elif "email" in error_message and "valid" in error_message:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid email address: {str(e)}"
+            )
+        # For all other errors, return a generic message
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Registration failed due to an unexpected error. Please try again later."
+            ) 

@@ -1,6 +1,99 @@
 # MeatWise API
 
-A specialized API for meat products with intelligent analysis capabilities using Google's Gemini LLM.
+A backend API service that provides personalized meat product recommendations and insights based on user preferences and scan history.
+
+## Features
+
+- **Product Scanning**: Scan meat products and get detailed information
+- **Personalized Insights**: Receive health and ethical insights based on your preferences
+- **Product Recommendations**: Get personalized product recommendations using Gemini AI
+- **Scan History**: Keep track of all your previously scanned products
+
+## Tech Stack
+
+- FastAPI
+- PostgreSQL (with Supabase)
+- Google Gemini AI
+- JWT Authentication
+- Pydantic for data validation
+
+## Getting Started
+
+### Prerequisites
+
+- Python 3.9+
+- PostgreSQL database
+- Google Gemini API key
+
+### Installation
+
+1. Clone the repository:
+   ```
+   git clone https://github.com/yourusername/meat-products-api.git
+   cd meat-products-api
+   ```
+
+2. Create and activate a virtual environment:
+   ```
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+3. Install dependencies:
+   ```
+   pip install -r requirements.txt
+   ```
+
+4. Set up environment variables by creating a `.env` file:
+   ```
+   DATABASE_URL=postgresql://username:password@localhost:5432/meatwise
+   JWT_SECRET=your_jwt_secret
+   GEMINI_API_KEY=your_gemini_api_key
+   ```
+
+### Running the API
+
+Start the FastAPI server:
+```
+uvicorn app.main:app --reload --port 8001
+```
+
+The API will be available at `http://localhost:8001`.
+
+API documentation is automatically generated at:
+- Swagger UI: `http://localhost:8001/docs`
+- ReDoc: `http://localhost:8001/redoc`
+
+## API Endpoints
+
+- `/api/v1/auth/register` - Register a new user
+- `/api/v1/auth/login` - Authenticate a user
+- `/api/v1/users/preferences` - Get/update user preferences
+- `/api/v1/users/history` - Get scan history or add new scan
+- `/api/v1/users/recommendations` - Get product recommendations
+- `/api/v1/users/explore` - Get AI-powered personalized recommendations
+
+## Deployment
+
+For production deployment:
+
+1. Set appropriate environment variables
+2. Use Gunicorn as a process manager:
+   ```
+   gunicorn -w 4 -k uvicorn.workers.UvicornWorker app.main:app
+   ```
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Project Overview
 
