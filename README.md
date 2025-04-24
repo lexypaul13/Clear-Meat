@@ -2,11 +2,97 @@
 
 A backend API service that provides personalized meat product recommendations and insights based on user preferences and scan history.
 
+## Quick Start
+
+1. **Clone and Setup**
+   ```bash
+   # Clone the repository
+   git clone https://github.com/yourusername/meat-products-api.git
+   cd meat-products-api
+
+   # Create and activate virtual environment
+   python -m venv .venv
+   source .venv/bin/activate  # Windows: .venv\Scripts\activate
+   
+   # Install dependencies
+   pip install -r requirements.txt
+   ```
+
+2. **Configure Environment**
+   ```bash
+   # Create .env file
+   touch .env
+
+   # Add these variables to .env for local development:
+   DATABASE_URL=postgresql://postgres:postgres@localhost:54322/postgres
+   SUPABASE_URL=http://localhost:54321
+   SUPABASE_KEY=***REMOVED***
+   JWT_SECRET=your-super-secret-jwt-token-with-at-least-32-characters-long
+   API_V1_STR=/api/v1
+   ```
+
+3. **Start Supabase Locally**
+   ```bash
+   # Navigate to Supabase directory
+   cd supabase
+
+   # Start Supabase services
+   supabase start
+   
+   # This will start:
+   # - PostgreSQL on port 54322
+   # - Supabase API on port 54321
+   # - Studio on port 54323
+   ```
+
+4. **Run the Project**
+   ```bash
+   # Terminal 1: Start the FastAPI backend
+   uvicorn app.main:app --reload --port 8001
+
+   # Terminal 2: Start the Streamlit frontend
+   streamlit run streamlit/app.py
+   ```
+
+5. **Access the Application**
+   - Backend API: http://localhost:8001
+   - API Documentation: http://localhost:8001/docs
+   - Frontend: http://localhost:8501
+   - Supabase Studio: http://localhost:54323
+
+## Supabase Local Development
+
+The project uses Supabase for the database and authentication. The local setup includes:
+
+1. **Database**: PostgreSQL running on port 54322
+   - Default user: `postgres`
+   - Default password: `postgres`
+   - Database name: `postgres`
+
+2. **API**: Supabase API running on port 54321
+   - Default JWT token included in `.env`
+   - All API features available locally
+
+3. **Studio**: Web interface on port 54323
+   - Manage database
+   - View API documentation
+   - Monitor realtime subscriptions
+
+4. **Data Migration**
+   ```bash
+   # Apply database migrations
+   cd supabase
+   supabase migration up
+   
+   # Load initial data
+   supabase db reset
+   ```
+
 ## Features
 
 - **Product Scanning**: Scan meat products and get detailed information
 - **Personalized Insights**: Receive health and ethical insights based on your preferences
-- **Product Recommendations**: Get personalized product recommendations using Gemini AI
+- **Product Recommendations**: Get personalized product recommendations
 - **Scan History**: Keep track of all your previously scanned products
 - **Streamlit Frontend**: User-friendly web interface for exploring meat products
 
@@ -14,90 +100,60 @@ A backend API service that provides personalized meat product recommendations an
 
 - FastAPI
 - PostgreSQL (with Supabase)
-- Google Gemini AI
 - JWT Authentication
-- Pydantic for data validation
-- Streamlit for frontend
+- Pydantic
+- Streamlit
+- BeautifulSoup4
 
-## Getting Started
+## Project Structure
 
-### Prerequisites
-
-- Python 3.9+
-- PostgreSQL database
-- Google Gemini API key
-
-### Installation
-
-1. Clone the repository:
-   ```
-   git clone https://github.com/yourusername/meat-products-api.git
-   cd meat-products-api
-   ```
-
-2. Create and activate a virtual environment:
-   ```
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. Install dependencies:
-   ```
-   pip install -r requirements.txt
-   ```
-
-4. Set up environment variables by creating a `.env` file:
-   ```
-   DATABASE_URL=postgresql://username:password@localhost:5432/meatwise
-   JWT_SECRET=your_jwt_secret
-   GEMINI_API_KEY=your_gemini_api_key
-   ```
-
-### Running the API
-
-Start the FastAPI server:
 ```
-uvicorn app.main:app --reload --port 8001
+meat-products-api/
+├── app/                 # Backend API
+│   ├── api/            # API endpoints
+│   ├── models/         # Data models
+│   └── utils/          # Utilities
+├── streamlit/          # Frontend application
+│   ├── app.py         # Main Streamlit app
+│   └── components/    # UI components
+├── supabase/          # Supabase Configuration
+│   ├── migrations/    # Database migrations
+│   ├── config.toml   # Supabase settings
+│   └── seed.sql      # Initial database data
+├── scripts/            # Utility scripts
+└── requirements.txt    # Project dependencies
 ```
-
-The API will be available at `http://localhost:8001`.
-
-API documentation is automatically generated at:
-- Swagger UI: `http://localhost:8001/docs`
-- ReDoc: `http://localhost:8001/redoc`
-
-### Running the Streamlit Frontend
-
-Start the Streamlit frontend using the provided launcher script:
-```
-python run_streamlit.py
-```
-
-Alternatively, you can run Streamlit directly:
-```
-streamlit run streamlit/app.py
-```
-
-The frontend will be available at `http://localhost:8501` by default.
 
 ## API Endpoints
 
-- `/api/v1/auth/register` - Register a new user
-- `/api/v1/auth/login` - Authenticate a user
-- `/api/v1/users/preferences` - Get/update user preferences
-- `/api/v1/users/history` - Get scan history or add new scan
-- `/api/v1/users/recommendations` - Get product recommendations
-- `/api/v1/users/explore` - Get AI-powered personalized recommendations
+- **Authentication**
+  - POST `/api/v1/auth/register`: Register new user
+  - POST `/api/v1/auth/login`: Login user
 
-## Deployment
+- **Users**
+  - GET `/api/v1/users/me`: Get current user
+  - PUT `/api/v1/users/preferences`: Update preferences
 
-For production deployment:
+- **Products**
+  - GET `/api/v1/products`: List products
+  - GET `/api/v1/products/{id}`: Get product details
+  - GET `/api/v1/products/recommendations`: Get recommendations
 
-1. Set appropriate environment variables
-2. Use Gunicorn as a process manager:
-   ```
-   gunicorn -w 4 -k uvicorn.workers.UvicornWorker app.main:app
-   ```
+## Troubleshooting
+
+1. **Database Connection Issues**
+   - Check if Supabase credentials are correct in `.env`
+   - Verify network connection to Supabase
+
+2. **Frontend Not Loading**
+   - Ensure backend is running on port 8001
+   - Check browser console for errors
+   - Verify Streamlit installation
+
+3. **Authentication Issues**
+   - Clear browser cookies
+   - Check JWT_SECRET in `.env`
+   - Verify user credentials
 
 ## Contributing
 
@@ -240,143 +296,4 @@ The project is organized into the following directories:
 - `src/tests/`: Test files
   - `add_test_product.py`: Script to add test products
   - `simple_test.py`: Basic test suite
-  - `test_api.py`: API tests
-
-- `supabase/`: Supabase configuration
-  - `migrations/`: Database migration files
-  - `seed.sql`: Seed data
-
-## Features
-
-- Product scanning
-- Health risk assessment
-- Additives information
-- User accounts
-- Favorites and history
-
-## API Endpoints
-
-- `/auth`: Authentication endpoints
-- `/users`: User management
-- `/products`: Product information
-- `/ingredients`: Ingredient details
-
-## Environment Variables
-
-This application requires several environment variables to be set for proper operation. You can create a `.env` file in the root directory of the project with the following variables:
-
-```bash
-# Copy .env.example to .env and fill in the required values
-cp .env.example .env
-```
-
-**Required environment variables:**
-
-- `SECRET_KEY`: A secure random key used for JWT token signing (minimum 32 characters)
-  - Generate with: `python -c 'import secrets; print(secrets.token_hex(32))'`
-- `SUPABASE_URL`: The URL of your Supabase instance
-- `SUPABASE_KEY`: The API key for your Supabase instance
-
-For a complete list of environment variables, see the `.env.example` file.
-
-## Security Features
-
-MeatWise API implements several security best practices:
-
-### Authentication & Authorization
-- JWT-based authentication
-- Role-Based Access Control with granular permissions
-- Token expiration and validation
-
-### Protection Against Common Attacks
-- Input validation and sanitization
-- Protection against SQL injection
-- XSS protection via Content Security Policy headers
-- CSRF protection
-- Rate limiting to prevent brute force attacks
-
-### Data Security
-- Secure password hashing with bcrypt
-- Environment-based configuration with .env file
-- No hardcoded secrets
-
-### API Security
-- Request validation middleware
-- Security headers (X-Content-Type-Options, X-Frame-Options, etc.)
-- Proper error handling
-
-## Development Setup
-
-1. Clone the repository
-2. Create a virtual environment: `python -m venv venv`
-3. Activate the virtual environment:
-   - Windows: `venv\Scripts\activate`
-   - Unix/MacOS: `source venv/bin/activate`
-4. Install dependencies: `pip install -r requirements.txt`
-5. Set up environment variables in `.env`
-
-## Product Image Management Tools
-
-The repository includes several scripts to manage product images, fix broken image links, and monitor image status.
-
-### Image Fixing Scripts
-
-1. **Basic Image Fix** - Process individual products:
-   ```
-   python scripts/fix_broken_images.py --url SUPABASE_URL --key SUPABASE_KEY [--limit NUMBER]
-   ```
-
-2. **Bulk Image Fix** - Process all products with missing images in batches:
-   ```
-   python scripts/fix_broken_images_bulk.py --url SUPABASE_URL --key SUPABASE_KEY [--batch-size SIZE] [--max-workers NUMBER]
-   ```
-
-3. **Display Images** - Generate HTML to view updated product images:
-   ```
-   python scripts/display_images.py --url SUPABASE_URL --key SUPABASE_KEY
-   ```
-
-### Monitoring and Management
-
-1. **Dashboard** - Interactive dashboard to monitor image status and updates:
-   ```
-   python scripts/dashboard.py --url SUPABASE_URL --key SUPABASE_KEY
-   ```
-
-2. **Scheduler** - Automate image updates at regular intervals:
-   ```
-   # Start scheduler to run every 24 hours
-   python scripts/scheduler.py --url SUPABASE_URL --key SUPABASE_KEY
-   
-   # Run with custom interval (in hours)
-   python scripts/scheduler.py --url SUPABASE_URL --key SUPABASE_KEY --interval 12
-   
-   # Run an image update immediately
-   python scripts/scheduler.py --url SUPABASE_URL --key SUPABASE_KEY --run-now
-   
-   # Check scheduler status
-   python scripts/scheduler.py --url SUPABASE_URL --key SUPABASE_KEY --status
-   ```
-
-3. **Image Statistics** - Get statistics about product images:
-   ```
-   python scripts/supabase_image_stats.py --url SUPABASE_URL --key SUPABASE_KEY
-   ```
-
-## Dependencies
-
-- FastAPI: Web framework
-- SQLAlchemy: ORM
-- Pydantic: Data validation
-- Supabase: Database access
-- BeautifulSoup4: Web scraping
-- Pandas/Matplotlib: Data analysis and visualization
-- TKinter: GUI dashboard
-- Schedule: Task scheduling
-
-## Testing
-
-Run tests with:
-```
-pytest
-```
+  - `

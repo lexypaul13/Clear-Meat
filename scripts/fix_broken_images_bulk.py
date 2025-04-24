@@ -47,10 +47,10 @@ SUCCESS_LOG = "success_log.txt"
 ERROR_LOG = "error_log.txt"
 USE_PROXIES = False  # Set to True to enable proxy rotation
 
-# Minimum acceptable image dimensions
-MIN_IMAGE_WIDTH = 200
-MIN_IMAGE_HEIGHT = 200
-MIN_IMAGE_SIZE_BYTES = 10000  # 10KB
+# Remove size restrictions
+MIN_IMAGE_WIDTH = 1
+MIN_IMAGE_HEIGHT = 1
+MIN_IMAGE_SIZE_BYTES = 1000  # 1KB minimum
 
 # User agent strings for rotating to avoid rate limiting
 USER_AGENTS = [
@@ -102,11 +102,9 @@ config = {
 def get_search_query(product: Dict[str, Any]) -> str:
     """Generate a search query for the product."""
     name = product.get('name', '')
-    code = product.get('code', '')
-    meat_type = product.get('meat_type', '')
     
-    # Build a specific search query
-    query = f"{name} {code} {meat_type} meat product"
+    # Build a specific search query using just the name
+    query = name.strip()
     
     # Remove very common words to make query more specific
     for common_word in ['the', 'a', 'an', 'of', 'and', 'or', 'for', 'with']:
@@ -124,13 +122,10 @@ def get_proxy() -> Optional[Dict[str, str]]:
 
 def validate_image(image_url: str, product_name: str) -> Tuple[bool, Union[str, Dict[str, Any]]]:
     """
-    Validate the quality and relevance of an image.
-    
-    Returns:
-        Tuple[bool, Union[str, Dict]]: (is_valid, result_or_error_message)
+    Validate the image exists and can be downloaded.
+    No size restrictions applied.
     """
     try:
-        # Use different user agent for validation to avoid detection
         headers = {
             'User-Agent': random.choice(USER_AGENTS),
             'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
@@ -147,66 +142,20 @@ def validate_image(image_url: str, product_name: str) -> Tuple[bool, Union[str, 
         if response.status_code != 200:
             return False, f"Failed to download image: HTTP {response.status_code}"
             
-        # Check image size in bytes
+        # Check basic image size
         image_size = len(response.content)
         if image_size < MIN_IMAGE_SIZE_BYTES:
             return False, f"Image too small: {image_size} bytes"
         
-        # Check image dimensions and format
+        # Verify it's an image
         try:
             img = Image.open(io.BytesIO(response.content))
-            width, height = img.size
             format = img.format
             
-            if width < config["min_image_width"] or height < config["min_image_height"]:
-                return False, f"Image dimensions too small: {width}x{height}"
-                
-            # Check if image is likely to be a logo or icon
-            if width == height and width < 300:
-                # Square small images are often logos
-                return False, "Image appears to be a logo or icon"
-                
-            # Check for transparent PNGs (often logos or graphics, not photos)
-            if format == "PNG" and img.mode == 'RGBA':
-                # Count transparent pixels
-                transparent_pixels = 0
-                for pixel in img.getdata():
-                    if len(pixel) == 4 and pixel[3] == 0:  # RGBA with alpha=0
-                        transparent_pixels += 1
-                
-                # If more than 20% of pixels are transparent, likely a logo
-                if transparent_pixels > (width * height * 0.2):
-                    return False, "Image appears to be a logo or graphic with transparency"
-            
-            # Calculate aspect ratio
-            aspect_ratio = width / height
-            
-            # Analyze image relevance based on filename
-            filename = image_url.split('/')[-1].lower()
-            product_keywords = set(product_name.lower().split())
-            common_words = {'the', 'a', 'an', 'of', 'in', 'for', 'and', 'with'}
-            meaningful_keywords = product_keywords - common_words
-            
-            # If any meaningful keyword appears in the filename, it's a good sign
-            keyword_match = any(keyword in filename for keyword in meaningful_keywords)
-            
-            # If the image is from a stock photo site, it's less likely to be specific to this product
-            is_stock_photo = any(stock_site in image_url.lower() for stock_site in 
-                               ['shutterstock', 'istockphoto', 'gettyimages', 'stock', 'depositphotos'])
-            
-            # Calculate a relevance score (higher is better)
-            relevance_score = 0.5
-            if keyword_match:
-                relevance_score += 0.3
-            if not is_stock_photo:
-                relevance_score += 0.2
-            
             return True, {
-                "dimensions": (width, height),
-                "size_bytes": image_size,
                 "format": format,
-                "aspect_ratio": aspect_ratio,
-                "relevance_score": relevance_score
+                "size_bytes": image_size,
+                "relevance_score": 1.0  # Accept all images that pass basic validation
             }
             
         except Exception as img_error:
@@ -466,13 +415,8 @@ def process_product(supabase, product: Dict[str, Any]) -> Optional[Dict[str, Any
 
 
 def get_products_with_missing_images(supabase, batch_size: int, offset: int) -> List[Dict[str, Any]]:
-    """Get a batch of products with missing or invalid image URLs."""
+    """Get a batch of meat products."""
     query = supabase.table('products').select('*')
-    
-    # Filter for products with missing, broken or empty image URLs
-    query = query.or_(
-        'image_url.is.null,image_url.eq.,image_url.like.%broken%,image_url.like.%unavailable%,image_url.like.%placeholder%'
-    )
     
     # Add pagination
     query = query.range(offset, offset + batch_size - 1)
