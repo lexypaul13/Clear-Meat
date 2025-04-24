@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 # Constants
 BATCH_SIZE = 50  # Process products in batches of 50
-MAX_WORKERS = 5  # Number of parallel workers
+DEFAULT_MAX_WORKERS = 5  # Number of parallel workers
 MAX_RETRIES = 5  # Max retries for requests
 RETRY_DELAY = 5  # Delay between retries in seconds
 SUCCESS_LOG = "success_log.txt"
@@ -90,6 +90,14 @@ SEARCH_ENGINES = [
     }
 ]
 
+# Global configuration that will be updated from command-line args
+config = {
+    "max_workers": DEFAULT_MAX_WORKERS,
+    "use_proxies": USE_PROXIES,
+    "min_image_width": MIN_IMAGE_WIDTH,
+    "min_image_height": MIN_IMAGE_HEIGHT
+}
+
 
 def get_search_query(product: Dict[str, Any]) -> str:
     """Generate a search query for the product."""
@@ -109,7 +117,7 @@ def get_search_query(product: Dict[str, Any]) -> str:
 
 def get_proxy() -> Optional[Dict[str, str]]:
     """Get a random proxy from the list."""
-    if not USE_PROXIES or not PROXIES:
+    if not config["use_proxies"] or not PROXIES:
         return None
     return random.choice(PROXIES)
 
@@ -150,7 +158,7 @@ def validate_image(image_url: str, product_name: str) -> Tuple[bool, Union[str, 
             width, height = img.size
             format = img.format
             
-            if width < MIN_IMAGE_WIDTH or height < MIN_IMAGE_HEIGHT:
+            if width < config["min_image_width"] or height < config["min_image_height"]:
                 return False, f"Image dimensions too small: {width}x{height}"
                 
             # Check if image is likely to be a logo or icon
@@ -184,7 +192,7 @@ def validate_image(image_url: str, product_name: str) -> Tuple[bool, Union[str, 
             
             # If the image is from a stock photo site, it's less likely to be specific to this product
             is_stock_photo = any(stock_site in image_url.lower() for stock_site in 
-                              ['shutterstock', 'istockphoto', 'gettyimages', 'stock', 'depositphotos'])
+                               ['shutterstock', 'istockphoto', 'gettyimages', 'stock', 'depositphotos'])
             
             # Calculate a relevance score (higher is better)
             relevance_score = 0.5
@@ -478,7 +486,7 @@ def process_batch(supabase, products: List[Dict[str, Any]]) -> List[Dict[str, An
     """Process a batch of products in parallel."""
     updated_products = []
     
-    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=config["max_workers"]) as executor:
         # Create a dictionary mapping futures to their product codes for tracking
         future_to_product = {
             executor.submit(process_product, supabase, product): product.get('code', '')
@@ -506,7 +514,7 @@ def main():
     parser.add_argument('--url', help='Supabase URL')
     parser.add_argument('--key', help='Supabase API key')
     parser.add_argument('--batch-size', type=int, default=BATCH_SIZE, help='Batch size for processing')
-    parser.add_argument('--max-workers', type=int, default=MAX_WORKERS, help='Maximum number of worker threads')
+    parser.add_argument('--max-workers', type=int, default=DEFAULT_MAX_WORKERS, help='Maximum number of worker threads')
     parser.add_argument('--limit', type=int, help='Maximum number of products to process (optional)')
     parser.add_argument('--use-proxies', action='store_true', help='Enable proxy rotation')
     parser.add_argument('--min-width', type=int, default=MIN_IMAGE_WIDTH, help='Minimum image width')
@@ -516,15 +524,13 @@ def main():
     supabase_url = args.url or os.getenv("SUPABASE_URL")
     supabase_key = args.key or os.getenv("SUPABASE_KEY")
     batch_size = args.batch_size
-    max_workers = args.max_workers
     limit = args.limit
     
-    # Update global variables from arguments
-    global MAX_WORKERS, USE_PROXIES, MIN_IMAGE_WIDTH, MIN_IMAGE_HEIGHT
-    MAX_WORKERS = max_workers
-    USE_PROXIES = args.use_proxies
-    MIN_IMAGE_WIDTH = args.min_width
-    MIN_IMAGE_HEIGHT = args.min_height
+    # Update global config from arguments
+    config["max_workers"] = args.max_workers
+    config["use_proxies"] = args.use_proxies
+    config["min_image_width"] = args.min_width
+    config["min_image_height"] = args.min_height
     
     if not supabase_url or not supabase_key:
         logger.error("SUPABASE_URL and SUPABASE_KEY must be provided")
