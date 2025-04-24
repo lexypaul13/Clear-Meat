@@ -1,18 +1,18 @@
 # Core requirements
-fastapi==0.103.1
-uvicorn==0.23.2
-sqlalchemy==2.0.20
-pydantic==2.3.0
-python-dotenv==1.0.0
-supabase==1.0.3
+fastapi>=0.109.0
+uvicorn>=0.27.0
+sqlalchemy>=2.0.0
+pydantic>=2.6.0
+python-dotenv>=1.0.0
+supabase>=2.3.0
 alembic==1.12.0
 Jinja2==3.1.2
 
 # Database drivers
-psycopg2-binary==2.9.7
+psycopg2-binary>=2.9.0
 
 # Scraping tools
-requests==2.31.0
+requests>=2.31.0
 beautifulsoup4==4.12.2
 
 # Data processing
@@ -22,8 +22,8 @@ matplotlib==3.8.0
 # Dashboard and visualization
 tkinter
 tqdm==4.66.1
-streamlit==1.28.0
-streamlit-extras==0.3.5
+streamlit>=1.31.0
+streamlit-extras>=0.4.0
 pillow==10.0.1
 extra-streamlit-components==0.1.60
 
@@ -32,4 +32,10 @@ schedule==1.2.0
 
 # Testing
 pytest==7.4.2
-httpx==0.25.0 
+httpx==0.25.0
+
+# Additional requirements
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+python-multipart>=0.0.6
+backoff>=2.2.0 

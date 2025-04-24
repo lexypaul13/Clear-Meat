@@ -1,113 +1,166 @@
-from fastapi import APIRouter, HTTPException, Depends, Header
+"""User routes for the MeatWise API."""
+
+from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
-import jwt
-import os
-from dotenv import load_dotenv
-import random
-from app.api.routes.products import mock_products
+from app.db.supabase import get_supabase
 
-# Load environment variables
-load_dotenv()
-
-# Get JWT secret from environment or use a default for development
-JWT_SECRET = os.getenv("JWT_SECRET", "development_secret_key")
-JWT_ALGORITHM = "HS256"
-
-# Create router
 router = APIRouter()
 
-# Mock user database reference (in a real app, this would be imported from a database module)
-from app.api.routes.auth import mock_users
+class UserPreferences(BaseModel):
+    """User preferences model."""
+    dietary_preferences: List[str]
+    cooking_experience: str
+    meat_preferences: List[str]
 
-# Models
-class Preferences(BaseModel):
-    dietary_preferences: List[str] = []
-    cooking_experience: str = ""
-    meat_preferences: List[str] = []
+class UserHistory(BaseModel):
+    """User history model."""
+    product_id: int
+    viewed_at: str
 
-class UserPreferencesResponse(BaseModel):
-    preferences: Preferences
-
-# Helper function to get user from token
-def get_user_from_token(authorization: Optional[str] = Header(None)):
-    """Get user from authorization token"""
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
+@router.get("/preferences")
+async def get_preferences():
+    """Get user preferences."""
     try:
-        # Extract token from "Bearer <token>"
-        scheme, token = authorization.split()
-        if scheme.lower() != "bearer":
-            raise HTTPException(status_code=401, detail="Invalid authentication scheme")
+        supabase = get_supabase()
+        user = supabase.auth.get_user()
         
-        # Decode token
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        email = payload.get("sub")
+        if not user:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+            
+        response = supabase.table('profiles').select(
+            'preferences'
+        ).eq('id', user.id).single().execute()
         
-        # Check if user exists
-        if email not in mock_users:
-            raise HTTPException(status_code=401, detail="User not found")
-        
-        return mock_users[email]
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Profile not found")
+            
+        return {"preferences": response.data.get("preferences", {})}
     except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/preferences", response_model=UserPreferencesResponse)
-async def get_preferences(user = Depends(get_user_from_token)):
-    """Get user preferences"""
-    return {"preferences": user.get("preferences", {})}
+@router.post("/preferences")
+async def save_preferences(preferences: UserPreferences):
+    """Save user preferences."""
+    try:
+        supabase = get_supabase()
+        user = supabase.auth.get_user()
+        
+        if not user:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+            
+        response = supabase.table('profiles').update({
+            "preferences": preferences.dict()
+        }).eq('id', user.id).execute()
+        
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Profile not found")
+            
+        return {"preferences": response.data[0]["preferences"]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/preferences", response_model=UserPreferencesResponse)
-async def update_preferences(preferences: Preferences, user = Depends(get_user_from_token)):
-    """Update user preferences"""
-    # In a real app, this would update the database
-    mock_users[user["email"]]["preferences"] = preferences.dict()
-    return {"preferences": mock_users[user["email"]]["preferences"]}
+@router.get("/recommendations")
+async def get_recommendations():
+    """Get personalized product recommendations."""
+    try:
+        supabase = get_supabase()
+        user = supabase.auth.get_user()
+        
+        if not user:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+            
+        # Get user preferences
+        profile = supabase.table('profiles').select(
+            'preferences'
+        ).eq('id', user.id).single().execute()
+        
+        if not profile.data:
+            raise HTTPException(status_code=404, detail="Profile not found")
+            
+        preferences = profile.data.get("preferences", {})
+        meat_preferences = preferences.get("meat_preferences", [])
+        
+        # Get recommended products based on preferences
+        if meat_preferences:
+            response = supabase.table('products').select('*').in_('meat_type', meat_preferences).limit(4).execute()
+        else:
+            response = supabase.table('products').select('*').limit(4).execute()
+            
+        return response.data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/recommendations", response_model=List[Dict[str, Any]])
-async def get_recommendations(user = Depends(get_user_from_token)):
-    """Get personalized product recommendations"""
-    user_prefs = user.get("preferences", {})
-    meat_preferences = user_prefs.get("meat_preferences", [])
-    
-    # Filter products by user's meat preferences
-    if meat_preferences:
-        recommended_products = [p for p in mock_products if p["meat_type"] in meat_preferences]
-    else:
-        # If no preferences, return random products
-        recommended_products = random.sample(mock_products, min(4, len(mock_products)))
-    
-    # Sort by recommendation relevance (mocked for demo)
-    # In a real app, this would be based on a more sophisticated algorithm
-    recommended_products = sorted(recommended_products, key=lambda p: random.random())
-    
-    # Return top 4 products
-    return recommended_products[:4]
+@router.get("/history")
+async def get_history():
+    """Get user's product viewing history."""
+    try:
+        supabase = get_supabase()
+        user = supabase.auth.get_user()
+        
+        if not user:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+            
+        response = supabase.table('user_history').select(
+            'products(*)'
+        ).eq('user_id', user.id).order('viewed_at', desc=True).limit(5).execute()
+        
+        return [item["products"] for item in response.data]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/explore", response_model=List[Dict[str, Any]])
-async def explore_products(user = Depends(get_user_from_token)):
-    """Get AI-powered product exploration recommendations"""
-    # In a real app, this would use Gemini AI to generate personalized recommendations
-    
-    # Mock exploration recommendations based on user preferences
-    user_prefs = user.get("preferences", {})
-    dietary_preferences = user_prefs.get("dietary_preferences", [])
-    cooking_experience = user_prefs.get("cooking_experience", "Beginner")
-    
-    # Get all products
-    all_products = mock_products.copy()
-    
-    # Sort by relevance to the user (mocked)
-    # In a real app, this would use a sophisticated algorithm
-    random.shuffle(all_products)
-    
-    # Add mock relevance score
-    for product in all_products:
-        product["relevance_score"] = random.uniform(0.5, 1.0)
-    
-    # Sort by relevance score
-    all_products.sort(key=lambda p: p["relevance_score"], reverse=True)
-    
-    # Return top products
-    return all_products[:6] 
+@router.post("/history")
+async def add_to_history(history: UserHistory):
+    """Add a product to user's viewing history."""
+    try:
+        supabase = get_supabase()
+        user = supabase.auth.get_user()
+        
+        if not user:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+            
+        response = supabase.table('user_history').insert({
+            "user_id": user.id,
+            "product_id": history.product_id,
+            "viewed_at": history.viewed_at
+        }).execute()
+        
+        return response.data[0]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/explore")
+async def get_ai_recommendations():
+    """Get AI-powered recommendations based on user preferences and history."""
+    try:
+        supabase = get_supabase()
+        user = supabase.auth.get_user()
+        
+        if not user:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+            
+        # Get user preferences and history
+        profile = supabase.table('profiles').select('preferences').eq('id', user.id).single().execute()
+        history = supabase.table('user_history').select(
+            'products(meat_type)'
+        ).eq('user_id', user.id).limit(10).execute()
+        
+        if not profile.data:
+            raise HTTPException(status_code=404, detail="Profile not found")
+            
+        # Extract meat types from history
+        meat_types = [item["products"]["meat_type"] for item in history.data]
+        
+        # Get recommendations based on most viewed meat types
+        if meat_types:
+            from collections import Counter
+            most_common = Counter(meat_types).most_common(2)
+            preferred_types = [meat_type for meat_type, _ in most_common]
+            
+            response = supabase.table('products').select('*').in_('meat_type', preferred_types).limit(4).execute()
+            return response.data
+            
+        # Fall back to preference-based recommendations
+        return await get_recommendations()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) 

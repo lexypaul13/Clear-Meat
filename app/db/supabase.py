@@ -1,0 +1,32 @@
+"""Supabase client configuration for the MeatWise application."""
+
+import os
+from dotenv import load_dotenv
+from supabase import create_client, Client
+from functools import lru_cache
+
+# Load environment variables
+load_dotenv()
+
+# Get Supabase configuration
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise ValueError(
+        "SUPABASE_URL and SUPABASE_KEY environment variables must be set. "
+        "Please check your .env file."
+    )
+
+@lru_cache()
+def get_supabase() -> Client:
+    """
+    Get a Supabase client instance.
+    
+    Returns:
+        Client: A Supabase client instance
+        
+    Note:
+        This function is cached to reuse the same client instance
+    """
+    return create_client(SUPABASE_URL, SUPABASE_KEY) 

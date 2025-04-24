@@ -1,135 +1,15 @@
+"""API utilities for the MeatWise Streamlit frontend."""
+
 import requests
 import json
-import time
+from typing import Optional, Dict, Any
 import streamlit as st
+from app.db.supabase import get_supabase
 
-# API base URL - replace with your actual API URL in production
-BASE_URL = "http://localhost:8001/api/v1"
+# API base URL - using direct Supabase access instead of FastAPI
+supabase = get_supabase()
 
-# Mock data for development
-MOCK_DATA = {
-    "products": [
-        {
-            "id": 1,
-            "name": "Premium Beef Steak",
-            "meat_type": "Beef",
-            "price": 15.99,
-            "image_url": "https://images.openfoodfacts.org/images/products/327/408/000/5003/front_en.648.400.jpg",
-            "nutrition": {
-                "protein": "25g",
-                "fat": "15g",
-                "calories": 280
-            },
-            "description": "Premium quality beef steak from grass-fed cows. Perfect for grilling or pan-searing."
-        },
-        {
-            "id": 2,
-            "name": "Organic Chicken Breast",
-            "meat_type": "Poultry",
-            "price": 8.99,
-            "image_url": "https://images.openfoodfacts.org/images/products/000/000/000/9875/front_en.4.400.jpg",
-            "nutrition": {
-                "protein": "22g",
-                "fat": "3g",
-                "calories": 165
-            },
-            "description": "Organic chicken breast from free-range chickens. Low in fat and high in protein."
-        },
-        {
-            "id": 3,
-            "name": "Grass-fed Ground Beef",
-            "meat_type": "Beef",
-            "price": 7.99,
-            "image_url": "https://images.openfoodfacts.org/images/products/843/704/349/1158/front_en.7.400.jpg",
-            "nutrition": {
-                "protein": "20g",
-                "fat": "18g",
-                "calories": 250
-            },
-            "description": "Ground beef from grass-fed cows. Perfect for burgers, meatballs, or any recipe calling for ground beef."
-        },
-        {
-            "id": 4,
-            "name": "Pork Tenderloin",
-            "meat_type": "Pork",
-            "price": 9.99,
-            "image_url": "https://images.openfoodfacts.org/images/products/376/020/616/4542/front_fr.93.400.jpg",
-            "nutrition": {
-                "protein": "26g",
-                "fat": "4g",
-                "calories": 170
-            },
-            "description": "Lean and tender pork tenderloin. Great for roasting or grilling."
-        },
-        {
-            "id": 5,
-            "name": "Lamb Chops",
-            "meat_type": "Lamb",
-            "price": 18.99,
-            "image_url": "https://images.openfoodfacts.org/images/products/500/015/940/4953/front_fr.56.400.jpg",
-            "nutrition": {
-                "protein": "20g",
-                "fat": "12g",
-                "calories": 210
-            },
-            "description": "Premium lamb chops from grass-fed lambs. Perfect for grilling or roasting."
-        },
-        {
-            "id": 6,
-            "name": "Turkey Breast",
-            "meat_type": "Poultry",
-            "price": 6.99,
-            "image_url": "https://images.openfoodfacts.org/images/products/309/264/039/8690/front_fr.24.400.jpg",
-            "nutrition": {
-                "protein": "24g",
-                "fat": "1g",
-                "calories": 120
-            },
-            "description": "Lean turkey breast. Low in fat and high in protein."
-        },
-        {
-            "id": 7,
-            "name": "Duck Breast",
-            "meat_type": "Duck",
-            "price": 12.99,
-            "image_url": "https://images.openfoodfacts.org/images/products/20135750/front_en.7.400.jpg",
-            "nutrition": {
-                "protein": "19g",
-                "fat": "12g",
-                "calories": 180
-            },
-            "description": "Premium duck breast. Rich in flavor and perfect for special occasions."
-        },
-        {
-            "id": 8,
-            "name": "Venison Steak",
-            "meat_type": "Venison",
-            "price": 22.99,
-            "image_url": "https://images.openfoodfacts.org/images/products/20168144/front_en.4.400.jpg",
-            "nutrition": {
-                "protein": "26g",
-                "fat": "2g",
-                "calories": 150
-            },
-            "description": "Lean venison steak. Low in fat and high in protein with a rich, gamey flavor."
-        },
-        {
-            "id": 9,
-            "name": "Turkey Burgers",
-            "meat_type": "Poultry",
-            "price": 5.99,
-            "image_url": "https://images.openfoodfacts.org/images/products/00222629/front_en.3.400.jpg",
-            "nutrition": {
-                "protein": "20g",
-                "fat": "8g",
-                "calories": 160
-            },
-            "description": "Lean turkey burgers. A healthier alternative to beef burgers."
-        }
-    ]
-}
-
-def get_headers():
+def get_headers() -> Dict[str, str]:
     """Get headers with authentication token if available"""
     headers = {
         "Content-Type": "application/json"
@@ -140,173 +20,178 @@ def get_headers():
     
     return headers
 
-def login(email, password):
-    """Login user and return user data with token"""
-    
-    # TODO: Replace with actual API call in production
-    # try:
-    #     response = requests.post(
-    #         f"{BASE_URL}/auth/login",
-    #         headers={"Content-Type": "application/json"},
-    #         json={"email": email, "password": password}
-    #     )
-    #     response.raise_for_status()
-    #     return response.json()
-    # except requests.RequestException as e:
-    #     raise Exception(f"Login failed: {str(e)}")
-    
-    # Mock response for development
-    time.sleep(0.5)  # Simulate API call delay
-    
-    # Mock login check
-    if email == "demo@example.com" and password == "password":
-        return {
-            "id": 1,
-            "name": "Demo User",
+def login(email: str, password: str) -> Dict[str, Any]:
+    """Login user using Supabase auth"""
+    try:
+        auth_response = supabase.auth.sign_in_with_password({
             "email": email,
-            "token": "mock_jwt_token",
+            "password": password
+        })
+        
+        user = auth_response.user
+        profile = supabase.table('profiles').select('*').eq('id', user.id).single().execute()
+        
+        return {
+            "id": user.id,
+            "name": profile.data["full_name"],
+            "email": user.email,
+            "token": auth_response.session.access_token,
+            "preferences": profile.data.get("preferences", {})
+        }
+    except Exception as e:
+        raise Exception(f"Login failed: {str(e)}")
+
+def register(name: str, email: str, password: str) -> Dict[str, Any]:
+    """Register a new user using Supabase auth"""
+    try:
+        auth_response = supabase.auth.sign_up({
+            "email": email,
+            "password": password
+        })
+        
+        user = auth_response.user
+        
+        # Create profile
+        profile = supabase.table('profiles').insert({
+            "id": user.id,
+            "email": email,
+            "full_name": name,
             "preferences": {
-                "dietary_preferences": ["Low Carb", "Low Sodium"],
-                "cooking_experience": "Intermediate",
-                "meat_preferences": ["Beef", "Poultry", "Pork"]
+                "dietary_preferences": [],
+                "cooking_experience": "",
+                "meat_preferences": []
             }
+        }).execute()
+        
+        return {
+            "id": user.id,
+            "name": name,
+            "email": email,
+            "token": auth_response.session.access_token,
+            "preferences": profile.data[0].get("preferences", {})
         }
-    else:
-        raise Exception("Invalid email or password")
+    except Exception as e:
+        raise Exception(f"Registration failed: {str(e)}")
 
-def register(name, email, password):
-    """Register a new user and return user data with token"""
-    
-    # TODO: Replace with actual API call in production
-    # try:
-    #     response = requests.post(
-    #         f"{BASE_URL}/auth/register",
-    #         headers={"Content-Type": "application/json"},
-    #         json={"name": name, "email": email, "password": password}
-    #     )
-    #     response.raise_for_status()
-    #     return response.json()
-    # except requests.RequestException as e:
-    #     raise Exception(f"Registration failed: {str(e)}")
-    
-    # Mock response for development
-    time.sleep(0.5)  # Simulate API call delay
-    
-    return {
-        "id": 1,
-        "name": name,
-        "email": email,
-        "token": "mock_jwt_token",
-        "preferences": {
-            "dietary_preferences": [],
-            "cooking_experience": "",
-            "meat_preferences": []
-        }
-    }
+def save_preferences(preferences: Dict[str, Any]) -> Dict[str, Any]:
+    """Save user preferences to Supabase"""
+    try:
+        if "user_data" not in st.session_state:
+            raise Exception("User not logged in")
+            
+        user_id = st.session_state.user_data["id"]
+        
+        response = supabase.table('profiles').update({
+            "preferences": preferences
+        }).eq('id', user_id).execute()
+        
+        return {"preferences": response.data[0]["preferences"]}
+    except Exception as e:
+        raise Exception(f"Failed to save preferences: {str(e)}")
 
-def save_preferences(preferences):
-    """Save user preferences"""
-    
-    # TODO: Replace with actual API call in production
-    # try:
-    #     response = requests.post(
-    #         f"{BASE_URL}/users/preferences",
-    #         headers=get_headers(),
-    #         json=preferences
-    #     )
-    #     response.raise_for_status()
-    #     return response.json()
-    # except requests.RequestException as e:
-    #     raise Exception(f"Failed to save preferences: {str(e)}")
-    
-    # Mock response for development
-    time.sleep(0.5)  # Simulate API call delay
-    
-    return preferences
+def get_products(search_query: str = "", meat_type: str = "All", 
+                min_price: float = 0, max_price: float = 50) -> list:
+    """Get products from Supabase with filtering"""
+    try:
+        query = supabase.table('products').select('*')
+        
+        if search_query:
+            query = query.ilike('name', f'%{search_query}%')
+        if meat_type != "All":
+            query = query.eq('meat_type', meat_type)
+        if min_price > 0:
+            query = query.gte('price', min_price)
+        if max_price < 50:
+            query = query.lte('price', max_price)
+            
+        response = query.execute()
+        return response.data
+    except Exception as e:
+        raise Exception(f"Failed to fetch products: {str(e)}")
 
-def get_products(search_query="", meat_type="All", min_price=0, max_price=50):
-    """Get products with optional filtering"""
-    
-    # TODO: Replace with actual API call in production
-    # params = {}
-    # if search_query:
-    #     params["search"] = search_query
-    # if meat_type != "All":
-    #     params["meat_type"] = meat_type
-    # if min_price > 0:
-    #     params["min_price"] = min_price
-    # if max_price < 50:
-    #     params["max_price"] = max_price
-    #
-    # try:
-    #     response = requests.get(
-    #         f"{BASE_URL}/products",
-    #         headers=get_headers(),
-    #         params=params
-    #     )
-    #     response.raise_for_status()
-    #     return response.json()
-    # except requests.RequestException as e:
-    #     raise Exception(f"Failed to fetch products: {str(e)}")
-    
-    # Mock response for development
-    time.sleep(0.5)  # Simulate API call delay
-    
-    products = MOCK_DATA["products"]
-    
-    # Filter by search query
-    if search_query:
-        products = [p for p in products if search_query.lower() in p["name"].lower()]
-    
-    # Filter by meat type
-    if meat_type != "All":
-        products = [p for p in products if p["meat_type"] == meat_type]
-    
-    # Filter by price range
-    products = [p for p in products if min_price <= p["price"] <= max_price]
-    
-    return products
-
-def get_product(product_id):
+def get_product(product_id: int) -> Dict[str, Any]:
     """Get a single product by ID"""
-    
-    # TODO: Replace with actual API call in production
-    # try:
-    #     response = requests.get(
-    #         f"{BASE_URL}/products/{product_id}",
-    #         headers=get_headers()
-    #     )
-    #     response.raise_for_status()
-    #     return response.json()
-    # except requests.RequestException as e:
-    #     raise Exception(f"Failed to fetch product: {str(e)}")
-    
-    # Mock response for development
-    time.sleep(0.5)  # Simulate API call delay
-    
-    for product in MOCK_DATA["products"]:
-        if product["id"] == product_id:
-            return product
-    
-    raise Exception(f"Product not found with ID: {product_id}")
+    try:
+        response = supabase.table('products').select('*').eq('id', product_id).single().execute()
+        return response.data
+    except Exception as e:
+        raise Exception(f"Failed to fetch product: {str(e)}")
 
-def get_recommendations():
+def get_recommendations() -> list:
     """Get personalized product recommendations"""
-    
-    # TODO: Replace with actual API call in production
-    # try:
-    #     response = requests.get(
-    #         f"{BASE_URL}/users/recommendations",
-    #         headers=get_headers()
-    #     )
-    #     response.raise_for_status()
-    #     return response.json()
-    # except requests.RequestException as e:
-    #     raise Exception(f"Failed to fetch recommendations: {str(e)}")
-    
-    # Mock response for development
-    time.sleep(0.5)  # Simulate API call delay
-    
-    # Return a subset of products as recommendations
-    # In a real app, this would be based on user preferences
-    return MOCK_DATA["products"][:4] 
+    try:
+        if "user_data" not in st.session_state:
+            return []
+            
+        user_id = st.session_state.user_data["id"]
+        profile = supabase.table('profiles').select('preferences').eq('id', user_id).single().execute()
+        preferences = profile.data.get("preferences", {})
+        meat_preferences = preferences.get("meat_preferences", [])
+        
+        if meat_preferences:
+            response = supabase.table('products').select('*').in_('meat_type', meat_preferences).limit(4).execute()
+        else:
+            response = supabase.table('products').select('*').limit(4).execute()
+            
+        return response.data
+    except Exception as e:
+        raise Exception(f"Failed to fetch recommendations: {str(e)}")
+
+def get_user_history() -> list:
+    """Get user's product viewing history"""
+    try:
+        if "user_data" not in st.session_state:
+            return []
+            
+        user_id = st.session_state.user_data["id"]
+        response = supabase.table('user_history').select(
+            'products(*)'
+        ).eq('user_id', user_id).order('viewed_at', desc=True).limit(5).execute()
+        
+        return [item["products"] for item in response.data]
+    except Exception as e:
+        raise Exception(f"Failed to fetch user history: {str(e)}")
+
+def add_to_history(product_id: int) -> None:
+    """Add a product to user's viewing history"""
+    try:
+        if "user_data" not in st.session_state:
+            return
+            
+        user_id = st.session_state.user_data["id"]
+        supabase.table('user_history').insert({
+            "user_id": user_id,
+            "product_id": product_id
+        }).execute()
+    except Exception as e:
+        raise Exception(f"Failed to add to history: {str(e)}")
+
+def get_ai_recommendations() -> list:
+    """Get AI-powered recommendations based on user preferences and history"""
+    try:
+        if "user_data" not in st.session_state:
+            return []
+            
+        user_id = st.session_state.user_data["id"]
+        
+        # Get user preferences and history
+        profile = supabase.table('profiles').select('preferences').eq('id', user_id).single().execute()
+        history = supabase.table('user_history').select(
+            'products(meat_type)'
+        ).eq('user_id', user_id).limit(10).execute()
+        
+        # Extract meat types from history
+        meat_types = [item["products"]["meat_type"] for item in history.data]
+        
+        # Get recommendations based on most viewed meat types
+        if meat_types:
+            from collections import Counter
+            most_common = Counter(meat_types).most_common(2)
+            preferred_types = [meat_type for meat_type, _ in most_common]
+            
+            response = supabase.table('products').select('*').in_('meat_type', preferred_types).limit(4).execute()
+            return response.data
+            
+        return get_recommendations()  # Fall back to preference-based recommendations
+    except Exception as e:
+        raise Exception(f"Failed to fetch AI recommendations: {str(e)}") 
