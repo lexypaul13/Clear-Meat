@@ -8,6 +8,7 @@ A backend API service that provides personalized meat product recommendations an
 - **Personalized Insights**: Receive health and ethical insights based on your preferences
 - **Product Recommendations**: Get personalized product recommendations using Gemini AI
 - **Scan History**: Keep track of all your previously scanned products
+- **Streamlit Frontend**: User-friendly web interface for exploring meat products
 
 ## Tech Stack
 
@@ -16,6 +17,7 @@ A backend API service that provides personalized meat product recommendations an
 - Google Gemini AI
 - JWT Authentication
 - Pydantic for data validation
+- Streamlit for frontend
 
 ## Getting Started
 
@@ -64,6 +66,20 @@ API documentation is automatically generated at:
 - Swagger UI: `http://localhost:8001/docs`
 - ReDoc: `http://localhost:8001/redoc`
 
+### Running the Streamlit Frontend
+
+Start the Streamlit frontend using the provided launcher script:
+```
+python run_streamlit.py
+```
+
+Alternatively, you can run Streamlit directly:
+```
+streamlit run streamlit/app.py
+```
+
+The frontend will be available at `http://localhost:8501` by default.
+
 ## API Endpoints
 
 - `/api/v1/auth/register` - Register a new user
@@ -109,6 +125,7 @@ MeatWise is a specialized database and API focused on meat products, providing d
 - **Smart Description Generation**: Uses Gemini LLM for generating detailed product descriptions
 - **Efficient Caching System**: Implements aggressive caching to minimize API costs
 - **RAG-Optimized Data**: Structured for effective Retrieval Augmented Generation
+- **User-Friendly Frontend**: Streamlit interface for exploring products with personalized recommendations
 
 ## Technical Implementation
 
@@ -123,6 +140,14 @@ MeatWise is a specialized database and API focused on meat products, providing d
 - Uses Google's Gemini for natural language processing
 - Implements RAG (Retrieval Augmented Generation) for accurate responses
 - Includes caching mechanisms to optimize API usage and costs
+
+### Frontend Implementation
+
+- Multi-page Streamlit interface
+- User authentication and personalization
+- Onboarding flow for collecting preferences
+- Interactive product exploration
+- Detailed product views with nutritional information
 
 ### Data Structure
 
@@ -155,6 +180,8 @@ MeatWise is a specialized database and API focused on meat products, providing d
 2. Copy `.env.example` to `.env` and fill in your credentials
 3. Install dependencies: `pip install -r requirements.txt`
 4. Run migrations: `python scripts/apply_migrations.py`
+5. Start the API: `uvicorn app.main:app --reload --port 8001`
+6. Start the frontend: `python run_streamlit.py`
 
 ## Configuration
 
@@ -171,6 +198,7 @@ GEMINI_API_KEY=your_gemini_api_key
 - ✅ Product data collection from Open Food Facts
 - ✅ Description enhancement infrastructure
 - ✅ Caching system for AI responses
+- ✅ Streamlit frontend development
 
 ### In Progress
 - 🔄 Generating enhanced descriptions using Gemini
