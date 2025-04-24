@@ -286,3 +286,69 @@ MeatWise API implements several security best practices:
    - Unix/MacOS: `source venv/bin/activate`
 4. Install dependencies: `pip install -r requirements.txt`
 5. Set up environment variables in `.env`
+
+## Product Image Management Tools
+
+The repository includes several scripts to manage product images, fix broken image links, and monitor image status.
+
+### Image Fixing Scripts
+
+1. **Basic Image Fix** - Process individual products:
+   ```
+   python scripts/fix_broken_images.py --url SUPABASE_URL --key SUPABASE_KEY [--limit NUMBER]
+   ```
+
+2. **Bulk Image Fix** - Process all products with missing images in batches:
+   ```
+   python scripts/fix_broken_images_bulk.py --url SUPABASE_URL --key SUPABASE_KEY [--batch-size SIZE] [--max-workers NUMBER]
+   ```
+
+3. **Display Images** - Generate HTML to view updated product images:
+   ```
+   python scripts/display_images.py --url SUPABASE_URL --key SUPABASE_KEY
+   ```
+
+### Monitoring and Management
+
+1. **Dashboard** - Interactive dashboard to monitor image status and updates:
+   ```
+   python scripts/dashboard.py --url SUPABASE_URL --key SUPABASE_KEY
+   ```
+
+2. **Scheduler** - Automate image updates at regular intervals:
+   ```
+   # Start scheduler to run every 24 hours
+   python scripts/scheduler.py --url SUPABASE_URL --key SUPABASE_KEY
+   
+   # Run with custom interval (in hours)
+   python scripts/scheduler.py --url SUPABASE_URL --key SUPABASE_KEY --interval 12
+   
+   # Run an image update immediately
+   python scripts/scheduler.py --url SUPABASE_URL --key SUPABASE_KEY --run-now
+   
+   # Check scheduler status
+   python scripts/scheduler.py --url SUPABASE_URL --key SUPABASE_KEY --status
+   ```
+
+3. **Image Statistics** - Get statistics about product images:
+   ```
+   python scripts/supabase_image_stats.py --url SUPABASE_URL --key SUPABASE_KEY
+   ```
+
+## Dependencies
+
+- FastAPI: Web framework
+- SQLAlchemy: ORM
+- Pydantic: Data validation
+- Supabase: Database access
+- BeautifulSoup4: Web scraping
+- Pandas/Matplotlib: Data analysis and visualization
+- TKinter: GUI dashboard
+- Schedule: Task scheduling
+
+## Testing
+
+Run tests with:
+```
+pytest
+```
