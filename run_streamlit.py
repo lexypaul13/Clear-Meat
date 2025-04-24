@@ -38,7 +38,18 @@ def main():
     # Run the Streamlit app
     print("Starting MeatWise Streamlit app...")
     streamlit_path = os.path.join("streamlit", "app.py")
-    subprocess.check_call([sys.executable, "-m", "streamlit", "run", streamlit_path])
+    
+    try:
+        # Use subprocess.Popen instead of check_call for better compatibility
+        # This is the correct way to run a Streamlit app programmatically
+        cmd = [sys.executable, "-m", "streamlit", "run", streamlit_path]
+        print(f"Running command: {' '.join(cmd)}")
+        process = subprocess.Popen(cmd)
+        process.wait()
+    except Exception as e:
+        print(f"Error starting Streamlit: {e}")
+        print("\nAlternative: Run the app directly with:")
+        print(f"streamlit run {streamlit_path}")
 
 if __name__ == "__main__":
     main() 
