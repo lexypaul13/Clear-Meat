@@ -37,9 +37,9 @@ from dotenv import load_dotenv
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler("image_fix.log"),
+        logging.FileHandler('image_scraping.log'),
         logging.StreamHandler()
     ]
 )
@@ -47,8 +47,8 @@ logger = logging.getLogger(__name__)
 
 # Constants
 DATABASE_URL = "postgresql://postgres.szswmlkhirkmozwvhpnc:qvCRDhRRfcaNWnVh@aws-0-us-east-1.pooler.supabase.com:5432/postgres"
-BATCH_SIZE = 10  # Process only 10 products for testing
-DEFAULT_MAX_WORKERS = 5
+BATCH_SIZE = 50  # Process 50 products at a time
+MAX_WORKERS = 5
 MAX_RETRIES = 3
 RETRY_DELAY = 5
 SUCCESS_LOG = "success_log.txt"
@@ -58,7 +58,7 @@ USE_PROXIES = False
 # Minimum image requirements
 MIN_IMAGE_WIDTH = 200
 MIN_IMAGE_HEIGHT = 200
-MIN_IMAGE_SIZE_BYTES = 10000  # 10KB minimum
+MIN_IMAGE_SIZE_BYTES = 5000  # 5KB minimum
 MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024  # 5MB maximum
 
 # User agent strings for rotating
@@ -85,7 +85,7 @@ SEARCH_ENGINES = [
 
 # Global configuration
 config = {
-    "max_workers": DEFAULT_MAX_WORKERS,
+    "max_workers": MAX_WORKERS,
     "use_proxies": USE_PROXIES,
     "min_image_width": MIN_IMAGE_WIDTH,
     "min_image_height": MIN_IMAGE_HEIGHT
@@ -244,7 +244,7 @@ def update_product(conn, product_id: str, new_image_url: str) -> bool:
         conn.rollback()
         return False
 
-async def process_product(session: aiohttp.ClientSession, pool: asyncpg.Pool, product: Dict[str, Any]) -> None:
+async def process_product(session: aiohttp.ClientSession, pool: asyncpg.Pool, product: Dict[str, Any]) -> bool:
     """Process a single product and update its image if needed."""
     product_code = product['code']
     name = product['name']
@@ -286,28 +286,22 @@ async def process_product(session: aiohttp.ClientSession, pool: asyncpg.Pool, pr
                         )
                         
                     logging.info(f"Successfully updated image for product {product_code} ({name})")
-                    return
+                    return True
                     
             except Exception as e:
                 logging.error(f"Error downloading image for product {product_code}: {str(e)}")
                 continue
                 
         logging.error(f"No valid images found for product {product_code} ({name})")
+        return False
         
     except Exception as e:
         logging.error(f"Error processing product {product_code}: {str(e)}")
+        return False
 
 async def main():
-    """Main function to process products without images."""
-    # Initialize logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler('image_update.log'),
-            logging.StreamHandler()
-        ]
-    )
+    """Main function to process products and update images."""
+    logging.info(f"Starting image replacement process with batch size {BATCH_SIZE}")
     
     # Load environment variables
     load_dotenv()
@@ -316,36 +310,48 @@ async def main():
     pool = await asyncpg.create_pool(
         DATABASE_URL,
         min_size=1,
-        max_size=10
+        max_size=MAX_WORKERS
     )
     
     try:
-        # Get products without images or with broken images
-        async with pool.acquire() as conn:
-            products = await conn.fetch(
-                """
-                SELECT code, name, brand 
-                FROM products 
-                WHERE image_data IS NULL 
-                   OR image_url IS NULL 
-                   OR image_url = ''
-                LIMIT 10
-                """
-            )
-            
-        if not products:
-            logging.info("No products found that need image updates")
-            return
-            
-        # Process products
         async with aiohttp.ClientSession() as session:
-            tasks = [process_product(session, pool, dict(p)) for p in products]
-            await asyncio.gather(*tasks)
-            
+            while True:
+                try:
+                    # Get only products without scraped data
+                    async with pool.acquire() as conn:
+                        products = await conn.fetch(
+                            """
+                            SELECT code, name, brand 
+                            FROM products 
+                            WHERE image_data IS NULL
+                            LIMIT $1
+                            """,
+                            BATCH_SIZE
+                        )
+                        
+                    if not products:
+                        logging.info("No products without scraped data found")
+                        break
+                    
+                    # Process products in parallel
+                    tasks = []
+                    for product in products:
+                        task = asyncio.create_task(process_product(session, pool, product))
+                        tasks.append(task)
+                    
+                    results = await asyncio.gather(*tasks)
+                    successful = sum(1 for r in results if r)
+                    logging.info(f"Processed batch: {successful}/{len(products)} products updated with new images")
+                    
+                except Exception as e:
+                    logging.error(f"Error processing batch: {str(e)}")
+                    break
+    
     except Exception as e:
         logging.error(f"Main process error: {str(e)}")
     finally:
         await pool.close()
+    logging.info("Image replacement process completed")
 
 if __name__ == "__main__":
     asyncio.run(main()) 
