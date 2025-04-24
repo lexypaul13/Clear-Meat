@@ -10,6 +10,22 @@ import asyncpg
 import asyncio
 import base64
 from datetime import datetime
+import os
+from dotenv import load_dotenv
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Load environment variables
+load_dotenv()
+
+# Get database URL from environment variable
+DATABASE_URL = os.getenv('DATABASE_URL')
+if not DATABASE_URL:
+    logger.error("DATABASE_URL environment variable is not set")
+    exit(1)
 
 # Products that were successfully updated
 PRODUCTS_TO_CHECK = [
@@ -18,8 +34,6 @@ PRODUCTS_TO_CHECK = [
     ('0017082878533', 'Tender Cuts Prime Rib Seasoning'),
     ('0017000031064', 'Corned Beef Hash')
 ]
-
-DATABASE_URL = "postgresql://postgres.szswmlkhirkmozwvhpnc:qvCRDhRRfcaNWnVh@aws-0-us-east-1.pooler.supabase.com:5432/postgres"
 
 HTML_TEMPLATE = '''
 <!DOCTYPE html>

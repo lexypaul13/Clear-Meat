@@ -33,6 +33,7 @@ import backoff
 from urllib.parse import urlparse
 import base64
 from dotenv import load_dotenv
+import ssl
 
 # Configure logging
 logging.basicConfig(
@@ -46,7 +47,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Constants
-DATABASE_URL = "postgresql://postgres.szswmlkhirkmozwvhpnc:qvCRDhRRfcaNWnVh@aws-0-us-east-1.pooler.supabase.com:5432/postgres"
+DATABASE_URL = os.getenv('DATABASE_URL')
+if not DATABASE_URL:
+    logger.error("DATABASE_URL environment variable is not set")
+    exit(1)
+
 BATCH_SIZE = 50  # Process 50 products at a time
 MAX_WORKERS = 5
 MAX_RETRIES = 3
@@ -90,6 +95,11 @@ config = {
     "min_image_width": MIN_IMAGE_WIDTH,
     "min_image_height": MIN_IMAGE_HEIGHT
 }
+
+# Create SSL context
+ssl_context = ssl.create_default_context()
+ssl_context.check_hostname = False
+ssl_context.verify_mode = ssl.CERT_NONE
 
 def get_search_query(product: Dict[str, Any]) -> str:
     """Generate a search query for the product."""
@@ -310,7 +320,12 @@ async def main():
     pool = await asyncpg.create_pool(
         DATABASE_URL,
         min_size=1,
-        max_size=MAX_WORKERS
+        max_size=MAX_WORKERS,
+        ssl=ssl_context,
+        server_settings={
+            'application_name': 'image_scraper',
+            'timezone': 'UTC'
+        }
     )
     
     try:

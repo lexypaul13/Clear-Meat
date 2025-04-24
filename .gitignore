@@ -80,3 +80,35 @@ debug_*.py
 *.out
 *.swp
 *.swo
+
+# Environment variables and secrets
+.env.local
+.env.*.local
+.env.development
+.env.test
+.env.production
+
+# Security-related files
+*.pem
+*.key
+*.cert
+*.crt
+*.p12
+*.pfx
+*.keystore
+*.jks
+
+# Logs that might contain sensitive data
+*.log
+logs/
+log/
+image_scraping.log
+success_log.txt
+error_log.txt
+
+# IDE and editor files that might contain sensitive data
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
