@@ -1,97 +1,123 @@
 #!/usr/bin/env python
 """
-Verify Updated Images
+Verify Images Script
 -------------------
-This script verifies that product images have been updated in Supabase.
-
-Usage: python scripts/verify_images.py --url SUPABASE_URL --key SUPABASE_KEY
+This script checks the image data for specific products that were successfully updated
+and generates an HTML file to view the results.
 """
 
-import os
-import sys
-import argparse
-from datetime import datetime, timedelta
-import logging
-from supabase import create_client
-from tabulate import tabulate
+import asyncpg
+import asyncio
+import base64
+from datetime import datetime
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler()]
-)
-logger = logging.getLogger(__name__)
+# Products that were successfully updated
+PRODUCTS_TO_CHECK = [
+    ('0017082875662', 'Original Turkey Crinkle-Cut Pepperoni'),
+    ('8422947520014', 'Seitán en lonchas'),
+    ('0017082878533', 'Tender Cuts Prime Rib Seasoning'),
+    ('0017000031064', 'Corned Beef Hash')
+]
 
-def parse_args():
-    """Parse command line arguments"""
-    parser = argparse.ArgumentParser(description='Verify updated product images')
-    parser.add_argument('--url', help='Supabase URL')
-    parser.add_argument('--key', help='Supabase API key')
-    return parser.parse_args()
+DATABASE_URL = "postgresql://postgres.szswmlkhirkmozwvhpnc:qvCRDhRRfcaNWnVh@aws-0-us-east-1.pooler.supabase.com:5432/postgres"
 
-def main():
-    """Main function"""
-    # Parse arguments
-    args = parse_args()
+HTML_TEMPLATE = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Product Image Verification</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }}
+        .product-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-top: 20px; }}
+        .product-card {{ background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+        .product-card h3 {{ margin-top: 0; color: #333; }}
+        .product-card img {{ max-width: 100%; height: auto; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; }}
+        .product-info {{ font-size: 14px; color: #666; }}
+        .timestamp {{ color: #999; font-size: 12px; }}
+        .header {{ background: #333; color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Product Image Verification</h1>
+        <p>Generated on: {timestamp}</p>
+    </div>
+    <div class="product-grid">
+        {product_cards}
+    </div>
+</body>
+</html>
+'''
+
+PRODUCT_CARD_TEMPLATE = '''
+<div class="product-card">
+    <h3>{name}</h3>
+    <div class="product-info">
+        <p>Code: {code}</p>
+        <p>Image Status: {image_status}</p>
+        <p>Last Updated: {last_updated}</p>
+    </div>
+    <img src="{image_url}" alt="{name}">
+    <div class="product-info">
+        <p>Direct Image URL: <a href="{image_url}" target="_blank">{image_url}</a></p>
+    </div>
+</div>
+'''
+
+async def main():
+    # Create connection pool
+    pool = await asyncpg.create_pool(DATABASE_URL)
     
-    # Get Supabase credentials
-    supabase_url = args.url or os.getenv("SUPABASE_URL")
-    supabase_key = args.key or os.getenv("SUPABASE_KEY")
-    
-    if not supabase_url or not supabase_key:
-        logger.error("SUPABASE_URL and SUPABASE_KEY must be provided (via args or env vars)")
-        sys.exit(1)
-    
-    # Connect to Supabase
+    product_cards = []
     try:
-        logger.info(f"Connecting to Supabase at {supabase_url[:30]}...")
-        supabase = create_client(supabase_url, supabase_key)
-    except Exception as e:
-        logger.error(f"Failed to connect to Supabase: {str(e)}")
-        sys.exit(1)
+        async with pool.acquire() as conn:
+            for code, name in PRODUCTS_TO_CHECK:
+                result = await conn.fetchrow(
+                    """
+                    SELECT code, name, image_url, 
+                           CASE 
+                               WHEN image_data IS NULL THEN 'No image data'
+                               ELSE 'Has image data (' || length(image_data) || ' chars)'
+                           END as image_status,
+                           last_updated
+                    FROM products 
+                    WHERE code = $1
+                    """,
+                    code
+                )
+                
+                if result:
+                    # Create product card HTML
+                    card_html = PRODUCT_CARD_TEMPLATE.format(
+                        name=result['name'],
+                        code=result['code'],
+                        image_status=result['image_status'],
+                        last_updated=result['last_updated'],
+                        image_url=result['image_url']
+                    )
+                    product_cards.append(card_html)
+                    
+                    # Also print to console
+                    print(f"\nProduct: {result['name']} (Code: {result['code']})")
+                    print(f"Image URL: {result['image_url']}")
+                    print(f"Image Status: {result['image_status']}")
+                    print(f"Last Updated: {result['last_updated']}")
+                else:
+                    print(f"\nProduct not found: {name} (Code: {code})")
+    finally:
+        await pool.close()
     
-    # Get recently updated products (in the last 2 hours)
-    two_hours_ago = (datetime.now() - timedelta(hours=2)).isoformat()
+    # Generate the complete HTML
+    html_content = HTML_TEMPLATE.format(
+        timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        product_cards="\n".join(product_cards)
+    )
     
-    try:
-        response = supabase.table('products') \
-            .select('code, name, image_url, last_updated, meat_type') \
-            .gt('last_updated', two_hours_ago) \
-            .order('last_updated', desc=True) \
-            .execute()
-        
-        if not hasattr(response, 'data') or not response.data:
-            logger.info("No products updated in the last 2 hours.")
-            return
-        
-        # Display updated products
-        products = response.data
-        logger.info(f"Found {len(products)} recently updated products.")
-        
-        # Display in a table
-        table_data = []
-        for i, product in enumerate(products[:10]):  # Show first 10
-            table_data.append([
-                i+1,
-                product.get('code'),
-                product.get('name'),
-                product.get('meat_type'),
-                product.get('image_url')[:60] + '...' if product.get('image_url') and len(product.get('image_url')) > 60 else product.get('image_url'),
-                product.get('last_updated')
-            ])
-        
-        headers = ["#", "Code", "Name", "Meat Type", "Image URL", "Last Updated"]
-        print("\n=== RECENTLY UPDATED PRODUCTS ===\n")
-        print(tabulate(table_data, headers=headers, tablefmt="grid"))
-        
-        # Provide instructions for checking the images
-        print("\nTo check an image, copy the URL and open it in your browser.")
-        print("Or you can run a URL in the terminal with: open \"[image_url]\"")
-        
-    except Exception as e:
-        logger.error(f"Error querying Supabase: {str(e)}")
-        sys.exit(1)
+    # Write to file
+    with open("product_images.html", "w") as f:
+        f.write(html_content)
+    
+    print("\nHTML file generated: product_images.html")
 
 if __name__ == "__main__":
-    main() 
+    asyncio.run(main()) 
