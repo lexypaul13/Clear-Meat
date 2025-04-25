@@ -296,4 +296,149 @@ The project is organized into the following directories:
 - `src/tests/`: Test files
   - `add_test_product.py`: Script to add test products
   - `simple_test.py`: Basic test suite
-  - `
+
+## Security Best Practices
+1. Never commit `.env` files
+2. Use environment variables for all secrets
+3. Follow the principle of least privilege
+4. Enable Row Level Security in Supabase
+5. Regularly rotate API keys
+
+## Troubleshooting
+- Check if environment variables are properly set
+- Verify network connection to Supabase
+- Check logs for detailed error messages
+
+## Contributing
+1. Create a feature branch
+2. Make your changes
+3. Submit a pull request
+
+## License
+MIT
+
+## Project Overview
+
+MeatWise is a specialized database and API focused on meat products, providing detailed information about:
+
+### Key Features
+
+- **Specialized Meat Product Database**: Currently tracking 1,161 products across different meat types
+- **Smart Description Generation**: Uses Gemini LLM for generating detailed product descriptions
+- **Efficient Caching System**: Implements aggressive caching to minimize API costs
+- **RAG-Optimized Data**: Structured for effective Retrieval Augmented Generation
+- **User-Friendly Frontend**: Streamlit interface for exploring products with personalized recommendations
+
+## Technical Implementation
+
+### Database Structure
+
+- PostgreSQL database with specialized tables for meat products
+- Efficient caching system for AI-generated content
+- Text similarity indexing for better product matching
+
+### AI Integration
+
+- Uses Google's Gemini for natural language processing
+- Implements RAG (Retrieval Augmented Generation) for accurate responses
+- Includes caching mechanisms to optimize API usage and costs
+
+### Frontend Implementation
+
+- Multi-page Streamlit interface
+- User authentication and personalization
+- Onboarding flow for collecting preferences
+- Interactive product exploration
+- Detailed product views with nutritional information
+
+### Data Structure
+
+#### Product Descriptions
+- Original descriptions preserved in `description` column
+- Enhanced descriptions stored in `enhanced_description`
+- Confidence scoring for AI-generated content
+- Timestamp tracking for enhancements
+
+#### Caching System
+- Two-level caching strategy:
+  - Direct product matches
+  - Similar product matches by meat type
+- 30-day cache expiration
+- Confidence scoring for matches
+
+### Data Quality Statistics
+- Total Products: 1,161
+- Products with Original Descriptions: 139
+- Products Needing Enhancement: 1,022
+- Average Description Length: 85 characters
+- Description Quality Distribution:
+  - High Quality (>200 chars): 12%
+  - Medium Quality (100-200 chars): 23%
+  - Low Quality (<100 chars): 65%
+
+## Getting Started
+
+1. Clone the repository
+2. Copy `.env.example` to `.env` and fill in your credentials
+3. Install dependencies: `pip install -r requirements.txt`
+4. Run migrations: `python scripts/apply_migrations.py`
+5. Start the API: `uvicorn app.main:app --reload --port 8001`
+6. Start the frontend: `python run_streamlit.py`
+
+## Configuration
+
+Required environment variables:
+```env
+DATABASE_URL=your_supabase_connection_string
+GEMINI_API_KEY=your_gemini_api_key
+```
+
+## Development Status
+
+### Completed
+- ✅ Initial database schema and migrations
+- ✅ Product data collection from Open Food Facts
+- ✅ Description enhancement infrastructure
+- ✅ Caching system for AI responses
+- ✅ Streamlit frontend development
+
+### In Progress
+- 🔄 Generating enhanced descriptions using Gemini
+- 🔄 RAG implementation for product queries
+- 🔄 API endpoint development
+
+### Planned
+- ⏳ Frontend integration
+- ⏳ User feedback system
+- ⏳ Advanced analytics features
+
+## Contributing
+
+Contributions are welcome! Please read our contributing guidelines for details on our code of conduct and the process for submitting pull requests.
+
+## Project Structure
+
+The project is organized into the following directories:
+
+- `app/`: Core application code
+  - `api/`: API endpoints and routes
+  - `core/`: Core configuration and settings
+  - `db/`: Database connection and models
+  - `internal/`: Internal utilities and dependencies
+  - `models/`: Data models
+  - `routers/`: API routers for different resources
+  - `utils/`: Utility functions
+
+- `data/`: Data files
+  - `json/`: JSON examples and templates
+  - `sql/`: SQL schema and seed data
+
+- `docs/`: Documentation
+  - `API_README.md`: Detailed API documentation
+  - `PROJECT_TRACKER.md`: Project tracking and progress
+
+- `scripts/`: Utility scripts
+
+- `src/tests/`: Test files
+  - `add_test_product.py`: Script to add test products
+  - `simple_test.py`: Basic test suite

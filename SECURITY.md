@@ -1,93 +1,115 @@
-# MeatWise API Security
+# Security Policy
 
-This document outlines the security features and best practices implemented in the MeatWise API.
+## Reporting a Vulnerability
 
-## Security Features
+If you discover a security vulnerability within MeatWise, please send an email to security@meatwise.com. All security vulnerabilities will be promptly addressed.
+
+## Security Measures
 
 ### Authentication & Authorization
+- JWT-based authentication with proper expiration
+- Row Level Security (RLS) in Supabase
+- Role-based access control
+- Session management
 
-- **JWT-based authentication**: Secure token-based authentication using JWTs
-- **Role-Based Access Control (RBAC)**: Granular permission system with four role levels:
-  - Basic: Regular users with limited permissions
-  - Contributor: Can add and edit products and ingredients
-  - Moderator: Can verify products and manage reports
-  - Admin: Full access to all API features
-- **Token expiration**: Configurable token expiration time
+### Data Protection
+- All sensitive data is encrypted at rest
+- Secure communication over HTTPS
+- Regular security audits
+- Data backup and recovery procedures
 
-### Protection Against Common Attacks
-
-- **XSS Protection**:
-  - Content Security Policy headers
-  - Input sanitization and validation
-  - Proper output encoding
-
-- **SQL Injection Protection**:
-  - Parameterized queries using SQLAlchemy
-  - Input validation and sanitization
-
-- **CSRF Protection**:
-  - Proper implementation of API authentication
-  - Security headers
-
-- **Rate Limiting**:
-  - Configurable rate limiting by IP address
-  - Protection against brute force attacks
-
-- **Path Traversal Protection**:
-  - Validation of URL paths to prevent directory traversal
+### Environment Variables
+- Never commit `.env` files to version control
+- Use `.env.example` as a template
+- Rotate secrets regularly
+- Use strong, unique secrets
 
 ### API Security
+- Rate limiting
+- Input validation
+- CORS configuration
+- Request size limits
+- API key rotation policy
 
-- **Security Headers**:
-  - X-Content-Type-Options: nosniff
-  - X-Frame-Options: DENY
-  - X-XSS-Protection: 1; mode=block
-  - Strict-Transport-Security
-  - Referrer-Policy
-  - Permissions-Policy
+### Database Security
+- Connection pooling
+- Prepared statements
+- Input sanitization
+- Regular security patches
 
-- **Input Validation**:
-  - Request body validation
-  - Content type validation
-  - Content length validation
-  - Pattern blocking for known attack vectors
-
-- **Error Handling**:
-  - Secure error messages (no sensitive information)
-  - Proper HTTP status codes
-
-### Data Security
-
-- **Password Security**:
-  - bcrypt password hashing
-  - Minimum password length requirements
-
-- **Environment Configuration**:
-  - No hardcoded secrets
-  - Environment-based configuration with .env file
-  - SECRET_KEY validation (minimum 32 characters)
-
-- **Database Security**:
-  - Row-Level Security in Supabase
-  - Proper access control policies
+### Development Practices
+- Code review requirements
+- Security testing
+- Dependency scanning
+- Regular updates
 
 ## Security Checklist
 
-- [x] Secure SECRET_KEY configuration
-- [x] JWT token expiration and validation
-- [x] Role-Based Access Control
-- [x] Password hashing with bcrypt
-- [x] Protection against XSS
-- [x] Protection against SQL injection
-- [x] Protection against CSRF
-- [x] Rate limiting
-- [x] Security headers
-- [x] Input validation and sanitization
-- [x] Environment-based configuration
-- [x] Database security
+### Configuration
+- [ ] Set up `.env` file with proper values
+- [ ] Configure CORS properly
+- [ ] Set up rate limiting
+- [ ] Enable SSL/TLS
 
-## Reporting Security Issues
+### Database
+- [ ] Enable RLS policies
+- [ ] Set up proper user roles
+- [ ] Configure connection pooling
+- [ ] Regular backups
 
-If you discover a security vulnerability, please send an email to security@meatwise.example.com. All security vulnerabilities will be promptly addressed.
+### Authentication
+- [ ] Implement JWT properly
+- [ ] Set up proper session management
+- [ ] Configure password policies
+- [ ] Enable MFA where applicable
 
-Please do not disclose security vulnerabilities publicly until they have been addressed by our team. 
+### API
+- [ ] Input validation
+- [ ] Output sanitization
+- [ ] Error handling
+- [ ] Logging setup
+
+## Best Practices
+
+1. **Environment Variables**
+   - Use `.env` for local development
+   - Use proper deployment secrets management
+   - Never commit sensitive data
+
+2. **API Security**
+   - Validate all inputs
+   - Sanitize all outputs
+   - Use proper HTTP methods
+   - Implement rate limiting
+
+3. **Database Security**
+   - Use parameterized queries
+   - Implement proper access controls
+   - Regular security audits
+   - Backup strategy
+
+4. **Authentication**
+   - Secure password storage
+   - Token management
+   - Session security
+   - Access control
+
+## Deployment Security
+
+1. **Infrastructure**
+   - Regular security updates
+   - Firewall configuration
+   - Network security
+   - Monitoring setup
+
+2. **Application**
+   - Secure configurations
+   - Error handling
+   - Logging setup
+   - Backup procedures
+
+3. **Maintenance**
+   - Regular updates
+   - Security patches
+   - Dependency updates
+   - Security monitoring 

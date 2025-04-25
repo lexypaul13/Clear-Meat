@@ -1,12 +1,13 @@
-# Byte-compiled / optimized / DLL files
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
 *.so
-
-# Distribution / packaging
 .Python
 build/
 develop-eggs/
@@ -24,6 +25,43 @@ wheels/
 .installed.cfg
 *.egg
 
+# Virtual Environment
+venv/
+.venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+log/
+
+# Local development
+*.sqlite3
+*.db
+
+# Generated files
+random_products.html
+product_gallery.html
+*.generated.*
+
+# Temporary files
+tmp/
+temp/
+.DS_Store
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
 # PyInstaller
 *.manifest
 *.spec
@@ -33,40 +71,12 @@ pip-log.txt
 pip-delete-this-directory.txt
 
 # Unit test / coverage reports
-htmlcov/
 .tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
 .hypothesis/
 .pytest_cache/
 
 # Jupyter Notebook
 .ipynb_checkpoints
-
-# Environment variables
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# VS Code
-.vscode/
-*.code-workspace
-
-# PyCharm
-.idea/
-
-# Logs
-*.log
-log/
-logs/
 
 # Mac OS specific files
 .DS_Store
@@ -83,7 +93,6 @@ debug_*.py
 
 # Environment variables and secrets
 .env.local
-.env.*.local
 .env.development
 .env.test
 .env.production
@@ -99,16 +108,11 @@ debug_*.py
 *.jks
 
 # Logs that might contain sensitive data
-*.log
-logs/
-log/
 image_scraping.log
 success_log.txt
 error_log.txt
 
 # IDE and editor files that might contain sensitive data
-.vscode/
-.idea/
 *.swp
 *.swo
 *~
