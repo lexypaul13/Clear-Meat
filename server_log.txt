@@ -1,2 +1,0 @@
-INFO:     Will watch for changes in these directories: ['/Users/peter/Desktop/meat-products-api']
-ERROR:    [Errno 48] Address already in use
