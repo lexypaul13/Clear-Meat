@@ -96,6 +96,7 @@ debug_*.py
 .env.development
 .env.test
 .env.production
+postgres_password.txt
 
 # Security-related files
 *.pem
@@ -116,3 +117,7 @@ error_log.txt
 *.swp
 *.swo
 *~
+
+# Utility scripts
+get_*.py
+update_env.py
