@@ -549,9 +549,7 @@ async def get_recommendations(
                     hormone_free=product.hormone_free,
                     pasture_raised=product.pasture_raised,
                     risk_rating=product.risk_rating,
-                    risk_score=product.risk_score,
                     image_url=product.image_url,
-                    source=product.source,
                     last_updated=product.last_updated,
                     created_at=product.created_at,
                     ingredients=[]
