@@ -1,0 +1,25 @@
+Remove unused database tables and update code
+
+This commit:
+1. Removes the following tables from the database:
+   - ingredients
+   - product_ingredients
+   - environmental_impact
+   - product_alternatives
+   - price_history
+   - product_errors
+   - product_nutrition
+
+2. Updates the codebase to handle the removal of these tables:
+   - Removes the ingredients router and endpoints
+   - Updates the product router to not reference ingredients
+   - Modifies helper functions to calculate values on-the-fly
+   - Simplifies data models
+
+The data from these tables has been backed up before removal in 
+tables with the _backup_20240430 suffix.
+
+These changes simplify the database schema and reduce maintenance
+overhead while preserving core functionality.
+
+BREAKING CHANGE: The /api/v1/ingredients endpoint is no longer available. 
