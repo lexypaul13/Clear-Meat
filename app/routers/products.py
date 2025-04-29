@@ -104,23 +104,22 @@ def get_products(
                 # Meat-specific information
                 meat_type=db_product.meat_type,
                 
-                # Additives and criteria
-                contains_nitrites=db_product.contains_nitrites,
-                contains_phosphates=db_product.contains_phosphates,
-                contains_preservatives=db_product.contains_preservatives,
+                # Additives and criteria - handle fields that might be missing
+                contains_nitrites=getattr(db_product, 'contains_nitrites', False),
+                contains_phosphates=getattr(db_product, 'contains_phosphates', False),
+                contains_preservatives=getattr(db_product, 'contains_preservatives', False),
                 
-                # Animal welfare criteria
-                antibiotic_free=db_product.antibiotic_free,
-                hormone_free=db_product.hormone_free,
-                pasture_raised=db_product.pasture_raised,
+                # Animal welfare criteria - handle fields that might be missing
+                antibiotic_free=getattr(db_product, 'antibiotic_free', None),
+                hormone_free=getattr(db_product, 'hormone_free', None),
+                pasture_raised=getattr(db_product, 'pasture_raised', None),
                 
-                # Risk rating
-                risk_rating=db_product.risk_rating,
-                risk_score=db_product.risk_score,
+                # Risk rating - handle fields that might be missing
+                risk_rating=getattr(db_product, 'risk_rating', None),
+                risk_score=None,  # risk_score removed from database schema
                 
                 # Additional fields
                 image_url=db_product.image_url,
-                source=db_product.source,
                 
                 # Timestamps
                 last_updated=db_product.last_updated,
@@ -211,18 +210,17 @@ def get_product(
                 description=product.description,
                 ingredients_text=product.ingredients_text,
                 image_url=product.image_url,
-                source=product.source,
                 meat_type=product.meat_type
             ),
             criteria=ProductCriteria(
-                risk_rating=product.risk_rating,
-                risk_score=product.risk_score,
-                contains_nitrites=product.contains_nitrites,
-                contains_phosphates=product.contains_phosphates,
-                contains_preservatives=product.contains_preservatives,
-                antibiotic_free=product.antibiotic_free,
-                hormone_free=product.hormone_free,
-                pasture_raised=product.pasture_raised,
+                risk_rating=getattr(product, 'risk_rating', None),
+                risk_score=None,  # risk_score removed from database schema
+                contains_nitrites=getattr(product, 'contains_nitrites', False),
+                contains_phosphates=getattr(product, 'contains_phosphates', False),
+                contains_preservatives=getattr(product, 'contains_preservatives', False),
+                antibiotic_free=getattr(product, 'antibiotic_free', None),
+                hormone_free=getattr(product, 'hormone_free', None),
+                pasture_raised=getattr(product, 'pasture_raised', None),
                 additives=additives
             ),
             health=ProductHealth(

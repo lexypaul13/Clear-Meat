@@ -48,7 +48,6 @@ class ProductBase(BaseModel):
     
     # Additional fields
     image_url: Optional[str] = None
-    source: Optional[str] = "openfoodfacts"
 
 
 class ProductCreate(ProductBase):
@@ -125,7 +124,6 @@ class ProductInfo(BaseModel):
     description: Optional[str] = None
     ingredients_text: Optional[str] = None
     image_url: Optional[str] = None
-    source: Optional[str] = "openfoodfacts"
     meat_type: Optional[str] = None
 
 

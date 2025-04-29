@@ -8,15 +8,13 @@ from functools import lru_cache
 # Load environment variables
 load_dotenv()
 
-# Get Supabase configuration
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+# Hardcoded Supabase configuration - Use these values when env variables aren't set
+DEFAULT_SUPABASE_URL = "https://szswmlkhirkmozwvhpnc.supabase.co"
+DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN6c3dtbGtoaXJrbW96d3ZocG5jIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIyNjY5NTIsImV4cCI6MjA1Nzg0Mjk1Mn0.yc4eC9f7IAjdNlav0GfxfkaeJAKZp-w1hPGHB0lMqPs"
 
-if not SUPABASE_URL or not SUPABASE_KEY:
-    raise ValueError(
-        "SUPABASE_URL and SUPABASE_KEY environment variables must be set. "
-        "Please check your .env file."
-    )
+# Get Supabase configuration from env or use defaults
+SUPABASE_URL = os.getenv("SUPABASE_URL", DEFAULT_SUPABASE_URL)
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", DEFAULT_SUPABASE_KEY)
 
 @lru_cache()
 def get_supabase() -> Client:

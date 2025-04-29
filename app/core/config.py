@@ -63,6 +63,8 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "")
     POSTGRES_DB: str = os.getenv("POSTGRES_DB", "")
     SQLALCHEMY_DATABASE_URI: Optional[str] = None
+    
+    # Get DATABASE_URL from env - use the one from .env file
     DATABASE_URL: Optional[str] = os.getenv("DATABASE_URL")
 
     @field_validator("DATABASE_URL", mode="before")
