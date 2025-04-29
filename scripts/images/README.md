@@ -47,7 +47,7 @@ python scripts/images/utils/supabase_image_stats.py
 Creates an image gallery for visualization.
 
 Usage:
-```bash
+   ```bash
 python scripts/images/utils/create_image_gallery.py
 ```
 
@@ -57,17 +57,17 @@ python scripts/images/utils/create_image_gallery.py
 Verifies image integrity and accessibility.
 
 Usage:
-```bash
+   ```bash
 python scripts/images/maintenance/verify_images.py
-```
+   ```
 
 ### check_images_in_openfoodfacts.py
 Checks for images in OpenFoodFacts.
 
 Usage:
-```bash
+   ```bash
 python scripts/images/maintenance/check_images_in_openfoodfacts.py
-```
+   ```
 
 ## Image Processing Standards
 

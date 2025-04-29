@@ -60,6 +60,63 @@ A backend API service that provides personalized meat product recommendations an
    - Frontend: http://localhost:8501
    - Supabase Studio: http://localhost:54323
 
+## Running in Test Mode
+
+The API includes a special test mode that skips database operations when the `TESTING` environment variable is set. This is useful for:
+
+1. **Running Tests**: Execute tests without needing a database connection
+2. **Developing Offline**: Work on API functionality without Supabase/PostgreSQL
+3. **CI/CD Pipelines**: Run automated tests in build environments
+
+### How to Use Test Mode
+
+1. **Set the Environment Variable**
+   ```bash
+   # For Linux/macOS
+   export TESTING=true
+   
+   # For Windows PowerShell
+   $env:TESTING="true"
+   
+   # For Windows Command Prompt
+   set TESTING=true
+   ```
+
+2. **Run the Application**
+   ```bash
+   uvicorn app.main:app --reload --port 8001
+   ```
+
+3. **Test Endpoints**
+   
+   When running in test mode:
+   - Database operations are skipped
+   - Endpoints return mock responses where appropriate
+   - Health check endpoint reports `{"status": "healthy", "database": "connected", "mode": "testing"}`
+   - Authentication flows work without database connection
+
+4. **Run Integration Tests**
+   ```bash
+   # With TESTING=true set
+   pytest tests/
+   ```
+
+### Supported Endpoints in Test Mode
+
+The following endpoints fully support test mode:
+
+- **Auth**: `/api/v1/auth/login`, `/api/v1/auth/register`
+- **Products**: `/api/v1/products`, `/api/v1/products/{code}`, `/api/v1/products/{code}/report`, `/api/v1/products/{code}/alternatives`
+- **Users**: `/api/v1/users/me` (PUT)
+- **Health**: `/health/db`
+
+### Example Test Request
+
+```bash
+# Test the products endpoint in test mode
+curl -X GET "http://localhost:8001/api/v1/products/12345678" -H "accept: application/json"
+```
+
 ## Supabase Local Development
 
 The project uses Supabase for the database and authentication. The local setup includes:
