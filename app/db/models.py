@@ -42,44 +42,8 @@ class Product(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
-    ingredients = relationship("ProductIngredient", back_populates="product")
     scan_history = relationship("ScanHistory", back_populates="product")
     user_favorites = relationship("UserFavorite", back_populates="product")
-
-
-class Ingredient(Base):
-    """Ingredient model."""
-    
-    __tablename__ = "ingredients"
-    
-    id = Column(String, primary_key=True, index=True)
-    name = Column(String, nullable=False, unique=True, index=True)
-    description = Column(Text)
-    category = Column(String)
-    risk_level = Column(String)
-    concerns = Column(ARRAY(String), nullable=True)
-    alternatives = Column(ARRAY(String), nullable=True)
-    
-    # Metadata
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    
-    # Relationships
-    products = relationship("ProductIngredient", back_populates="ingredient")
-
-
-class ProductIngredient(Base):
-    """Product-Ingredient relationship model."""
-    
-    __tablename__ = "product_ingredients"
-    
-    product_code = Column(String, ForeignKey("products.code", ondelete="CASCADE"), primary_key=True)
-    ingredient_id = Column(String, ForeignKey("ingredients.id", ondelete="CASCADE"), primary_key=True)
-    position = Column(Integer)
-    
-    # Relationships
-    product = relationship("Product", back_populates="ingredients")
-    ingredient = relationship("Ingredient", back_populates="products")
 
 
 class User(Base):

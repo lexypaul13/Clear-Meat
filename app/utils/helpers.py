@@ -1,9 +1,11 @@
 """Helper functions for the MeatWise application."""
 
 from typing import Any, Dict, List, Optional, Union
+import re
 
 from app.api.v1 import models
 from app.db import models as db_models
+from app.models.ingredient import AdditiveInfo
 
 
 def calculate_risk_score(product: Union[models.ProductBase, Dict[str, Any], db_models.Product]) -> int:
@@ -59,6 +61,66 @@ def parse_ingredients_text(ingredients_text: str) -> List[str]:
     ingredients = [i for i in ingredients if i]
     
     return ingredients
+
+
+def extract_additives_from_text(ingredients_text: str) -> List[AdditiveInfo]:
+    """
+    Extract additives from ingredients text.
+    This replaces the previous database lookup in the ingredients table.
+    
+    Args:
+        ingredients_text: Raw ingredients text
+        
+    Returns:
+        List[AdditiveInfo]: List of detected additives
+    """
+    if not ingredients_text:
+        return []
+    
+    # Common additives and preservatives to look for
+    additive_patterns = [
+        # Format: (regex pattern, name, category, risk_level, concerns, alternatives)
+        (r'(?<![a-zA-Z])E(\s)?250|sodium\s*nitrite', 
+         'Sodium Nitrite (E250)', 'preservative', 'high', 
+         ['Cancer risk', 'Blood vessel damage'], 
+         ['Celery powder', 'Cherry powder', 'Vitamin C']),
+        
+        (r'(?<![a-zA-Z])E(\s)?251|sodium\s*nitrate', 
+         'Sodium Nitrate (E251)', 'preservative', 'high', 
+         ['Cancer risk', 'Blood vessel damage'], 
+         ['Celery powder', 'Cherry powder']),
+        
+        (r'(?<![a-zA-Z])E(\s)?450|sodium\s*phosphate', 
+         'Sodium Phosphate (E450)', 'stabilizer', 'medium', 
+         ['Kidney damage', 'Heart issues'], 
+         ['Potassium phosphate', 'Natural brines']),
+        
+        (r'(?<![a-zA-Z])E(\s)?621|monosodium\s*glutamate|MSG', 
+         'Monosodium Glutamate (E621)', 'flavor enhancer', 'medium', 
+         ['Headaches', 'Flushing'], 
+         ['Yeast extract', 'Mushroom extract']),
+        
+        (r'BHA|butylated\s*hydroxyanisole|(?<![a-zA-Z])E(\s)?320', 
+         'Butylated Hydroxyanisole (BHA/E320)', 'antioxidant', 'medium', 
+         ['Hormone disruption', 'Potential carcinogen'], 
+         ['Vitamin E', 'Rosemary extract']),
+    ]
+    
+    found_additives = []
+    
+    # Check for each additive
+    for pattern, name, category, risk_level, concerns, alternatives in additive_patterns:
+        if re.search(pattern, ingredients_text, re.IGNORECASE):
+            additive = AdditiveInfo(
+                name=name,
+                category=category,
+                risk_level=risk_level,
+                concerns=concerns,
+                alternatives=alternatives
+            )
+            found_additives.append(additive)
+    
+    return found_additives
 
 
 def detect_additives(ingredients: List[str]) -> Dict[str, bool]:
@@ -142,10 +204,33 @@ def assess_environmental_impact(product: Union[models.ProductBase, Dict[str, Any
     Returns:
         Dict[str, Any]: Environmental impact assessment
     """
-    # In the AI-first approach, environmental impact is assessed by AI
-    # Return a placeholder impact assessment
+    # With environmental_impact table removed, this is now calculated on-the-fly
+    impact = "Moderate"
+    details = "Environmental impact assessment based on meat type and processing method."
+    practices = []
+    
+    # Get meat type
+    meat_type = None
+    if isinstance(product, dict):
+        meat_type = product.get('meat_type')
+    else:
+        meat_type = getattr(product, 'meat_type', None)
+    
+    # Adjust impact based on meat type
+    if meat_type:
+        meat_type = meat_type.lower()
+        if 'beef' in meat_type:
+            impact = "High"
+            details = "Beef production typically has a higher environmental footprint due to methane emissions and land use."
+        elif 'pork' in meat_type:
+            impact = "Moderate"
+            details = "Pork production has a moderate environmental impact compared to beef but higher than poultry."
+        elif 'chicken' in meat_type or 'poultry' in meat_type:
+            impact = "Lower"
+            details = "Poultry generally has a lower environmental footprint than red meat."
+    
     return {
-        "impact": "Moderate",
-        "details": "Environmental impact is now assessed using AI analysis.",
-        "sustainability_practices": []
+        "impact": impact,
+        "details": details,
+        "sustainability_practices": practices
     } 

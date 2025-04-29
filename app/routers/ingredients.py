@@ -1,4 +1,12 @@
-"""Ingredient router for the MeatWise API."""
+"""Ingredient router for the MeatWise API (BACKUP BEFORE DELETION).
+
+This file is being kept as a backup only and should be deleted after 
+confirming the migration was successful. 
+
+Original endpoint functionality:
+- GET /api/v1/ingredients/ - List all ingredients with filtering
+- GET /api/v1/ingredients/{ingredient_id} - Get specific ingredient details
+"""
 
 from typing import Any, List, Optional, Dict
 

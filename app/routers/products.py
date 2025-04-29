@@ -6,9 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.models import (
-    Product, ProductStructured, 
-    AdditiveInfo
+    Product, ProductStructured
 )
+from app.models.ingredient import AdditiveInfo
 from app.db import models as db_models
 from app.db.session import get_db
 from app.utils import helpers
@@ -171,27 +171,13 @@ def get_product(
             # Add a default name if missing
             product.name = "Unknown Product"
         
-        # Get ingredients
-        ingredients_query = (
-            db.query(db_models.ProductIngredient)
-            .filter(db_models.ProductIngredient.product_code == code)
-            .join(db_models.Ingredient)
-            .all()
-        )
-        
-        # Prepare additives information
+        # Additives information is now determined through analysis of ingredients_text
+        # rather than from the database, since the ingredients table is gone
         additives = []
-        for product_ingredient in ingredients_query:
-            ingredient = product_ingredient.ingredient
-            if ingredient and hasattr(ingredient, 'category') and ingredient.category in ["preservative", "additive", "stabilizer", "flavor enhancer"]:
-                additive_info = AdditiveInfo(
-                    name=ingredient.name if hasattr(ingredient, 'name') else "Unknown",
-                    category=ingredient.category if hasattr(ingredient, 'category') else None,
-                    risk_level=ingredient.risk_level if hasattr(ingredient, 'risk_level') else None,
-                    concerns=ingredient.concerns if hasattr(ingredient, 'concerns') else None,
-                    alternatives=ingredient.alternatives if hasattr(ingredient, 'alternatives') else None
-                )
-                additives.append(additive_info)
+        if product.ingredients_text:
+            # Extract additives from ingredients text
+            additive_info = helpers.extract_additives_from_text(product.ingredients_text)
+            additives = additive_info or []
         
         # Assess health concerns
         health_concerns = helpers.assess_health_concerns(product)
