@@ -11,18 +11,25 @@ class ProductBase(BaseModel):
     """Base product model."""
     name: str
     meat_type: str
-    price: float
+    description: Optional[str] = None
     image_url: Optional[str] = None
-    nutrition: dict
-    description: str
+    calories: Optional[float] = None
+    protein: Optional[float] = None
+    fat: Optional[float] = None
+    carbohydrates: Optional[float] = None
+    salt: Optional[float] = None
 
 class ProductCreate(ProductBase):
     """Product creation model."""
-    pass
+    code: str
 
 class Product(ProductBase):
-    """Product model with ID."""
-    id: int
+    """Product model with code."""
+    code: str
+    brand: Optional[str] = None
+    ingredients_text: Optional[str] = None
+    risk_rating: Optional[str] = None
+    image_data: Optional[str] = None
 
     class Config:
         """Pydantic config."""
@@ -32,8 +39,7 @@ class Product(ProductBase):
 async def get_products(
     search: Optional[str] = None,
     meat_type: Optional[str] = None,
-    min_price: Optional[float] = None,
-    max_price: Optional[float] = None
+    risk_rating: Optional[str] = None
 ):
     """Get all products with optional filtering."""
     try:
@@ -44,22 +50,20 @@ async def get_products(
             query = query.ilike('name', f'%{search}%')
         if meat_type:
             query = query.eq('meat_type', meat_type)
-        if min_price is not None:
-            query = query.gte('price', min_price)
-        if max_price is not None:
-            query = query.lte('price', max_price)
+        if risk_rating:
+            query = query.eq('risk_rating', risk_rating)
             
         response = query.execute()
         return response.data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/products/{product_id}", response_model=Product)
-async def get_product(product_id: int):
-    """Get a single product by ID."""
+@router.get("/products/{code}", response_model=Product)
+async def get_product(code: str):
+    """Get a single product by code."""
     try:
         supabase = get_supabase()
-        response = supabase.table('products').select('*').eq('id', product_id).single().execute()
+        response = supabase.table('products').select('*').eq('code', code).single().execute()
         
         if not response.data:
             raise HTTPException(status_code=404, detail="Product not found")
@@ -78,14 +82,14 @@ async def create_product(product: ProductCreate):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.put("/products/{product_id}", response_model=Product)
-async def update_product(product_id: int, product: ProductCreate):
+@router.put("/products/{code}", response_model=Product)
+async def update_product(code: str, product: ProductBase):
     """Update a product."""
     try:
         supabase = get_supabase()
         response = supabase.table('products').update(
             product.dict()
-        ).eq('id', product_id).execute()
+        ).eq('code', code).execute()
         
         if not response.data:
             raise HTTPException(status_code=404, detail="Product not found")
@@ -94,12 +98,12 @@ async def update_product(product_id: int, product: ProductCreate):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.delete("/products/{product_id}")
-async def delete_product(product_id: int):
+@router.delete("/products/{code}")
+async def delete_product(code: str):
     """Delete a product."""
     try:
         supabase = get_supabase()
-        response = supabase.table('products').delete().eq('id', product_id).execute()
+        response = supabase.table('products').delete().eq('code', code).execute()
         
         if not response.data:
             raise HTTPException(status_code=404, detail="Product not found")

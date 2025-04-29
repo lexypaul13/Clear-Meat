@@ -30,23 +30,12 @@ class Product(Base):
     # Meat-specific information
     meat_type = Column(String, index=True)
     
-    # Additives and criteria
-    contains_nitrites = Column(Boolean, default=False)
-    contains_phosphates = Column(Boolean, default=False)
-    contains_preservatives = Column(Boolean, default=False)
-    
-    # Animal welfare criteria
-    antibiotic_free = Column(Boolean)
-    hormone_free = Column(Boolean)
-    pasture_raised = Column(Boolean)
-    
     # Risk rating
     risk_rating = Column(String, index=True)
-    risk_score = Column(Integer)
     
-    # Additional fields
+    # Image fields
     image_url = Column(String)
-    source = Column(String, default="openfoodfacts")
+    image_data = Column(Text)
     
     # Metadata
     last_updated = Column(DateTime(timezone=True), server_default=func.now())

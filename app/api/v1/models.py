@@ -51,23 +51,12 @@ class ProductBase(BaseModel):
     # Meat-specific information
     meat_type: Optional[str] = None
     
-    # Additives and criteria
-    contains_nitrites: Optional[bool] = False
-    contains_phosphates: Optional[bool] = False
-    contains_preservatives: Optional[bool] = False
-    
-    # Animal welfare criteria
-    antibiotic_free: Optional[bool] = None
-    hormone_free: Optional[bool] = None
-    pasture_raised: Optional[bool] = None
-    
     # Risk rating
     risk_rating: Optional[str] = None
-    risk_score: Optional[int] = None
     
-    # Additional fields
+    # Image fields
     image_url: Optional[str] = None
-    source: Optional[str] = "openfoodfacts"
+    image_data: Optional[str] = None
 
 
 class ProductCreate(ProductBase):
@@ -222,13 +211,6 @@ class AdditiveInfo(BaseModel):
 class ProductCriteria(BaseModel):
     """Product criteria model."""
     risk_rating: Optional[str] = None
-    risk_score: Optional[int] = None
-    contains_nitrites: Optional[bool] = False
-    contains_phosphates: Optional[bool] = False
-    contains_preservatives: Optional[bool] = False
-    antibiotic_free: Optional[bool] = None
-    hormone_free: Optional[bool] = None
-    pasture_raised: Optional[bool] = None
     additives: Optional[List[AdditiveInfo]] = None
 
 
@@ -253,7 +235,7 @@ class ProductInfo(BaseModel):
     description: Optional[str] = None
     ingredients_text: Optional[str] = None
     image_url: Optional[str] = None
-    source: Optional[str] = "openfoodfacts"
+    image_data: Optional[str] = None
     meat_type: Optional[str] = None
 
 

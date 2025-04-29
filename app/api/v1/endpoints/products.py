@@ -20,9 +20,6 @@ def get_products(
     limit: int = 100,
     meat_type: Optional[str] = None,
     risk_rating: Optional[str] = None,
-    contains_nitrites: Optional[bool] = None,
-    contains_phosphates: Optional[bool] = None,
-    contains_preservatives: Optional[bool] = None,
 ) -> Any:
     """
     Retrieve products with optional filtering.
@@ -33,9 +30,6 @@ def get_products(
         limit: Maximum number of records to return
         meat_type: Filter by meat type
         risk_rating: Filter by risk rating
-        contains_nitrites: Filter by nitrites content
-        contains_phosphates: Filter by phosphates content
-        contains_preservatives: Filter by preservatives content
         
     Returns:
         List[models.Product]: List of products
@@ -48,12 +42,6 @@ def get_products(
             query = query.filter(db_models.Product.meat_type == meat_type)
         if risk_rating:
             query = query.filter(db_models.Product.risk_rating == risk_rating)
-        if contains_nitrites is not None:
-            query = query.filter(db_models.Product.contains_nitrites == contains_nitrites)
-        if contains_phosphates is not None:
-            query = query.filter(db_models.Product.contains_phosphates == contains_phosphates)
-        if contains_preservatives is not None:
-            query = query.filter(db_models.Product.contains_preservatives == contains_preservatives)
         
         # Get products from database
         products = query.offset(skip).limit(limit).all()
@@ -79,23 +67,12 @@ def get_products(
                 # Meat-specific information
                 meat_type=db_product.meat_type,
                 
-                # Additives and criteria
-                contains_nitrites=db_product.contains_nitrites,
-                contains_phosphates=db_product.contains_phosphates,
-                contains_preservatives=db_product.contains_preservatives,
-                
-                # Animal welfare criteria
-                antibiotic_free=db_product.antibiotic_free,
-                hormone_free=db_product.hormone_free,
-                pasture_raised=db_product.pasture_raised,
-                
                 # Risk rating
                 risk_rating=db_product.risk_rating,
-                risk_score=db_product.risk_score,
                 
-                # Additional fields
+                # Image fields
                 image_url=db_product.image_url,
-                source=db_product.source,
+                image_data=db_product.image_data,
                 
                 # Timestamps
                 last_updated=db_product.last_updated,
@@ -182,18 +159,11 @@ def get_product(
                 description=product.description,
                 ingredients_text=product.ingredients_text,
                 image_url=product.image_url,
-                source=product.source,
+                image_data=product.image_data,
                 meat_type=product.meat_type
             ),
             criteria=models.ProductCriteria(
                 risk_rating=product.risk_rating,
-                risk_score=product.risk_score,
-                contains_nitrites=product.contains_nitrites,
-                contains_phosphates=product.contains_phosphates,
-                contains_preservatives=product.contains_preservatives,
-                antibiotic_free=product.antibiotic_free,
-                hormone_free=product.hormone_free,
-                pasture_raised=product.pasture_raised,
                 additives=additives
             ),
             health=models.ProductHealth(
@@ -219,14 +189,11 @@ def get_product(
         
         return structured_response
         
-    except HTTPException:
-        # Re-raise HTTP exceptions
-        raise
     except Exception as e:
-        # Log the error for debugging
-        print(f"Error processing product {code}: {str(e)}")
+        # Log the error
+        print(f"Error processing product data: {str(e)}")
         raise HTTPException(
-            status_code=500,
+            status_code=500, 
             detail=f"Error processing product data: {str(e)}"
         )
 
