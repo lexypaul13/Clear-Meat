@@ -534,3 +534,47 @@ This migration:
 - Creates a GIN index for faster JSON queries
 - Adds validation for the preference structure
 - Provides a data migration function to convert legacy preferences to the new format
+
+## Personalized Recommendations
+
+MeatWise implements a personalized recommendation system based on user preferences collected during onboarding:
+
+### Rule-Based Weighted Scoring
+
+The explore endpoint uses a transparent, rule-based weighted scoring algorithm that:
+
+1. **Normalizes product attributes** (protein, fat, sodium, etc.)
+2. **Applies preference-based weights** derived from user onboarding responses
+3. **Calculates a "fit score"** for each product using this formula:
+
+```
+score = (w_protein * protein_normalized) +
+        (w_fat * (1 - fat_normalized)) +
+        (w_sodium * (1 - sodium_normalized)) +
+        (w_antibiotic * antibiotic_free) +
+        (w_grass * pasture_raised) +
+        (w_preservatives * !contains_preservatives)
+```
+
+Where weights are adjusted according to user preferences - for example, if a user indicates they prioritize protein, the protein weight increases significantly.
+
+### Implementation
+
+The system requires two database functions:
+- `get_product_max_values()`: Retrieves maximum values for normalization
+- `execute_sql(sql_query TEXT)`: Executes dynamic SQL for the scoring calculation
+
+To add these functions, run:
+
+```bash
+# Show SQL instructions to run in the Supabase Dashboard
+python scripts/run_weighted_scoring_migration.py
+```
+
+### Benefits
+
+This recommendation approach provides:
+- **Transparency**: Clear explanation of why products are recommended
+- **Efficiency**: Fast performance with minimal computational overhead
+- **Personalization**: Direct mapping from user preferences to recommendations
+- **Explainability**: Each recommendation includes the factors that contributed to its score

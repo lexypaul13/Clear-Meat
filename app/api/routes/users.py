@@ -180,7 +180,7 @@ async def add_to_history(history: UserHistory):
 
 @router.get("/explore")
 async def get_ai_recommendations():
-    """Get AI-powered recommendations based on updated user preferences."""
+    """Get personalized product recommendations using rule-based weighted scoring."""
     try:
         supabase = get_supabase()
         user = supabase.auth.get_user()
@@ -188,76 +188,204 @@ async def get_ai_recommendations():
         if not user:
             raise HTTPException(status_code=401, detail="Not authenticated")
             
-        # Get user preferences and history
+        # Get user preferences 
         profile = supabase.table('profiles').select('preferences').eq('id', user.id).single().execute()
-        history = supabase.table('user_history').select(
-            'products(meat_type, id, name, brand)'
-        ).eq('user_id', user.id).limit(10).execute()
         
         if not profile.data:
             raise HTTPException(status_code=404, detail="Profile not found")
             
         preferences = profile.data.get("preferences", {})
         
-        # Extract meat types from history
-        meat_types = [item["products"]["meat_type"] for item in history.data if "products" in item and item["products"]]
+        # Get maximum values for normalization
+        try:
+            max_values = supabase.rpc('get_product_max_values').execute()
+            if max_values.data:
+                max_protein = max_values.data.get("max_protein", 100)
+                max_fat = max_values.data.get("max_fat", 100)
+                max_salt = max_values.data.get("max_salt", 100)
+            else:
+                # Fallback values if the RPC returned no data
+                max_protein = 100
+                max_fat = 100
+                max_salt = 100
+        except:
+            # Fallback values if the RPC call failed
+            max_protein = 100
+            max_fat = 100
+            max_salt = 100
+            
+            # Log that we're using fallback values
+            print("Warning: Using fallback normalization values. Please run the DB migration.")
         
-        # Create base query
-        query = supabase.table('products').select('*')
+        # Initialize default weights
+        weights = {
+            "w_protein": 0.15,
+            "w_fat": 0.15, 
+            "w_sodium": 0.15,
+            "w_antibiotic": 0.15,
+            "w_grass": 0.2,
+            "w_preservatives": 0.2
+        }
         
-        # Apply preference-based filters
-        # Nutrition focus
+        # Adjust weights based on user preferences
         nutrition_focus = preferences.get("nutrition_focus")
         if nutrition_focus == "protein":
-            query = query.order('protein', desc=True)
+            weights["w_protein"] = 0.4
+            weights["w_fat"] = 0.1
+            weights["w_sodium"] = 0.1
         elif nutrition_focus == "fat":
-            query = query.order('fat')
+            weights["w_protein"] = 0.1
+            weights["w_fat"] = 0.4
+            weights["w_sodium"] = 0.1
         elif nutrition_focus == "salt":
-            query = query.order('salt')
-            
-        # Cooking style preferences
-        cooking_style = preferences.get("cooking_style")
-        if cooking_style:
-            # Recommend products that work well with their cooking style
-            # This is a simplification - you could have a cooking_method field in your DB
-            # or use a more sophisticated algorithm
-            pass
-            
-        # Filter alternatives based on preference
-        if preferences.get("open_to_alternatives") is False:
-            # Filter out plant-based alternatives
-            # This assumes you have fields to identify alternatives
-            query = query.eq('is_plant_based', False)
-            
-        # Additives preferences
-        if preferences.get("avoid_preservatives") is True:
-            query = query.eq('contains_preservatives', False)
-            
-        # Animal welfare preferences
-        if preferences.get("prefer_antibiotic_free") is True:
-            query = query.eq('antibiotic_free', True)
-            
-        if preferences.get("prefer_grass_fed") is True:
-            query = query.eq('pasture_raised', True)
+            weights["w_protein"] = 0.1
+            weights["w_fat"] = 0.1
+            weights["w_sodium"] = 0.4
         
-        # Combine with history-based results
-        if meat_types:
-            from collections import Counter
-            most_common = Counter(meat_types).most_common(2)
-            preferred_types = [meat_type for meat_type, _ in most_common]
+        # Adjust weights based on other preferences
+        if preferences.get("prefer_antibiotic_free"):
+            weights["w_antibiotic"] = 0.25
             
-            # Get products matching preferences AND preferred meat types
-            meat_query = query.in_('meat_type', preferred_types).limit(4).execute()
+        if preferences.get("prefer_grass_fed"):
+            weights["w_grass"] = 0.25
             
-            # Also get some other recommendations for variety
-            variety_query = query.not_.in_('meat_type', preferred_types).limit(2).execute()
+        if preferences.get("avoid_preservatives"):
+            weights["w_preservatives"] = 0.25
+        
+        try:
+            # Try to use the execute_sql RPC function for weighted scoring
+            query = """
+            SELECT 
+              code, 
+              name, 
+              brand,
+              description,
+              protein,
+              fat,
+              salt,
+              meat_type,
+              image_url,
+              antibiotic_free,
+              pasture_raised,
+              contains_preservatives,
+              
+              -- Compute weighted score
+              (GREATEST(0, LEAST(1, CAST(protein AS FLOAT) / {max_protein})) * {w_protein}) +
+              (GREATEST(0, LEAST(1, 1 - (CAST(fat AS FLOAT) / {max_fat}))) * {w_fat}) +
+              (GREATEST(0, LEAST(1, 1 - (CAST(salt AS FLOAT) / {max_salt}))) * {w_sodium}) +
+              (CASE WHEN antibiotic_free THEN {w_antibiotic} ELSE 0 END) +
+              (CASE WHEN pasture_raised THEN {w_grass} ELSE 0 END) +
+              (CASE WHEN NOT contains_preservatives THEN {w_preservatives} ELSE 0 END) AS score
+              
+            FROM products
+            WHERE protein IS NOT NULL AND fat IS NOT NULL AND salt IS NOT NULL
+            ORDER BY score DESC
+            LIMIT 10
+            """.format(
+                max_protein=max_protein,
+                max_fat=max_fat,
+                max_salt=max_salt,
+                w_protein=weights["w_protein"],
+                w_fat=weights["w_fat"],
+                w_sodium=weights["w_sodium"],
+                w_antibiotic=weights["w_antibiotic"],
+                w_grass=weights["w_grass"],
+                w_preservatives=weights["w_preservatives"]
+            )
             
-            # Combine results
-            combined_results = meat_query.data + variety_query.data
-            return combined_results[:4]  # Return max 4 recommendations
+            result = supabase.rpc('execute_sql', {'sql_query': query}).execute()
+            if result.data:
+                products = result.data
+            else:
+                # Fallback if RPC returns no data
+                raise Exception("No data returned from SQL execution")
+        except:
+            # Fallback to basic query approach if the RPC is not available
+            print("Warning: Using fallback query method. Please run the DB migration.")
             
-        # If no history, just use preference filters
-        response = query.limit(4).execute()
-        return response.data
+            # Get all products
+            result = supabase.table('products').select('*').execute()
+            all_products = result.data
+            
+            # Compute scores manually in Python
+            scored_products = []
+            for product in all_products:
+                # Skip products with missing nutritional values
+                if product.get("protein") is None or product.get("fat") is None or product.get("salt") is None:
+                    continue
+                
+                # Calculate normalized values
+                protein_norm = min(1, max(0, product.get("protein", 0) / max_protein))
+                fat_norm = min(1, max(0, 1 - (product.get("fat", 0) / max_fat)))
+                salt_norm = min(1, max(0, 1 - (product.get("salt", 0) / max_salt)))
+                
+                # Calculate score components
+                score_protein = weights["w_protein"] * protein_norm
+                score_fat = weights["w_fat"] * fat_norm
+                score_salt = weights["w_sodium"] * salt_norm
+                score_antibiotic = weights["w_antibiotic"] if product.get("antibiotic_free") else 0
+                score_grass = weights["w_grass"] if product.get("pasture_raised") else 0
+                score_preservatives = weights["w_preservatives"] if not product.get("contains_preservatives") else 0
+                
+                # Calculate total score
+                score = score_protein + score_fat + score_salt + score_antibiotic + score_grass + score_preservatives
+                
+                # Add score to product
+                product["score"] = score
+                scored_products.append(product)
+            
+            # Sort by score and take top 10
+            products = sorted(scored_products, key=lambda x: x.get("score", 0), reverse=True)[:10]
+            
+        # Enhance results with explanations
+        enhanced_results = []
+        for product in products:
+            # Extract top contributing factors to the score
+            factors = []
+            score_details = {}
+            
+            if nutrition_focus == "protein" and product.get("protein", 0) > (max_protein * 0.7):
+                factors.append("high in protein")
+                score_details["protein"] = f"High protein: {product.get('protein')}g"
+                
+            if nutrition_focus == "fat" and product.get("fat", 0) < (max_fat * 0.3):
+                factors.append("low in fat")
+                score_details["fat"] = f"Low fat: {product.get('fat')}g"
+                
+            if nutrition_focus == "salt" and product.get("salt", 0) < (max_salt * 0.3):
+                factors.append("low in sodium")
+                score_details["salt"] = f"Low sodium: {product.get('salt')}g"
+                
+            if preferences.get("prefer_antibiotic_free") and product.get("antibiotic_free"):
+                factors.append("antibiotic-free")
+                score_details["antibiotic_free"] = "Raised without antibiotics"
+                
+            if preferences.get("prefer_grass_fed") and product.get("pasture_raised"):
+                factors.append("pasture-raised")
+                score_details["pasture_raised"] = "Pasture-raised"
+                
+            if preferences.get("avoid_preservatives") and not product.get("contains_preservatives"):
+                factors.append("no preservatives")
+                score_details["preservatives"] = "No added preservatives"
+            
+            # Generate highlight text
+            highlight = None
+            if factors:
+                if len(factors) >= 2:
+                    highlight = f"{factors[0].capitalize()} & {factors[1]}"
+                else:
+                    highlight = factors[0].capitalize()
+            
+            # Add enhanced data to result
+            enhanced_product = {
+                **product,
+                "match_factors": factors,
+                "highlight": highlight,
+                "score_details": score_details
+            }
+            enhanced_results.append(enhanced_product)
+        
+        return enhanced_results
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) 
