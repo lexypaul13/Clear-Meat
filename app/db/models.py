@@ -102,4 +102,33 @@ class UserFavorite(Base):
     
     # Relationships
     user = relationship("User", back_populates="favorites")
-    product = relationship("Product", back_populates="user_favorites") 
+    product = relationship("Product", back_populates="user_favorites")
+
+
+# Placeholder classes for deleted tables - for backwards compatibility
+class Ingredient(Base):
+    """
+    Empty placeholder class for the deleted Ingredient model.
+    This exists only for backward compatibility with existing code.
+    The actual ingredients table has been removed from the database.
+    """
+    __tablename__ = "ingredients"  # Table doesn't actually exist anymore
+    
+    id = Column(String, primary_key=True, index=True)
+    name = Column(String, nullable=False, index=True)
+
+
+class ProductIngredient(Base):
+    """
+    Empty placeholder class for the deleted ProductIngredient model.
+    This exists only for backward compatibility with existing code.
+    The actual product_ingredients table has been removed from the database.
+    """
+    __tablename__ = "product_ingredients"  # Table doesn't actually exist anymore
+    
+    product_code = Column(String, ForeignKey("products.code", ondelete="CASCADE"), primary_key=True)
+    ingredient_id = Column(String, ForeignKey("ingredients.id", ondelete="CASCADE"), primary_key=True)
+    position = Column(Integer)
+    
+    # Relationship to ingredient
+    ingredient = relationship("Ingredient") 

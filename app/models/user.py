@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Dict, List, Optional, Any, ForwardRef, TYPE_CHECKING, Union
 
-from pydantic import BaseModel, EmailStr, Json
+from pydantic import BaseModel, EmailStr
 
 # Import Product model properly
 if TYPE_CHECKING:
@@ -147,9 +147,6 @@ class UserFavorite(UserFavoriteBase):
 
 
 # Update forward references
-try:
-    from app.models.product import Product
-    ScanHistory.model_rebuild()
-    UserFavorite.model_rebuild()
-except ImportError:
-    pass 
+from app.models.product import Product
+ScanHistory.model_rebuild()
+UserFavorite.model_rebuild() 

@@ -172,24 +172,32 @@ def assess_health_concerns(product: Union[models.ProductBase, Dict[str, Any], db
     """
     concerns = []
     
-    # Check if it's already a ProductBase object
-    if isinstance(product, models.ProductBase):
-        pass
-    # Convert SQLAlchemy model to dict if needed
-    elif isinstance(product, db_models.Product):
-        # Extract nutritional information
-        salt = getattr(product, 'salt', None)
-        fat = getattr(product, 'fat', None)
-        
-        # Check for high sodium
-        if salt and salt > 1.5:
-            concerns.append("High in sodium")
-        
-        # Check for high fat
-        if fat and fat > 20:
-            concerns.append("High in fat")
+    try:
+        # Handle different types of product objects
+        if isinstance(product, dict):
+            # Dictionary type
+            salt = product.get('salt')
+            fat = product.get('fat')
+            
+            if salt and salt > 1.5:
+                concerns.append("High in sodium")
+            if fat and fat > 20:
+                concerns.append("High in fat")
+                
+        elif isinstance(product, (models.ProductBase, db_models.Product)):
+            # Pydantic or SQLAlchemy model
+            salt = getattr(product, 'salt', None)
+            fat = getattr(product, 'fat', None)
+            
+            if salt and salt > 1.5:
+                concerns.append("High in sodium")
+            if fat and fat > 20:
+                concerns.append("High in fat")
+    except Exception as e:
+        # Log the error but don't raise it
+        import logging
+        logging.error(f"Error assessing health concerns: {str(e)}")
     
-    # For now, return basic concerns based on nutritional values
     return concerns
 
 
@@ -204,30 +212,35 @@ def assess_environmental_impact(product: Union[models.ProductBase, Dict[str, Any
     Returns:
         Dict[str, Any]: Environmental impact assessment
     """
-    # With environmental_impact table removed, this is now calculated on-the-fly
+    # Default values
     impact = "Moderate"
     details = "Environmental impact assessment based on meat type and processing method."
     practices = []
     
-    # Get meat type
-    meat_type = None
-    if isinstance(product, dict):
-        meat_type = product.get('meat_type')
-    else:
-        meat_type = getattr(product, 'meat_type', None)
-    
-    # Adjust impact based on meat type
-    if meat_type:
-        meat_type = meat_type.lower()
-        if 'beef' in meat_type:
-            impact = "High"
-            details = "Beef production typically has a higher environmental footprint due to methane emissions and land use."
-        elif 'pork' in meat_type:
-            impact = "Moderate"
-            details = "Pork production has a moderate environmental impact compared to beef but higher than poultry."
-        elif 'chicken' in meat_type or 'poultry' in meat_type:
-            impact = "Lower"
-            details = "Poultry generally has a lower environmental footprint than red meat."
+    try:
+        # Get meat type safely
+        meat_type = None
+        if isinstance(product, dict):
+            meat_type = product.get('meat_type')
+        else:
+            meat_type = getattr(product, 'meat_type', None)
+        
+        # Adjust impact based on meat type
+        if meat_type:
+            meat_type = meat_type.lower()
+            if 'beef' in meat_type:
+                impact = "High"
+                details = "Beef production typically has a higher environmental footprint due to methane emissions and land use."
+            elif 'pork' in meat_type:
+                impact = "Moderate"
+                details = "Pork production has a moderate environmental impact compared to beef but higher than poultry."
+            elif 'chicken' in meat_type or 'poultry' in meat_type:
+                impact = "Lower"
+                details = "Poultry generally has a lower environmental footprint than red meat."
+    except Exception as e:
+        # Log the error but don't raise it
+        import logging
+        logging.error(f"Error assessing environmental impact: {str(e)}")
     
     return {
         "impact": impact,

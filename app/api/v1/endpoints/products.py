@@ -162,6 +162,9 @@ def get_product(
                 # Process Supabase product data
                 product = response.data[0]
                 
+                # Extract additives from ingredients text
+                additives = helpers.extract_additives_from_text(product.get("ingredients_text", ""))
+                
                 # Assess health concerns based on Supabase data
                 health_concerns = []
                 if product.get("protein") and product.get("protein") < 10:
@@ -199,7 +202,7 @@ def get_product(
                     ),
                     criteria=models.ProductCriteria(
                         risk_rating=product.get("risk_rating", ""),
-                        additives=[]  # We don't have detailed additive information in Supabase
+                        additives=additives  # Now using additive info extracted from text
                     ),
                     health=models.ProductHealth(
                         nutrition=models.ProductNutrition(
@@ -242,27 +245,8 @@ def get_product(
             # Add a default name if missing
             product.name = "Unknown Product"
         
-        # Get ingredients
-        ingredients_query = (
-            db.query(db_models.ProductIngredient)
-            .filter(db_models.ProductIngredient.product_code == code)
-            .join(db_models.Ingredient)
-            .all()
-        )
-        
-        # Prepare additives information
-        additives = []
-        for product_ingredient in ingredients_query:
-            ingredient = product_ingredient.ingredient
-            if ingredient and hasattr(ingredient, 'category') and ingredient.category in ["preservative", "additive", "stabilizer", "flavor enhancer"]:
-                additive_info = models.AdditiveInfo(
-                    name=ingredient.name if hasattr(ingredient, 'name') else "Unknown",
-                    category=ingredient.category if hasattr(ingredient, 'category') else None,
-                    risk_level=ingredient.risk_level if hasattr(ingredient, 'risk_level') else None,
-                    concerns=ingredient.concerns if hasattr(ingredient, 'concerns') else None,
-                    alternatives=ingredient.alternatives if hasattr(ingredient, 'alternatives') else None
-                )
-                additives.append(additive_info)
+        # Extract additives from ingredients text
+        additives = helpers.extract_additives_from_text(product.ingredients_text)
         
         # Assess health concerns
         health_concerns = helpers.assess_health_concerns(product)

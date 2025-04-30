@@ -1,8 +1,19 @@
-"""MeatWise API application package."""
+"""Setup API."""
+from fastapi import FastAPI
+from app.models import Product, AdditiveInfo
 
-from app.models import Product, Ingredient, AdditiveInfo
+app = FastAPI(
+    title="MeatWise API",
+    description="Backend API for MeatWise products",
+    version="0.1.0",
+)
 
-# Rebuild models to resolve circular dependencies
-Ingredient.model_rebuild()
-Product.model_rebuild()
-AdditiveInfo.model_rebuild() 
+from app.api.routes import (
+    auth,
+    products,
+    users,
+)
+
+app.include_router(auth.router)
+app.include_router(products.router)
+app.include_router(users.router) 

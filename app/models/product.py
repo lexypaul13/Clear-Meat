@@ -1,18 +1,12 @@
 """Product models for the MeatWise API."""
 
 from datetime import datetime
-from typing import Dict, List, Optional, ForwardRef, TYPE_CHECKING, Any
+from typing import Dict, List, Optional, Any
 
 from pydantic import BaseModel, Field
 
 # Fix imports to directly import AdditiveInfo
 from app.models.ingredient import AdditiveInfo
-
-# Forward references for circular imports
-if TYPE_CHECKING:
-    from app.models.ingredient import Ingredient
-else:
-    Ingredient = ForwardRef("Ingredient")
 
 
 class ProductBase(BaseModel):
@@ -69,8 +63,7 @@ class ProductInDB(ProductBase):
 
 class Product(ProductInDB):
     """Product response model."""
-    ingredients: Optional[List["Ingredient"]] = None
-
+    
     model_config = {
         "from_attributes": True,
         "populate_by_name": True,
@@ -150,9 +143,5 @@ class ProductStructured(BaseModel):
     personalized_insights: Optional[PersonalizedInsight] = None
 
 
-# Update forward references
-try:
-    from app.models.ingredient import Ingredient
-    Product.model_rebuild()
-except ImportError:
-    pass 
+# Update forward references - removed Ingredient import and model rebuild call
+Product.model_rebuild() 

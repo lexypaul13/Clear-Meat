@@ -6,33 +6,6 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, EmailStr
 
 
-# Ingredient models
-class IngredientBase(BaseModel):
-    """Base Ingredient model."""
-    name: str
-    description: Optional[str] = None
-    category: Optional[str] = None
-    risk_level: Optional[str] = None
-    concerns: Optional[List[str]] = None
-    alternatives: Optional[List[str]] = None
-
-
-class IngredientCreate(IngredientBase):
-    """Ingredient creation model."""
-    pass
-
-
-class Ingredient(IngredientBase):
-    """Ingredient response model."""
-    id: str
-    created_at: datetime
-    updated_at: datetime
-
-    class Config:
-        """Pydantic config."""
-        from_attributes = True
-
-
 # Product models
 class ProductBase(BaseModel):
     """Base Product model."""
@@ -78,7 +51,7 @@ class ProductInDB(ProductBase):
 
 class Product(ProductInDB):
     """Product response model."""
-    ingredients: Optional[List[Ingredient]] = None
+    # Removed ingredients field
 
     class Config:
         """Pydantic config."""

@@ -1,13 +1,7 @@
 """Models package."""
 
 # First import the basic models without circular dependencies
-from app.models.ingredient import (
-    AdditiveInfo,
-    Ingredient,
-    IngredientBase,
-    IngredientCreate,
-    IngredientUpdate,
-)
+from app.models.ingredient import AdditiveInfo
 
 # Then import models with possible references to the above
 from app.models.product import (
