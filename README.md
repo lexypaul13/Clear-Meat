@@ -499,3 +499,38 @@ The project is organized into the following directories:
 - `src/tests/`: Test files
   - `add_test_product.py`: Script to add test products
   - `simple_test.py`: Basic test suite
+
+## User Onboarding and Preferences
+
+The MeatWise application includes a comprehensive onboarding process that collects user preferences through six questions:
+
+1. **Nutrition Priorities**: User can select their primary nutritional focus (protein, fat, or salt).
+2. **Additives and Preservatives**: User can indicate if they want to avoid preservatives.
+3. **Antibiotics and Hormones**: User can specify if they prefer meat from animals raised without antibiotics/hormones.
+4. **Sourcing & Animal Diet**: User can indicate if they prefer grass-fed or pasture-raised options.
+5. **Typical Cooking Style**: User can select their typical cooking method (grilling, pan-frying, or oven/slow-cooker).
+6. **Openness to Alternatives**: User can specify if they're open to trying plant-based meat alternatives.
+
+These preferences are stored in the user's profile and used to personalize recommendations and product insights.
+
+### Running User Preferences Migration
+
+If you're upgrading from a previous version, run the preferences migration script to add support for the new fields:
+
+```bash
+# Set up environment variables for Supabase
+export SUPABASE_URL="your-supabase-url"
+export SUPABASE_KEY="your-supabase-key"
+
+# Run schema migration only
+python scripts/run_user_preferences_migration.py
+
+# Run schema migration AND migrate legacy preference data to new format
+python scripts/run_user_preferences_migration.py --migrate-data
+```
+
+This migration:
+- Adds documentation about the new preference fields
+- Creates a GIN index for faster JSON queries
+- Adds validation for the preference structure
+- Provides a data migration function to convert legacy preferences to the new format

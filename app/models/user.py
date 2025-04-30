@@ -14,23 +14,41 @@ else:
 
 class UserPreferences(BaseModel):
     """User preferences from onboarding."""
-    health_goal: Optional[str] = None  # "weight_loss", "muscle_building", "heart_healthy", etc.
-    sourcing_preference: Optional[str] = None  # "local", "organic", "grass_fed", "convenient", etc.
-    cooking_style: Optional[str] = None  # "grill", "quick", "weekend_chef", "meal_prep", etc.
-    ethical_concerns: Optional[List[str]] = None  # ["animal_welfare", "sustainability", "local_farms", etc.]
-    additive_preference: Optional[str] = None  # "organic", "avoid_antibiotics", "avoid_hormones", etc.
-    dietary_goal: Optional[str] = None  # "keto", "muscle_building", "active_lifestyle", etc.
+    # Screen 1: Nutrition Priorities
+    nutrition_focus: Optional[str] = None  # "protein", "fat", "salt"
+    
+    # Screen 2: Additives and Preservatives
+    avoid_preservatives: Optional[bool] = None  # True/False
+    
+    # Screen 3: Antibiotics and Hormones in Raising
+    prefer_antibiotic_free: Optional[bool] = None  # True/False
+    
+    # Screen 4: Sourcing & Animal Diet
+    prefer_grass_fed: Optional[bool] = None  # True/False
+    
+    # Screen 5: Typical Cooking Style
+    cooking_style: Optional[str] = None  # "grilling", "pan_frying", "oven_slow_cooker"
+    
+    # Screen 6: Openness to Meat Alternatives
+    open_to_alternatives: Optional[bool] = None  # True/False
+    
+    # Keeping legacy fields for backward compatibility
+    health_goal: Optional[str] = None  
+    sourcing_preference: Optional[str] = None
+    ethical_concerns: Optional[List[str]] = None
+    additive_preference: Optional[str] = None
+    dietary_goal: Optional[str] = None
     
     model_config = {
         "json_schema_extra": {
             "examples": [
                 {
-                    "health_goal": "heart_healthy",
-                    "sourcing_preference": "local",
-                    "cooking_style": "grill",
-                    "ethical_concerns": ["animal_welfare", "sustainability"],
-                    "additive_preference": "avoid_antibiotics",
-                    "dietary_goal": "active_lifestyle"
+                    "nutrition_focus": "protein",
+                    "avoid_preservatives": True,
+                    "prefer_antibiotic_free": True,
+                    "prefer_grass_fed": True,
+                    "cooking_style": "grilling",
+                    "open_to_alternatives": False
                 }
             ]
         }

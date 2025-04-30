@@ -69,6 +69,12 @@ st.markdown("""
     .progress-step.active {
         background-color: #FF4B4B;
     }
+    .option-reason {
+        font-size: 0.8rem;
+        color: #6b6b6b;
+        font-style: italic;
+        margin-top: 0.25rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -85,14 +91,24 @@ if "onboarding_complete" not in st.session_state:
 if "onboarding_step" not in st.session_state:
     st.session_state.onboarding_step = 1
 
-if "dietary_preferences" not in st.session_state:
-    st.session_state.dietary_preferences = []
+# New preference fields based on updated structure
+if "nutrition_focus" not in st.session_state:
+    st.session_state.nutrition_focus = None
 
-if "cooking_experience" not in st.session_state:
-    st.session_state.cooking_experience = ""
+if "avoid_preservatives" not in st.session_state:
+    st.session_state.avoid_preservatives = None
 
-if "meat_preferences" not in st.session_state:
-    st.session_state.meat_preferences = []
+if "prefer_antibiotic_free" not in st.session_state:
+    st.session_state.prefer_antibiotic_free = None
+
+if "prefer_grass_fed" not in st.session_state:
+    st.session_state.prefer_grass_fed = None
+
+if "cooking_style" not in st.session_state:
+    st.session_state.cooking_style = None
+    
+if "open_to_alternatives" not in st.session_state:
+    st.session_state.open_to_alternatives = None
 
 # Check if user is not authenticated, redirect to login
 if not st.session_state.user_authenticated:
@@ -107,7 +123,7 @@ st.markdown('<h1 class="main-header">MeatWise Onboarding</h1>', unsafe_allow_htm
 
 # Progress bar
 progress_html = '<div class="progress-container centered">'
-for i in range(1, 5):
+for i in range(1, 8):  # Increased to 7 steps (welcome + 6 questions)
     if i <= st.session_state.onboarding_step:
         progress_html += f'<span class="progress-step active"></span>'
     else:
@@ -134,29 +150,40 @@ with st.container():
             st.session_state.onboarding_step = 2
             st.experimental_rerun()
     
-    # Step 2: Dietary Preferences
+    # Step 2: Nutrition Priorities (Screen 1)
     elif st.session_state.onboarding_step == 2:
-        st.subheader("What are your dietary preferences?")
-        st.write("Select any dietary restrictions or preferences that apply to you.")
+        st.subheader("What's your main nutrition focus when choosing meat?")
         
-        # Dietary preferences options
-        dietary_options = [
-            "Vegetarian", "Vegan", "Halal", "Kosher", "Gluten-Free", 
-            "Dairy-Free", "Low Sodium", "Low Carb", "No Artificial Ingredients"
+        # Options with descriptions
+        options = [
+            ("protein", "Getting more protein", "Looking to build or maintain muscle"),
+            ("fat", "Cutting back on fat", "Choosing lean cuts for less saturated fat"),
+            ("salt", "Watching my salt intake", "Avoiding high sodium for heart health")
         ]
         
-        # Display options in a grid
-        col1, col2 = st.columns(2)
+        # Display options as selectable cards
+        for value, label, description in options:
+            is_selected = st.session_state.nutrition_focus == value
+            col = st.container()
+            
+            if col.button(
+                label,
+                key=f"nutrition_{value}",
+                use_container_width=True,
+                type="primary" if is_selected else "secondary"
+            ):
+                st.session_state.nutrition_focus = value
+            
+            st.markdown(f'<div class="option-reason">({description})</div>', unsafe_allow_html=True)
+            st.write("")  # Add some spacing
         
-        for i, option in enumerate(dietary_options):
-            with col1 if i % 2 == 0 else col2:
-                is_selected = option in st.session_state.dietary_preferences
-                if st.checkbox(option, value=is_selected, key=f"diet_{option}"):
-                    if option not in st.session_state.dietary_preferences:
-                        st.session_state.dietary_preferences.append(option)
-                else:
-                    if option in st.session_state.dietary_preferences:
-                        st.session_state.dietary_preferences.remove(option)
+        # Why this question matters
+        with st.expander("Why does this matter?"):
+            st.write("""
+            Nutrition goals vary: in fitness circles, hitting protein targets is key, whereas health experts warn that 
+            processed meats are often high in saturated fat and salt, raising cardiovascular risks. This question lets 
+            you tell the app if you're mainly about protein, or if you're trying to limit fat or salt.
+            """)
         
         # Navigation buttons
         col1, col2 = st.columns(2)
@@ -165,31 +192,48 @@ with st.container():
                 st.session_state.onboarding_step = 1
                 st.experimental_rerun()
         with col2:
-            if st.button("Next", use_container_width=True):
+            next_disabled = st.session_state.nutrition_focus is None
+            if st.button("Next", use_container_width=True, disabled=next_disabled):
                 st.session_state.onboarding_step = 3
                 st.experimental_rerun()
+            
+            if next_disabled:
+                st.info("Please select a nutrition focus to continue")
     
-    # Step 3: Cooking Experience
+    # Step 3: Additives and Preservatives (Screen 2)
     elif st.session_state.onboarding_step == 3:
-        st.subheader("How would you describe your cooking experience?")
-        st.write("This helps us recommend products that match your cooking skill level.")
+        st.subheader("Do you try to avoid preservatives in your meat (e.g. nitrites in bacon)?")
         
-        # Cooking experience options
-        experience_options = ["Beginner", "Intermediate", "Expert"]
+        # Options with descriptions
+        options = [
+            (True, "Yes, I avoid those", "I go for 'nitrite-free'/uncured products"),
+            (False, "No, not really", "I'm not too worried about that")
+        ]
         
-        # Display options as selectable cards
-        for option in experience_options:
-            is_selected = st.session_state.cooking_experience == option
+        # Display options as selectable buttons
+        for value, label, description in options:
+            is_selected = st.session_state.avoid_preservatives == value
             col = st.container()
             
             if col.button(
-                option,
-                key=f"exp_{option}",
-                help=f"Select if you're a {option.lower()} cook",
+                label,
+                key=f"preservatives_{value}",
                 use_container_width=True,
                 type="primary" if is_selected else "secondary"
             ):
-                st.session_state.cooking_experience = option
+                st.session_state.avoid_preservatives = value
+            
+            st.markdown(f'<div class="option-reason">({description})</div>', unsafe_allow_html=True)
+            st.write("")  # Add some spacing
+        
+        # Why this question matters
+        with st.expander("Why does this matter?"):
+            st.write("""
+            Clean-eating advocates often caution against additives like sodium nitrite used in cured meats. 
+            Experts note that nitrites can form carcinogenic compounds when cooked, and processed meats with 
+            these additives have been linked to higher cancer risk. If you're the type to check for "no added nitrates/nitrites" 
+            on labels, the app will note it. (If not, no worries — it's okay either way!)
+            """)
         
         # Navigation buttons
         col1, col2 = st.columns(2)
@@ -198,34 +242,48 @@ with st.container():
                 st.session_state.onboarding_step = 2
                 st.experimental_rerun()
         with col2:
-            next_disabled = not st.session_state.cooking_experience
+            next_disabled = st.session_state.avoid_preservatives is None
             if st.button("Next", use_container_width=True, disabled=next_disabled):
                 st.session_state.onboarding_step = 4
                 st.experimental_rerun()
             
             if next_disabled:
-                st.info("Please select your cooking experience level to continue")
+                st.info("Please select an option to continue")
     
-    # Step 4: Meat Preferences
+    # Step 4: Antibiotics and Hormones (Screen 3)
     elif st.session_state.onboarding_step == 4:
-        st.subheader("Which types of meat do you prefer?")
-        st.write("Select all meat types that you're interested in.")
+        st.subheader("Do you prefer meat from animals raised without antibiotics or hormones?")
         
-        # Meat preferences options
-        meat_options = ["Beef", "Pork", "Poultry", "Lamb", "Fish", "Venison", "Duck", "Turkey", "Other"]
+        # Options with descriptions
+        options = [
+            (True, "Yes, that's important to me", "I look for antibiotic-free labels"),
+            (False, "No, I'm not concerned", "Regular meat is fine by me")
+        ]
         
-        # Display options in a grid
-        cols = st.columns(3)
+        # Display options as selectable buttons
+        for value, label, description in options:
+            is_selected = st.session_state.prefer_antibiotic_free == value
+            col = st.container()
+            
+            if col.button(
+                label,
+                key=f"antibiotics_{value}",
+                use_container_width=True,
+                type="primary" if is_selected else "secondary"
+            ):
+                st.session_state.prefer_antibiotic_free = value
+            
+            st.markdown(f'<div class="option-reason">({description})</div>', unsafe_allow_html=True)
+            st.write("")  # Add some spacing
         
-        for i, option in enumerate(meat_options):
-            with cols[i % 3]:
-                is_selected = option in st.session_state.meat_preferences
-                if st.checkbox(option, value=is_selected, key=f"meat_{option}"):
-                    if option not in st.session_state.meat_preferences:
-                        st.session_state.meat_preferences.append(option)
-                else:
-                    if option in st.session_state.meat_preferences:
-                        st.session_state.meat_preferences.remove(option)
+        # Why this question matters
+        with st.expander("Why does this matter?"):
+            st.write("""
+            Many North American consumers now seek out "raised without antibiotics" (and hormone-free) meat 
+            for health and ethical reasons. In fact, demand for antibiotic-free beef is surging alongside 
+            grass-fed options. Parents and millennials especially want transparency about how their meat was raised. 
+            This question lets you indicate if these farming practices matter to you.
+            """)
         
         # Navigation buttons
         col1, col2 = st.columns(2)
@@ -234,15 +292,162 @@ with st.container():
                 st.session_state.onboarding_step = 3
                 st.experimental_rerun()
         with col2:
-            complete_disabled = len(st.session_state.meat_preferences) == 0
+            next_disabled = st.session_state.prefer_antibiotic_free is None
+            if st.button("Next", use_container_width=True, disabled=next_disabled):
+                st.session_state.onboarding_step = 5
+                st.experimental_rerun()
+            
+            if next_disabled:
+                st.info("Please select an option to continue")
+    
+    # Step 5: Sourcing & Animal Diet (Screen 4)
+    elif st.session_state.onboarding_step == 5:
+        st.subheader("Do you look for grass-fed or pasture-raised meat options?")
+        
+        # Options with descriptions
+        options = [
+            (True, "Yes, I prefer those", "Grass-fed beef, pasture-raised poultry, etc."),
+            (False, "No, not really", "I don't specifically seek that out")
+        ]
+        
+        # Display options as selectable buttons
+        for value, label, description in options:
+            is_selected = st.session_state.prefer_grass_fed == value
+            col = st.container()
+            
+            if col.button(
+                label,
+                key=f"grass_fed_{value}",
+                use_container_width=True,
+                type="primary" if is_selected else "secondary"
+            ):
+                st.session_state.prefer_grass_fed = value
+            
+            st.markdown(f'<div class="option-reason">({description})</div>', unsafe_allow_html=True)
+            st.write("")  # Add some spacing
+        
+        # Why this question matters
+        with st.expander("Why does this matter?"):
+            st.write("""
+            "Grass-fed" and "pasture-raised" are growing buzzwords. Nearly 65% of shoppers like to know where their 
+            food comes from, and producers have seen grass-fed meat sales jump ~30% amid this trend. Grass-fed beef, 
+            for example, is often seen as more natural or humane. By telling us if these labels matter to you, ClearCut AI 
+            can highlight products that meet your standards (or just show you everything if you have no preference).
+            """)
+        
+        # Navigation buttons
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Back", use_container_width=True):
+                st.session_state.onboarding_step = 4
+                st.experimental_rerun()
+        with col2:
+            next_disabled = st.session_state.prefer_grass_fed is None
+            if st.button("Next", use_container_width=True, disabled=next_disabled):
+                st.session_state.onboarding_step = 6
+                st.experimental_rerun()
+            
+            if next_disabled:
+                st.info("Please select an option to continue")
+    
+    # Step 6: Typical Cooking Style (Screen 5)
+    elif st.session_state.onboarding_step == 6:
+        st.subheader("How do you usually cook your meat?")
+        
+        # Options with descriptions
+        options = [
+            ("grilling", "Grilling/BBQ", "I love firing up the grill"),
+            ("pan_frying", "Pan-frying on the stove", "Quick sear or sauté on a stovetop pan"),
+            ("oven_slow_cooker", "Oven or slow cooker", "Baking, roasting, or slow-cooking meals")
+        ]
+        
+        # Display options as selectable buttons
+        for value, label, description in options:
+            is_selected = st.session_state.cooking_style == value
+            col = st.container()
+            
+            if col.button(
+                label,
+                key=f"cooking_{value}",
+                use_container_width=True,
+                type="primary" if is_selected else "secondary"
+            ):
+                st.session_state.cooking_style = value
+            
+            st.markdown(f'<div class="option-reason">({description})</div>', unsafe_allow_html=True)
+            st.write("")  # Add some spacing
+        
+        # Why this question matters
+        with st.expander("Why does this matter?"):
+            st.write("""
+            Everyone's kitchen style is a bit different! Maybe you're a BBQ master, or perhaps you prefer one-pan 
+            meals on the stove. (Some folks toss things in a slow cooker or oven and let it go.) This question helps 
+            the app give you relevant cooking tips and recipe ideas. For instance, if you mostly grill, we might share 
+            grilling safety tips or marinade suggestions. (Fun fact: Grilling is super popular – about 89% of people 
+            in one survey grill their steaks at home!)
+            """)
+        
+        # Navigation buttons
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Back", use_container_width=True):
+                st.session_state.onboarding_step = 5
+                st.experimental_rerun()
+        with col2:
+            next_disabled = st.session_state.cooking_style is None
+            if st.button("Next", use_container_width=True, disabled=next_disabled):
+                st.session_state.onboarding_step = 7
+                st.experimental_rerun()
+            
+            if next_disabled:
+                st.info("Please select a cooking style to continue")
+    
+    # Step 7: Openness to Meat Alternatives (Screen 6)
+    elif st.session_state.onboarding_step == 7:
+        st.subheader("Are you open to trying plant-based meat alternatives?")
+        
+        # Options with descriptions
+        options = [
+            (True, "Yes, I'd try them", "Open to options like Beyond™ or Impossible™ meats"),
+            (False, "No, I prefer real meat", "Stick with traditional meat only")
+        ]
+        
+        # Display options as selectable buttons
+        for value, label, description in options:
+            is_selected = st.session_state.open_to_alternatives == value
+            col = st.container()
+            
+            if col.button(
+                label,
+                key=f"alternatives_{value}",
+                use_container_width=True,
+                type="primary" if is_selected else "secondary"
+            ):
+                st.session_state.open_to_alternatives = value
+            
+            st.markdown(f'<div class="option-reason">({description})</div>', unsafe_allow_html=True)
+            st.write("")  # Add some spacing
+        
+        # Navigation buttons
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Back", use_container_width=True):
+                st.session_state.onboarding_step = 6
+                st.experimental_rerun()
+        with col2:
+            complete_disabled = st.session_state.open_to_alternatives is None
             if st.button("Complete", use_container_width=True, disabled=complete_disabled):
                 # Save preferences to user data
                 if "preferences" not in st.session_state.user_data:
                     st.session_state.user_data["preferences"] = {}
                 
-                st.session_state.user_data["preferences"]["dietary_preferences"] = st.session_state.dietary_preferences
-                st.session_state.user_data["preferences"]["cooking_experience"] = st.session_state.cooking_experience
-                st.session_state.user_data["preferences"]["meat_preferences"] = st.session_state.meat_preferences
+                # Save new preferences format
+                st.session_state.user_data["preferences"]["nutrition_focus"] = st.session_state.nutrition_focus
+                st.session_state.user_data["preferences"]["avoid_preservatives"] = st.session_state.avoid_preservatives
+                st.session_state.user_data["preferences"]["prefer_antibiotic_free"] = st.session_state.prefer_antibiotic_free
+                st.session_state.user_data["preferences"]["prefer_grass_fed"] = st.session_state.prefer_grass_fed
+                st.session_state.user_data["preferences"]["cooking_style"] = st.session_state.cooking_style
+                st.session_state.user_data["preferences"]["open_to_alternatives"] = st.session_state.open_to_alternatives
                 
                 # Mark onboarding as complete
                 st.session_state.onboarding_complete = True
@@ -261,7 +466,7 @@ with st.container():
                 switch_page("app")
             
             if complete_disabled:
-                st.info("Please select at least one meat preference to continue")
+                st.info("Please select an option to continue")
     
     st.markdown('</div>', unsafe_allow_html=True)
 

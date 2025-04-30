@@ -472,36 +472,90 @@ async def get_recommendations(
         if hasattr(current_user, "preferences") and current_user.preferences:
             preferences = current_user.preferences
             
-            # Apply filters based on health goals
-            if preferences.get("health_goal") == "heart_healthy":
-                query = query.filter(db_models.Product.contains_nitrites == False)
+            # Apply filters based on nutrition focus (Screen 1)
+            if preferences.get("nutrition_focus") == "protein":
+                # For protein focus, prioritize high-protein products
+                query = query.order_by(db_models.Product.protein.desc())
                 
-            elif preferences.get("health_goal") == "weight_loss":
-                # For weight loss, prioritize lower-fat products
+            elif preferences.get("nutrition_focus") == "fat":
+                # For fat focus, prioritize lower-fat products
                 query = query.order_by(db_models.Product.fat)
                 
-            elif preferences.get("health_goal") == "muscle_building":
-                # For muscle building, prioritize high-protein products
-                query = query.order_by(db_models.Product.protein.desc())
+            elif preferences.get("nutrition_focus") == "salt":
+                # For salt focus, prioritize lower-salt products
+                query = query.order_by(db_models.Product.salt)
             
-            # Apply filters based on additives preferences
-            if preferences.get("additive_preference") == "avoid_antibiotics":
+            # Apply filters based on preservatives preference (Screen 2)
+            if preferences.get("avoid_preservatives") is True:
+                query = query.filter(db_models.Product.contains_nitrites == False)
+                query = query.filter(db_models.Product.contains_preservatives == False)
+            
+            # Apply filters based on antibiotics/hormones preference (Screen 3)
+            if preferences.get("prefer_antibiotic_free") is True:
                 query = query.filter(db_models.Product.antibiotic_free == True)
-                
-            elif preferences.get("additive_preference") == "avoid_hormones":
                 query = query.filter(db_models.Product.hormone_free == True)
-                
-            elif preferences.get("additive_preference") == "organic":
-                query = query.filter(
-                    db_models.Product.contains_preservatives == False,
-                    db_models.Product.antibiotic_free == True,
-                    db_models.Product.hormone_free == True
-                )
             
-            # Apply filters based on ethical concerns
-            ethical_concerns = preferences.get("ethical_concerns", [])
-            if "animal_welfare" in ethical_concerns:
+            # Apply filters based on grass-fed/pasture-raised preference (Screen 4)
+            if preferences.get("prefer_grass_fed") is True:
                 query = query.filter(db_models.Product.pasture_raised == True)
+            
+            # Apply considerations for cooking style (Screen 5)
+            cooking_style = preferences.get("cooking_style")
+            if cooking_style:
+                # For now, we're just ordering - but in the future we could use this
+                # to recommend specific cuts better suited for each cooking method
+                if cooking_style == "grilling":
+                    # Products better for grilling like steaks and thicker cuts
+                    # Just use a simple approach for now - we could enhance this later
+                    pass
+                    
+                elif cooking_style == "pan_frying":
+                    # Products better for pan-frying like thinner cuts
+                    pass
+                    
+                elif cooking_style == "oven_slow_cooker":
+                    # Products better for slow cooking like tougher cuts with more connective tissue
+                    pass
+            
+            # Apply considerations for meat alternatives (Screen 6)
+            # If user is open to alternatives, include them in results
+            # If not, exclude them from results
+            if preferences.get("open_to_alternatives") is False:
+                # Filter out plant-based alternatives
+                # Assuming there's a column or way to identify alternatives
+                # This would need a database column - for now just check description
+                query = query.filter(~db_models.Product.description.ilike("%plant-based%"))
+                query = query.filter(~db_models.Product.description.ilike("%alternative%"))
+                query = query.filter(~db_models.Product.description.ilike("%vegan%"))
+            
+            # Legacy preference mapping for backward compatibility
+            # Only use these if the new fields are not set
+            if not preferences.get("nutrition_focus") and preferences.get("health_goal"):
+                if preferences.get("health_goal") == "heart_healthy":
+                    query = query.filter(db_models.Product.contains_nitrites == False)
+                elif preferences.get("health_goal") == "weight_loss":
+                    query = query.order_by(db_models.Product.fat)
+                elif preferences.get("health_goal") == "muscle_building":
+                    query = query.order_by(db_models.Product.protein.desc())
+            
+            if not preferences.get("avoid_preservatives") and not preferences.get("prefer_antibiotic_free"):
+                # Map the old additive_preference field to the new fields
+                if preferences.get("additive_preference") == "avoid_antibiotics":
+                    query = query.filter(db_models.Product.antibiotic_free == True)
+                elif preferences.get("additive_preference") == "avoid_hormones":
+                    query = query.filter(db_models.Product.hormone_free == True)
+                elif preferences.get("additive_preference") == "organic":
+                    query = query.filter(
+                        db_models.Product.contains_preservatives == False,
+                        db_models.Product.antibiotic_free == True,
+                        db_models.Product.hormone_free == True
+                    )
+            
+            if not preferences.get("prefer_grass_fed"):
+                # Map the old ethical_concerns to the new fields
+                ethical_concerns = preferences.get("ethical_concerns", [])
+                if "animal_welfare" in ethical_concerns:
+                    query = query.filter(db_models.Product.pasture_raised == True)
         
         # Look at user's scan history to further personalize results
         scan_history = db.query(db_models.ScanHistory).filter(
