@@ -28,11 +28,16 @@ async def apply_migration():
         await conn.execute(migration_sql)
         logging.info("Migration applied successfully!")
         
-        # Verify tables were created
-        tables = ['product_nutrition', 'environmental_impact', 'price_history', 'supply_chain']
+        # Verify tables were created - UPDATED: Removed tables that no longer exist
+        # NOTE: As of 2024-05-15, product_nutrition, price_history, and supply_chain tables 
+        # have been removed. Only verifying environmental_impact table.
+        tables = ['environmental_impact']
         for table in tables:
-            count = await conn.fetchval(f"SELECT COUNT(*) FROM {table}")
-            logging.info(f"Table {table} created successfully (current count: {count})")
+            try:
+                count = await conn.fetchval(f"SELECT COUNT(*) FROM {table}")
+                logging.info(f"Table {table} created successfully (current count: {count})")
+            except Exception as e:
+                logging.error(f"Error verifying table {table}: {str(e)}")
             
     except Exception as e:
         logging.error(f"Error applying migration: {str(e)}")

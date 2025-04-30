@@ -63,7 +63,7 @@ class ProductInDB(ProductBase):
 
 class Product(ProductInDB):
     """Product response model."""
-    
+
     model_config = {
         "from_attributes": True,
         "populate_by_name": True,
@@ -144,4 +144,4 @@ class ProductStructured(BaseModel):
 
 
 # Update forward references - removed Ingredient import and model rebuild call
-Product.model_rebuild() 
+    Product.model_rebuild()

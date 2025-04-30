@@ -453,16 +453,10 @@ def get_product_alternatives(
                 raise HTTPException(status_code=404, detail="Product not found")
             # For non-testing mode, continue to SQLAlchemy check
         else:
-            # Product exists in Supabase, try to get alternatives
-            # This assumes you have a product_alternatives table in Supabase
-            alt_response = supabase.table("product_alternatives").select("*").eq("product_code", code).execute()
-            
-            if alt_response.data:
-                # Convert to Pydantic models
-                return [models.ProductAlternative(**alt) for alt in alt_response.data]
-            else:
-                # No alternatives found, return empty list
-                return []
+            # Product exists in Supabase - return empty alternatives list
+            # The product_alternatives table has been removed
+            logging.info(f"Product {code} exists, but product_alternatives table has been removed. Returning empty list.")
+            return []
                 
     except Exception as e:
         # Log Supabase error
@@ -477,13 +471,9 @@ def get_product_alternatives(
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     
-    alternatives = (
-        db.query(db_models.ProductAlternative)
-        .filter(db_models.ProductAlternative.product_code == code)
-        .all()
-    )
-    
-    return alternatives
+    # Return empty list since product_alternatives table has been removed
+    logging.info(f"Product {code} exists in SQLAlchemy, but product_alternatives table has been removed. Returning empty list.")
+    return []
 
 
 @router.post("/", response_model=models.Product)

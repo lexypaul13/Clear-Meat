@@ -18,21 +18,24 @@ if not DATABASE_URL:
 
 # SQL statements for RLS policies
 sql_statements = """
--- Enable RLS for product_ingredients table
-ALTER TABLE product_ingredients ENABLE ROW LEVEL SECURITY;
+-- Enable RLS for products table
+ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 
--- Create policy for product_ingredients
-CREATE POLICY "Product ingredients are viewable by everyone"
-    ON product_ingredients FOR SELECT
-    USING (true);
+-- Create policy for products
+CREATE POLICY products_select_policy
+ON products FOR SELECT
+USING (true);
 
--- Enable RLS for product_alternatives table
-ALTER TABLE product_alternatives ENABLE ROW LEVEL SECURITY;
+-- Note: The following tables have been removed as of 2024-05-15
+-- product_alternatives
+-- product_nutrition 
+-- price_history
+-- supply_chain
+-- product_errors
+-- ingredients_backup_20240430
+-- product_ingredients_backup_20240430
 
--- Create policy for product_alternatives
-CREATE POLICY "Product alternatives are viewable by everyone"
-    ON product_alternatives FOR SELECT
-    USING (true);
+-- Their RLS policies have been removed from this script
 
 -- Enable RLS for ai_analysis_cache table
 ALTER TABLE ai_analysis_cache ENABLE ROW LEVEL SECURITY;

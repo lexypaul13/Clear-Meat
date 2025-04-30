@@ -186,13 +186,13 @@ def assess_health_concerns(product: Union[models.ProductBase, Dict[str, Any], db
                 
         elif isinstance(product, (models.ProductBase, db_models.Product)):
             # Pydantic or SQLAlchemy model
-            salt = getattr(product, 'salt', None)
-            fat = getattr(product, 'fat', None)
-            
-            if salt and salt > 1.5:
-                concerns.append("High in sodium")
-            if fat and fat > 20:
-                concerns.append("High in fat")
+        salt = getattr(product, 'salt', None)
+        fat = getattr(product, 'fat', None)
+        
+        if salt and salt > 1.5:
+            concerns.append("High in sodium")
+        if fat and fat > 20:
+            concerns.append("High in fat")
     except Exception as e:
         # Log the error but don't raise it
         import logging

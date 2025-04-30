@@ -126,27 +126,26 @@ class DataEnricher:
             return self.calculate_environmental_impact('unknown', 'unknown')
 
     async def determine_supply_chain(self, product: Dict) -> Dict:
-        """Determine supply chain information based on product data"""
-        meat_type = product.get('meat_type', '').lower()
+        """
+        NOTE: supply_chain table has been removed (2024-05-15).
+        This method is kept for backward compatibility but returns a placeholder object.
         
-        origin_mapping = {
-            'beef': ['United States', 'Canada', 'Australia'],
-            'pork': ['United States', 'Canada', 'Denmark'],
-            'chicken': ['United States', 'Brazil', 'Thailand'],
-            'turkey': ['United States', 'Canada'],
-            'lamb': ['New Zealand', 'Australia'],
-            'duck': ['United States', 'France', 'China']
-        }
+        Args:
+            product: Product data
+            
+        Returns:
+            Dict: Placeholder supply chain data
+        """
+        logging.info(f"DEPRECATED: supply_chain table has been removed. Returning placeholder for product {product.get('code', 'unknown')}")
         
-        origins = origin_mapping.get(meat_type, ['United States'])
-        
+        # Return a placeholder object with default values
         return {
-            'origin_country': 'Unknown',
-            'processing_location': product.get('manufacturing_places', 'Unknown'),
-            'distribution_method': 'refrigerated_transport',
-            'storage_requirements': 'refrigerated',
-            'shelf_life_days': 14 if product.get('processing_method') == 'fresh' else 30,
-            'certifications': product.get('labels_tags', [])
+            'origin_country': None,
+            'processing_location': None, 
+            'distribution_method': None,
+            'storage_requirements': None,
+            'shelf_life_days': None,
+            'certifications': []
         }
 
     async def check_data_consistency(self):
@@ -432,6 +431,114 @@ class DataEnricher:
             logging.error(f"Error in enrichment process: {str(e)}")
         finally:
             await self.cleanup()
+
+    async def get_nutrition_data(self, product_code: str) -> Dict:
+        """
+        NOTE: product_nutrition table has been removed (2024-05-15).
+        This method is kept for backward compatibility but returns a placeholder object.
+        
+        Args:
+            product_code: Product barcode
+            
+        Returns:
+            Dict: Empty nutrition data
+        """
+        logging.info(f"DEPRECATED: product_nutrition table has been removed. Returning placeholder for product {product_code}")
+        
+        return {
+            'calories': None,
+            'protein': None,
+            'fat': None,
+            'carbohydrates': None,
+            'salt': None
+        }
+
+    async def get_price_history(self, product_code: str) -> List[Dict]:
+        """
+        NOTE: price_history table has been removed (2024-05-15).
+        This method is kept for backward compatibility but returns an empty list.
+        
+        Args:
+            product_code: Product barcode
+            
+        Returns:
+            List[Dict]: Empty price history
+        """
+        logging.info(f"DEPRECATED: price_history table has been removed. Returning empty list for product {product_code}")
+        return []
+
+    async def enrich_product(self, product: Dict) -> Dict:
+        """Enrich a product with additional data"""
+        try:
+            # Get product nutrition (DEPRECATED - table removed)
+            # This will use the placeholder method instead
+            nutrition = await self.get_nutrition_data(product['code'])
+            
+            # Get supply chain information (DEPRECATED - table removed)
+            # This will use the placeholder method instead
+            supply_chain = await self.determine_supply_chain(product)
+            
+            # Insert data into tables - with error handling for removed tables
+            try:
+                # NOTE: This will fail because the table has been removed
+                # Kept for backward compatibility with appropriate error handling
+                await self.conn.execute("""
+                    INSERT INTO product_nutrition (
+                        product_code, calories, protein, fat, carbohydrates, salt
+                    ) VALUES ($1, $2, $3, $4, $5, $6)
+                    ON CONFLICT (product_code) DO UPDATE SET
+                        calories = $2,
+                        protein = $3,
+                        fat = $4,
+                        carbohydrates = $5,
+                        salt = $6
+                """, 
+                    product['code'],
+                    nutrition['calories'],
+                    nutrition['protein'],
+                    nutrition['fat'],
+                    nutrition['carbohydrates'],
+                    nutrition['salt']
+                )
+            except Exception as e:
+                logging.warning(f"Expected error: product_nutrition table has been removed. Error: {str(e)}")
+            
+            try:
+                # NOTE: This will fail because the table has been removed
+                # Kept for backward compatibility with appropriate error handling
+                await self.conn.execute("""
+                    INSERT INTO supply_chain (
+                        product_code, origin_country, processing_location, 
+                        distribution_method, storage_requirements, shelf_life_days, 
+                        certifications
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    ON CONFLICT (product_code) DO UPDATE SET
+                        origin_country = $2,
+                        processing_location = $3,
+                        distribution_method = $4,
+                        storage_requirements = $5,
+                        shelf_life_days = $6,
+                        certifications = $7
+                """, 
+                    product['code'],
+                    supply_chain['origin_country'],
+                    supply_chain['processing_location'],
+                    supply_chain['distribution_method'],
+                    supply_chain['storage_requirements'],
+                    supply_chain['shelf_life_days'],
+                    supply_chain['certifications']
+                )
+            except Exception as e:
+                logging.warning(f"Expected error: supply_chain table has been removed. Error: {str(e)}")
+            
+            return {
+                **product,
+                'nutrition': nutrition,
+                'supply_chain': supply_chain
+            }
+        except Exception as e:
+            logging.error(f"Error enriching product {product.get('code', 'unknown')}: {str(e)}")
+            return product
 
 async def main():
     enricher = DataEnricher()

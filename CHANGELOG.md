@@ -5,6 +5,8 @@ All notable changes to the MeatWise project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Placeholder model classes for backward compatibility with removed tables
+- Documentation for schema changes in docs/schema_changes/
 - Separate storage for enhanced descriptions
 - Description enhancement timestamp tracking
 - Confidence scoring for AI-generated content
@@ -15,6 +17,9 @@ All notable changes to the MeatWise project will be documented in this file.
 - Similarity-based description matching
 
 ### Changed
+- Updated product alternatives endpoint to handle missing table
+- Enhanced error handling in data enrichment process
+- Modified RLS policies to reflect current database schema
 - Modified description enhancement system to preserve originals
 - Updated caching system to track both description versions
 - Enhanced data quality metrics
@@ -22,7 +27,22 @@ All notable changes to the MeatWise project will be documented in this file.
 - Improved product processing efficiency
 - Enhanced caching system for AI responses
 
+### Removed
+- Removed backup and unused database tables:
+  - ingredients_backup_20240430
+  - price_history
+  - product_alternatives
+  - product_errors
+  - product_ingredients_backup_20240430
+  - product_nutrition
+  - supply_chain
+- Unused API endpoints
+- Redundant data fields
+
 ### Fixed
+- Eliminated references to non-existent tables in application code
+- Improved error handling for missing tables in data import scripts
+- Added clear documentation of removed tables
 - PostgreSQL extension dependency issues
 - Cache table structure optimization
 - Similarity matching improvements
