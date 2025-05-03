@@ -364,10 +364,13 @@ class JWTErrorHandlerMiddleware(BaseHTTPMiddleware):
 
 def add_security_middleware(app: FastAPI) -> None:
     """Add all security middleware to the app."""
+    # Define the CSP string allowing the Swagger UI CDN - simplified to single line
+    csp_policy = "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';"
+
     # Add security headers middleware
     app.add_middleware(
         SecurityHeadersMiddleware,
-        content_security_policy="default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline';"
+        content_security_policy=csp_policy
     )
     
     # Add JWT error handler middleware

@@ -4,20 +4,13 @@ from typing import Optional, Dict, Any
 import jwt
 from datetime import datetime, timedelta
 import os
-from dotenv import load_dotenv
 from supabase import create_client, Client
 from app.db.supabase import get_supabase
+from app.core.config import settings
 
-# Load environment variables
-load_dotenv()
-
-# Get JWT secret from environment
-JWT_SECRET = os.getenv("JWT_SECRET")
-if not JWT_SECRET:
-    raise ValueError("JWT_SECRET environment variable not set")
-
-JWT_ALGORITHM = "HS256"
-JWT_EXPIRATION_MINUTES = 60 * 24  # 24 hours
+# Use settings for JWT parameters
+JWT_ALGORITHM = settings.ALGORITHM
+JWT_EXPIRATION_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
 
 # Create router
 router = APIRouter()
@@ -47,7 +40,9 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
     else:
         expire = datetime.utcnow() + timedelta(minutes=JWT_EXPIRATION_MINUTES)
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    # Use settings.SECRET_KEY for encoding, as JWT_SECRET is not defined in Settings model
+    # Alternatively, add JWT_SECRET to Settings model if it's different from SECRET_KEY
+    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=JWT_ALGORITHM)
     return encoded_jwt
 
 @router.post("/login", response_model=UserResponse)
