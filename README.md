@@ -47,8 +47,12 @@ A backend API service that provides personalized meat product recommendations an
 
 4. **Run the Project**
    ```bash
-   # Terminal 1: Start the FastAPI backend
-   uvicorn app.main:app --reload --port 8001
+   # Return to project root if needed
+   cd ..
+
+   # IMPORTANT: Use the provided script to start the API server
+   # This ensures the correct DATABASE_URL is used regardless of your environment
+   ./start_local_dev.sh
 
    # Terminal 2: Start the Streamlit frontend
    streamlit run streamlit/app.py
