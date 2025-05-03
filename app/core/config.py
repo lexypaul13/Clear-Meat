@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Union
 from urllib.parse import urljoin, urlparse
 
 # Update the imports for pydantic v2
-from pydantic import AnyHttpUrl, field_validator, model_validator, FieldValidationInfo
+from pydantic import AnyHttpUrl, field_validator, model_validator, FieldValidationInfo, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -46,16 +46,47 @@ class Settings(BaseSettings):
     REDIS_TTL: int = int(os.getenv("REDIS_TTL", "3600"))  # Default TTL for cached items
     
     # CORS
-    BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = []
+    # Read CORS origins as a raw string first to avoid auto JSON parsing from environment
+    BACKEND_CORS_ORIGINS_STR: Optional[str] = os.getenv("BACKEND_CORS_ORIGINS")
 
-    @field_validator("BACKEND_CORS_ORIGINS", mode="before")
-    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:
+    @computed_field
+    @property
+    def parsed_cors_origins(self) -> List[AnyHttpUrl]:
         """Validate CORS origins."""
-        if isinstance(v, str) and not v.startswith("["):
-            return [i.strip() for i in v.split(",")]
-        elif isinstance(v, (list, str)):
-            return v
-        raise ValueError(v)
+        origins: List[AnyHttpUrl] = []
+        raw_value = self.BACKEND_CORS_ORIGINS_STR
+
+        if not raw_value:
+            # If neither env var nor .env setting exists, return empty list
+            return []
+
+        try:
+            # Try parsing as comma-separated string first (common case)
+            if isinstance(raw_value, str) and not raw_value.startswith('['):
+                potential_origins = [item.strip() for item in raw_value.split(',')]
+                # Validate each potential origin
+                for origin_str in potential_origins:
+                    if origin_str:
+                        origins.append(AnyHttpUrl(origin_str))
+            # Else try parsing as JSON list string (less common but supported)
+            elif isinstance(raw_value, str) and raw_value.startswith('['):
+                import json
+                potential_origins = json.loads(raw_value)
+                if isinstance(potential_origins, list):
+                    for origin_str in potential_origins:
+                        if origin_str:
+                            origins.append(AnyHttpUrl(str(origin_str)))
+                else:
+                    raise ValueError("Parsed JSON for CORS origins is not a list")
+            else:
+                 # Should not happen if read from env/dotenv, but handle just in case
+                raise ValueError(f"Invalid format for BACKEND_CORS_ORIGINS: {raw_value}")
+
+        except (ValueError, TypeError, json.JSONDecodeError) as e:
+            print(f"WARNING: Failed to parse BACKEND_CORS_ORIGINS ('{raw_value}'). Error: {e}. Using empty list.", file=sys.stderr)
+            return [] # Return empty list on parsing failure
+
+        return origins
 
     # Database
     POSTGRES_SERVER: str = os.getenv("POSTGRES_SERVER", "")

@@ -44,10 +44,20 @@ add_validation_middleware(app)
 add_caching_middleware(app)
 
 # Set all CORS enabled origins
-if settings.BACKEND_CORS_ORIGINS:
+if settings.parsed_cors_origins:
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
+        allow_origins=[str(origin) for origin in settings.parsed_cors_origins],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    # If no origins are defined, allow all for local development or specific cases
+    # WARNING: This might be too permissive for production.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"], # Allows all origins
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
