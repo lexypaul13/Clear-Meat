@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Union
 from urllib.parse import urljoin, urlparse
 
 # Update the imports for pydantic v2
-from pydantic import AnyHttpUrl, field_validator, model_validator
+from pydantic import AnyHttpUrl, field_validator, model_validator, FieldValidationInfo
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -96,6 +96,15 @@ class Settings(BaseSettings):
     SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")
     SUPABASE_SERVICE_KEY: Optional[str] = os.getenv("SUPABASE_SERVICE_KEY")
 
+    @field_validator("SUPABASE_URL", "SUPABASE_KEY", mode="before")
+    def warn_if_supabase_missing(cls, v: str, info: FieldValidationInfo) -> str:
+        """Warn if Supabase URL or Key is not set."""
+        env_var_name = info.field_name
+        # Check if the value is missing (either None or empty string from os.getenv default)
+        if not v:
+            print(f"WARNING: Environment variable '{env_var_name}' is not set. Supabase features may not work.", file=sys.stderr)
+        return v
+
     # OpenFoodFacts
     OPENFOODFACTS_USER_AGENT: str = os.getenv(
         "OPENFOODFACTS_USER_AGENT", "MeatWise - https://github.com/PPSpiderman/meat-products-api"
@@ -104,6 +113,13 @@ class Settings(BaseSettings):
     # Gemini AI
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+
+    @field_validator("GEMINI_API_KEY", mode="before")
+    def warn_if_gemini_missing(cls, v: str) -> str:
+        """Warn if Gemini API Key is not set."""
+        if not v:
+            print("WARNING: Environment variable 'GEMINI_API_KEY' is not set. Gemini features may not work.", file=sys.stderr)
+        return v
 
     # Replace the Config inner class with model_config
     model_config = SettingsConfigDict(
