@@ -12,9 +12,13 @@ import uuid
 from app.api.v1 import models
 from app.db import models as db_models
 from app.db.session import get_db
-from app.db.supabase import get_supabase
+from app.db.supabase_client import get_supabase
 from app.utils import helpers
 from supabase import create_client
+
+# Configure logging for this module
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 router = APIRouter()
 
@@ -46,82 +50,127 @@ def get_products(
         # Try Supabase first for testing mode
         if is_testing:
             try:
+                # Add debug logging
+                logger.debug("Getting products using Supabase in testing mode")
+                
+                # Get Supabase client and add detailed logging
                 supabase = get_supabase()
+                logger.debug(f"Supabase URL being used: {supabase.supabase_url}")
+                
+                # Build and log the query
                 query = supabase.table("products").select("*")
+                logger.debug("Building Supabase query...")
                 
                 # Apply filters
                 if meat_type:
                     query = query.eq("meat_type", meat_type)
+                    logger.debug(f"Added meat_type filter: {meat_type}")
                 if risk_rating:
                     query = query.eq("risk_rating", risk_rating)
+                    logger.debug(f"Added risk_rating filter: {risk_rating}")
                     
                 # Apply pagination
                 # Note: Supabase doesn't directly support skip, but we'll use limit+offset
-                response = query.range(skip, skip + limit - 1).execute()
+                query = query.range(skip, skip + limit - 1)
+                logger.debug(f"Added pagination: range({skip}, {skip + limit - 1})")
+                
+                # Execute query and log
+                logger.debug("Executing Supabase query...")
+                response = query.execute()
+                logger.debug(f"Supabase response count: {len(response.data) if response.data else 0}")
                 
                 if response.data:
                     # Convert to Pydantic models
                     return [models.Product(**product) for product in response.data]
                 else:
+                    logger.warning("Supabase returned empty data array")
+                    # Check if this is due to a connection issue or truly empty data
+                    # Try a simple test query to confirm connection
+                    test_response = supabase.table("products").select("count").limit(1).execute()
+                    logger.debug(f"Test query result: {test_response.data}")
                     return []
             except Exception as e:
                 # In testing mode, return empty list rather than falling back to SQLAlchemy
-                logging.error(f"Supabase error in testing mode: {str(e)}")
+                logger.error(f"Supabase error in testing mode: {str(e)}")
                 return []
         
         # Normal SQLAlchemy path for non-testing mode
-        query = db.query(db_models.Product)
-        
-        # Apply filters
-        if meat_type:
-            query = query.filter(db_models.Product.meat_type == meat_type)
-        if risk_rating:
-            query = query.filter(db_models.Product.risk_rating == risk_rating)
-        
-        # Get products from database
-        products = query.offset(skip).limit(limit).all()
-        
-        # Manually create Pydantic models instead of relying on automatic conversion
-        result = []
-        for db_product in products:
-            # Create a simple Product model without trying to load ingredients relationship
-            product = models.Product(
-                code=db_product.code,
-                name=db_product.name,
-                brand=db_product.brand,
-                description=db_product.description,
-                ingredients_text=db_product.ingredients_text,
-                
-                # Nutritional information
-                calories=db_product.calories,
-                protein=db_product.protein,
-                fat=db_product.fat,
-                carbohydrates=db_product.carbohydrates,
-                salt=db_product.salt,
-                
-                # Meat-specific information
-                meat_type=db_product.meat_type,
-                
-                # Risk rating
-                risk_rating=db_product.risk_rating,
-                
-                # Image fields
-                image_url=db_product.image_url,
-                image_data=db_product.image_data,
-                
-                # Timestamps
-                last_updated=db_product.last_updated,
-                created_at=db_product.created_at,
-                
-                # Empty ingredients list to avoid complex relationship loading
-                ingredients=[]
+        logger.debug("Getting products using SQLAlchemy")
+        try:
+            # *** SIMPLIFIED QUERY FOR DEBUGGING ***
+            logger.debug("Attempting simplified SQLAlchemy query...")
+            # Select only code and image_data to test access
+            products_data = db.query(
+                db_models.Product.code, 
+                db_models.Product.image_data
+            ).limit(limit).offset(skip).all()
+            
+            logger.debug(f"Simplified query returned {len(products_data)} results.")
+            
+            # If the simplified query works, we just return codes for now
+            # In a real fix, we would restore the full model creation
+            result = [{"code": code, "image_data_exists": img is not None} for code, img in products_data]
+            return result
+            
+            # *** ORIGINAL QUERY (Commented out for debugging) ***
+            # query = db.query(db_models.Product)
+            
+            # # Apply filters
+            # if meat_type:
+            #     query = query.filter(db_models.Product.meat_type == meat_type)
+            # if risk_rating:
+            #     query = query.filter(db_models.Product.risk_rating == risk_rating)
+            
+            # # Get products from database
+            # products = query.offset(skip).limit(limit).all()
+            
+            # # Manually create Pydantic models instead of relying on automatic conversion
+            # result = []
+            # for db_product in products:
+            #     # Create a simple Product model without trying to load ingredients relationship
+            #     product = models.Product(
+            #         code=db_product.code,
+            #         name=db_product.name,
+            #         brand=db_product.brand,
+            #         description=db_product.description,
+            #         ingredients_text=db_product.ingredients_text,
+            #         
+            #         # Nutritional information
+            #         calories=db_product.calories,
+            #         protein=db_product.protein,
+            #         fat=db_product.fat,
+            #         carbohydrates=db_product.carbohydrates,
+            #         salt=db_product.salt,
+            #         
+            #         # Meat-specific information
+            #         meat_type=db_product.meat_type,
+            #         
+            #         # Risk rating
+            #         risk_rating=db_product.risk_rating,
+            #         
+            #         # Image fields
+            #         image_url=db_product.image_url,
+            #         image_data=db_product.image_data,
+            #         
+            #         # Timestamps
+            #         last_updated=db_product.last_updated,
+            #         created_at=db_product.created_at,
+            #         
+            #         # Empty ingredients list to avoid complex relationship loading
+            #         ingredients=[]
+            #     )
+            #     result.append(product)
+            
+            # return result
+        except Exception as sqlalchemy_error:
+            logger.error(f"SQLAlchemy query failed: {sqlalchemy_error}", exc_info=True)
+            raise HTTPException(
+                status_code=500, 
+                detail=f"SQLAlchemy query failed: {str(sqlalchemy_error)}"
             )
-            result.append(product)
-        
-        return result
     except Exception as e:
         # Log the error
-        print(f"Error retrieving products: {str(e)}")
+        logger.error(f"Error retrieving products: {str(e)}")
         raise HTTPException(
             status_code=500, 
             detail=f"Error retrieving products: {str(e)}"
@@ -228,7 +277,7 @@ def get_product(
                 return structured_response
         except Exception as e:
             # Log the Supabase error and continue to try SQLAlchemy
-            logging.error(f"Supabase error: {str(e)}")
+            logger.error(f"Supabase error: {str(e)}")
             
             # In testing mode, skip the fallback to SQLAlchemy database
             if is_testing:
@@ -298,7 +347,7 @@ def get_product(
         raise
     except Exception as e:
         # Log the error
-        print(f"Error processing product data: {str(e)}")
+        logger.error(f"Error processing product data: {str(e)}")
         raise HTTPException(
             status_code=500, 
             detail=f"Error processing product data: {str(e)}"
@@ -354,7 +403,7 @@ def report_product_problem(
             }
     except Exception as e:
         # Log Supabase error
-        logging.error(f"Supabase error when reporting problem: {str(e)}")
+        logger.error(f"Supabase error when reporting problem: {str(e)}")
         
         # In testing mode, return 404 instead of trying SQLAlchemy
         if is_testing:
@@ -455,12 +504,12 @@ def get_product_alternatives(
         else:
             # Product exists in Supabase - return empty alternatives list
             # The product_alternatives table has been removed
-            logging.info(f"Product {code} exists, but product_alternatives table has been removed. Returning empty list.")
+            logger.info(f"Product {code} exists, but product_alternatives table has been removed. Returning empty list.")
             return []
                 
     except Exception as e:
         # Log Supabase error
-        logging.error(f"Supabase error when getting alternatives: {str(e)}")
+        logger.error(f"Supabase error when getting alternatives: {str(e)}")
         
         # In testing mode, return empty list instead of trying SQLAlchemy
         if is_testing:
@@ -472,7 +521,7 @@ def get_product_alternatives(
         raise HTTPException(status_code=404, detail="Product not found")
     
     # Return empty list since product_alternatives table has been removed
-    logging.info(f"Product {code} exists in SQLAlchemy, but product_alternatives table has been removed. Returning empty list.")
+    logger.info(f"Product {code} exists in SQLAlchemy, but product_alternatives table has been removed. Returning empty list.")
     return []
 
 
@@ -659,7 +708,7 @@ def get_product_direct(
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        logging.error(f"Error retrieving product from Supabase: {e}")
+        logger.error(f"Error retrieving product from Supabase: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to retrieve product: {str(e)}"

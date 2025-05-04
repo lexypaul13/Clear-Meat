@@ -66,6 +66,7 @@ CREATE TABLE products (
     
     -- Additional fields
     image_url TEXT,
+    image_data TEXT,
     source TEXT DEFAULT 'openfoodfacts', -- Data source
     
     -- Metadata

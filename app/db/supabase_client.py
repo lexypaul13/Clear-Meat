@@ -6,35 +6,32 @@ error handling, and logging. It supports both anonymous and admin access.
 
 import logging
 import os
+import json
+import httpx
 from functools import lru_cache
 from typing import Optional, Tuple, Dict, Any
 
 from supabase import create_client, Client
-from dotenv import load_dotenv
 
 from app.core.config import settings
 
 # Configure logger
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
-# Load environment variables
-load_dotenv()
+# Remove the dotenv load and hardcoded defaults
+# We'll use the settings module exclusively for configuration
 
-# Hardcoded Supabase configuration fallbacks - Use these values when env variables aren't set
-DEFAULT_SUPABASE_URL = "https://szswmlkhirkmozwvhpnc.supabase.co"
-DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN6c3dtbGtoaXJrbW96d3ZocG5jIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIyNjY5NTIsImV4cCI6MjA1Nzg0Mjk1Mn0.yc4eC9f7IAjdNlav0GfxfkaeJAKZp-w1hPGHB0lMqPs"
-
-# Get Supabase configuration from settings or use defaults
-SUPABASE_URL = settings.SUPABASE_URL or os.getenv("SUPABASE_URL", DEFAULT_SUPABASE_URL)
-SUPABASE_KEY = settings.SUPABASE_KEY or os.getenv("SUPABASE_KEY", DEFAULT_SUPABASE_KEY)
-SUPABASE_SERVICE_KEY = settings.SUPABASE_SERVICE_KEY or os.getenv("SUPABASE_SERVICE_KEY")
+# Get Supabase configuration directly from settings
+SUPABASE_URL = settings.SUPABASE_URL
+SUPABASE_KEY = settings.SUPABASE_KEY
+SUPABASE_SERVICE_KEY = settings.SUPABASE_SERVICE_KEY
 
 # Global client instances
 _public_client: Optional[Client] = None
 _admin_client: Optional[Client] = None
 
 
-@lru_cache()
 def get_supabase() -> Client:
     """
     Get a cached Supabase client instance with anonymous/public access.
@@ -50,21 +47,48 @@ def get_supabase() -> Client:
     if _public_client is not None:
         return _public_client
     
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        error_msg = "Supabase configuration missing - URL and Key must be provided via environment variables"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    
     try:
-        # Log connection attempt
-        key_info = SUPABASE_KEY[:4] if SUPABASE_KEY else 'None'
+        # Log connection attempt with more detailed info
+        key_info = f"{SUPABASE_KEY[:8]}..." if SUPABASE_KEY else 'None' # Store key info temporarily
         logger.info(f"Initializing Supabase public client with URL: {SUPABASE_URL}")
-        logger.debug(f"Using anon key (first 4 chars): {key_info}")
+        # logger.debug(f"Using anon key (first 8 chars): {key_info}") # Commented out sensitive log
+        logger.debug(f"Settings object contains SUPABASE_URL: {bool(settings.SUPABASE_URL)}")
+        logger.debug(f"Environment contains SUPABASE_URL: {bool(os.environ.get('SUPABASE_URL'))}")
+        
+        # Test the network connection to the Supabase URL first
+        try:
+            # Test the connection to the Supabase host first
+            parsed_url = httpx.URL(SUPABASE_URL)
+            host = str(parsed_url.host)
+            test_url = f"https://{host}/rest/v1/"
+            
+            logger.debug(f"Testing connection to Supabase host: {test_url}")
+            
+            # Make a simple HTTP request to verify network connectivity
+            with httpx.Client(timeout=10.0) as client:
+                response = client.get(test_url, headers={"apikey": SUPABASE_KEY})
+                logger.debug(f"Connection test response status: {response.status_code}")
+                logger.debug(f"Connection test response headers: {dict(response.headers)}")
+        except Exception as e:
+            logger.error(f"Failed to connect to Supabase host: {str(e)}")
+            # Continue with client creation despite connection test failure
         
         # Create and cache the client
+        logger.debug("Creating Supabase client instance")
         _public_client = create_client(SUPABASE_URL, SUPABASE_KEY)
         
-        # Test connection
-        if _public_client and hasattr(_public_client, 'auth'):
-            logger.info("Supabase public client initialized successfully")
-        else:
-            logger.error("Supabase public client initialized but auth attribute is missing")
-            
+        # Test the client by making a simple query
+        logger.debug("Testing Supabase client with a simple query")
+        test_response = _public_client.table("products").select("count").limit(1).execute()
+        logger.debug(f"Test query response: {json.dumps(test_response.dict())}")
+        
+        # Log success
+        logger.info("Supabase public client initialized successfully")
         return _public_client
     except Exception as e:
         logger.error(f"Failed to initialize Supabase public client: {str(e)}")
@@ -88,6 +112,10 @@ def get_admin_supabase() -> Optional[Client]:
     
     if _admin_client is not None:
         return _admin_client
+    
+    if not SUPABASE_URL:
+        logger.error("Supabase URL is required for admin client")
+        return None
     
     if not SUPABASE_SERVICE_KEY:
         logger.warning("No Supabase service role key configured, admin client not available")
@@ -155,6 +183,11 @@ def get_supabase_with_options(
     # Use provided values or fall back to defaults
     final_url = url or SUPABASE_URL
     final_key = key or SUPABASE_KEY
+    
+    if not final_url or not final_key:
+        error_msg = "Supabase URL and key are required"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
     
     try:
         logger.debug(f"Creating custom Supabase client for URL: {final_url}")
