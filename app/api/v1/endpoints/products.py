@@ -97,71 +97,71 @@ def get_products(
         # Normal SQLAlchemy path for non-testing mode
         logger.debug("Getting products using SQLAlchemy")
         try:
-            # *** SIMPLIFIED QUERY FOR DEBUGGING ***
-            logger.debug("Attempting simplified SQLAlchemy query...")
-            # Select only code and image_data to test access
-            products_data = db.query(
-                db_models.Product.code, 
-                db_models.Product.image_data
-            ).limit(limit).offset(skip).all()
-            
-            logger.debug(f"Simplified query returned {len(products_data)} results.")
-            
-            # If the simplified query works, we just return codes for now
-            # In a real fix, we would restore the full model creation
-            result = [{"code": code, "image_data_exists": img is not None} for code, img in products_data]
-            return result
-            
-            # *** ORIGINAL QUERY (Commented out for debugging) ***
-            # query = db.query(db_models.Product)
-            
-            # # Apply filters
-            # if meat_type:
-            #     query = query.filter(db_models.Product.meat_type == meat_type)
-            # if risk_rating:
-            #     query = query.filter(db_models.Product.risk_rating == risk_rating)
-            
-            # # Get products from database
-            # products = query.offset(skip).limit(limit).all()
-            
-            # # Manually create Pydantic models instead of relying on automatic conversion
-            # result = []
-            # for db_product in products:
-            #     # Create a simple Product model without trying to load ingredients relationship
-            #     product = models.Product(
-            #         code=db_product.code,
-            #         name=db_product.name,
-            #         brand=db_product.brand,
-            #         description=db_product.description,
-            #         ingredients_text=db_product.ingredients_text,
-            #         
-            #         # Nutritional information
-            #         calories=db_product.calories,
-            #         protein=db_product.protein,
-            #         fat=db_product.fat,
-            #         carbohydrates=db_product.carbohydrates,
-            #         salt=db_product.salt,
-            #         
-            #         # Meat-specific information
-            #         meat_type=db_product.meat_type,
-            #         
-            #         # Risk rating
-            #         risk_rating=db_product.risk_rating,
-            #         
-            #         # Image fields
-            #         image_url=db_product.image_url,
-            #         image_data=db_product.image_data,
-            #         
-            #         # Timestamps
-            #         last_updated=db_product.last_updated,
-            #         created_at=db_product.created_at,
-            #         
-            #         # Empty ingredients list to avoid complex relationship loading
-            #         ingredients=[]
-            #     )
-            #     result.append(product)
-            
+            # *** SIMPLIFIED QUERY REMOVED - Restoring original query ***
+            # logger.debug("Attempting simplified SQLAlchemy query...")
+            # # Select only code and image_data to test access
+            # products_data = db.query(
+            #     db_models.Product.code, 
+            #     db_models.Product.image_data
+            # ).limit(limit).offset(skip).all()
+            # 
+            # logger.debug(f"Simplified query returned {len(products_data)} results.")
+            # 
+            # # If the simplified query works, we just return codes for now
+            # # In a real fix, we would restore the full model creation
+            # result = [{"code": code, "image_data_exists": img is not None} for code, img in products_data]
             # return result
+            
+            # *** ORIGINAL QUERY (Restored) ***
+            query = db.query(db_models.Product)
+            
+            # Apply filters
+            if meat_type:
+                query = query.filter(db_models.Product.meat_type == meat_type)
+            if risk_rating:
+                query = query.filter(db_models.Product.risk_rating == risk_rating)
+            
+            # Get products from database
+            products = query.offset(skip).limit(limit).all()
+            
+            # Manually create Pydantic models instead of relying on automatic conversion
+            result = []
+            for db_product in products:
+                # Create a simple Product model without trying to load ingredients relationship
+                product = models.Product(
+                    code=db_product.code,
+                    name=db_product.name,
+                    brand=db_product.brand,
+                    description=db_product.description,
+                    ingredients_text=db_product.ingredients_text,
+                    
+                    # Nutritional information
+                    calories=db_product.calories,
+                    protein=db_product.protein,
+                    fat=db_product.fat,
+                    carbohydrates=db_product.carbohydrates,
+                    salt=db_product.salt,
+                    
+                    # Meat-specific information
+                    meat_type=db_product.meat_type,
+                    
+                    # Risk rating
+                    risk_rating=db_product.risk_rating,
+                    
+                    # Image fields
+                    image_url=db_product.image_url,
+                    image_data=db_product.image_data,
+                    
+                    # Timestamps
+                    last_updated=db_product.last_updated,
+                    created_at=db_product.created_at,
+                    
+                    # Empty ingredients list to avoid complex relationship loading
+                    ingredients=[]
+                )
+                result.append(product)
+            
+            return result
         except Exception as sqlalchemy_error:
             logger.error(f"SQLAlchemy query failed: {sqlalchemy_error}", exc_info=True)
             raise HTTPException(
