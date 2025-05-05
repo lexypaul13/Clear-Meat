@@ -14,24 +14,15 @@ else:
 
 class UserPreferences(BaseModel):
     """User preferences from onboarding."""
-    # Screen 1: Nutrition Priorities
-    nutrition_focus: Optional[str] = None  # "protein", "fat", "salt"
-    
-    # Screen 2: Additives and Preservatives
-    avoid_preservatives: Optional[bool] = None  # True/False
-    
-    # Screen 3: Antibiotics and Hormones in Raising
-    prefer_antibiotic_free: Optional[bool] = None  # True/False
-    
-    # Screen 4: Sourcing & Animal Diet
-    prefer_grass_fed: Optional[bool] = None  # True/False
-    
-    # Screen 5: Typical Cooking Style
-    cooking_style: Optional[str] = None  # "grilling", "pan_frying", "oven_slow_cooker"
-    
-    # Screen 6: Openness to Meat Alternatives
-    open_to_alternatives: Optional[bool] = None  # True/False
-    
+    # Revised Questions (May 2024)
+    prefer_no_preservatives: Optional[bool] = None # Q1: Avoid artificial preservatives?
+    prefer_antibiotic_free: Optional[bool] = None  # Q2: Antibiotic-free important?
+    prefer_hormone_free: Optional[bool] = None     # Q3: Prefer hormone-free?
+    prefer_no_added_sugars: Optional[bool] = None  # Q4: Avoid added sugars?
+    prefer_no_flavor_enhancers: Optional[bool] = None # Q5: Avoid flavor enhancers (MSG)?
+    prefer_reduced_sodium: Optional[bool] = None   # Q6: Interested in lower sodium?
+    preferred_meat_types: Optional[List[str]] = None # Q7: Primary meat types?
+
     # Keeping legacy fields for backward compatibility
     health_goal: Optional[str] = None  
     sourcing_preference: Optional[str] = None
@@ -43,12 +34,13 @@ class UserPreferences(BaseModel):
         "json_schema_extra": {
             "examples": [
                 {
-                    "nutrition_focus": "protein",
-                    "avoid_preservatives": True,
+                    "prefer_no_preservatives": True,
                     "prefer_antibiotic_free": True,
-                    "prefer_grass_fed": True,
-                    "cooking_style": "grilling",
-                    "open_to_alternatives": False
+                    "prefer_hormone_free": False,
+                    "prefer_no_added_sugars": True,
+                    "prefer_no_flavor_enhancers": True,
+                    "prefer_reduced_sodium": True,
+                    "preferred_meat_types": ["chicken", "turkey", "beef"]
                 }
             ]
         }

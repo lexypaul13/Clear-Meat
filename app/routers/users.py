@@ -51,9 +51,6 @@ def get_current_user(
         "id": _convert_uuid_to_str(current_user.id),
         "email": current_user.email,
         "full_name": current_user.full_name,
-        "is_active": current_user.is_active,
-        "is_superuser": current_user.is_superuser,
-        "role": current_user.role,
         "created_at": current_user.created_at,
         "updated_at": current_user.updated_at,
         "preferences": current_user.preferences
@@ -91,9 +88,6 @@ def update_current_user(
             "id": _convert_uuid_to_str(current_user.id),
             "email": update_data.get("email", current_user.email),
             "full_name": update_data.get("full_name", current_user.full_name),
-            "is_active": update_data.get("is_active", current_user.is_active),
-            "is_superuser": update_data.get("is_superuser", current_user.is_superuser) if current_user.is_superuser else False,
-            "role": update_data.get("role", current_user.role) if current_user.is_superuser else current_user.role,
             "created_at": current_user.created_at,
             "updated_at": datetime.now(),
             "preferences": current_user.preferences
@@ -118,24 +112,32 @@ def update_current_user(
         # Merge with existing preferences if any
         existing_preferences = getattr(current_user, "preferences", {}) or {}
         if isinstance(existing_preferences, str):
-            existing_preferences = json.loads(existing_preferences)
+            try:
+                existing_preferences = json.loads(existing_preferences)
+            except json.JSONDecodeError:
+                 logger.warning(f"Could not decode existing preferences for user {current_user.id}: {existing_preferences}")
+                 existing_preferences = {}
         
         # Update with new preferences
         merged_preferences = {**existing_preferences, **preferences}
-        current_user.preferences = merged_preferences
+        current_user.preferences = merged_preferences # SQLAlchemy handles JSONB serialization
     
     # Hash password if provided
     if "password" in update_data and update_data["password"]:
-        update_data["hashed_password"] = security.get_password_hash(update_data["password"])
+        # Note: Supabase handles password updates via its own mechanisms
+        # We should probably prevent password updates via this endpoint or use Supabase admin API
+        logger.warning("Password update attempted via /users/me endpoint. This might not work as expected with Supabase Auth.")
+        # update_data["hashed_password"] = security.get_password_hash(update_data["password"])
         del update_data["password"]
     
-    # Only superusers can change is_superuser and role
-    if not current_user.is_superuser:
-        update_data.pop("is_superuser", None)
-        update_data.pop("role", None)
-    
+    # Update allowed fields (excluding preferences, password)
+    allowed_fields = ["email", "full_name"] # Only allow updating these via this endpoint
     for key, value in update_data.items():
-        setattr(current_user, key, value)
+        if key in allowed_fields:
+            setattr(current_user, key, value)
+        elif key not in ["preferences", "password"]:
+             logger.warning(f"Attempted to update unallowed field '{key}' via /users/me")
+
     
     db.add(current_user)
     db.commit()
@@ -146,9 +148,6 @@ def update_current_user(
         "id": _convert_uuid_to_str(current_user.id),
         "email": current_user.email,
         "full_name": current_user.full_name,
-        "is_active": current_user.is_active,
-        "is_superuser": current_user.is_superuser,
-        "role": current_user.role,
         "created_at": current_user.created_at,
         "updated_at": current_user.updated_at,
         "preferences": current_user.preferences

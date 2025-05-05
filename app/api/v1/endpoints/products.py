@@ -15,6 +15,7 @@ from app.db.session import get_db
 from app.db.supabase_client import get_supabase
 from app.utils import helpers
 from supabase import create_client
+from app.internal.dependencies import get_current_active_user
 
 # Configure logging for this module
 logger = logging.getLogger(__name__)
@@ -27,18 +28,18 @@ def get_products(
     db: Session = Depends(get_db),
     skip: int = 0,
     limit: int = 100,
-    meat_type: Optional[str] = None,
     risk_rating: Optional[str] = None,
+    current_user: db_models.User = Depends(get_current_active_user)
 ) -> Any:
     """
-    Retrieve products with optional filtering.
+    Retrieve products with optional filtering and preference-based sorting.
     
     Args:
         db: Database session
         skip: Number of records to skip
         limit: Maximum number of records to return
-        meat_type: Filter by meat type
         risk_rating: Filter by risk rating
+        current_user: Current active user
         
     Returns:
         List[models.Product]: List of products
@@ -62,9 +63,6 @@ def get_products(
                 logger.debug("Building Supabase query...")
                 
                 # Apply filters
-                if meat_type:
-                    query = query.eq("meat_type", meat_type)
-                    logger.debug(f"Added meat_type filter: {meat_type}")
                 if risk_rating:
                     query = query.eq("risk_rating", risk_rating)
                     logger.debug(f"Added risk_rating filter: {risk_rating}")
@@ -97,71 +95,135 @@ def get_products(
         # Normal SQLAlchemy path for non-testing mode
         logger.debug("Getting products using SQLAlchemy")
         try:
-            # *** SIMPLIFIED QUERY REMOVED - Restoring original query ***
-            # logger.debug("Attempting simplified SQLAlchemy query...")
-            # # Select only code and image_data to test access
-            # products_data = db.query(
-            #     db_models.Product.code, 
-            #     db_models.Product.image_data
-            # ).limit(limit).offset(skip).all()
-            # 
-            # logger.debug(f"Simplified query returned {len(products_data)} results.")
-            # 
-            # # If the simplified query works, we just return codes for now
-            # # In a real fix, we would restore the full model creation
-            # result = [{"code": code, "image_data_exists": img is not None} for code, img in products_data]
-            # return result
-            
-            # *** ORIGINAL QUERY (Restored) ***
+
+            # Build the base query
             query = db.query(db_models.Product)
             
-            # Apply filters
-            if meat_type:
-                query = query.filter(db_models.Product.meat_type == meat_type)
+            # Apply standard filters
+            # --- Apply meat type filter based on preferences first ---
+            preferences = current_user.preferences if current_user else None
+            if preferences and preferences.get('preferred_meat_types'):
+                preferred_types = preferences['preferred_meat_types']
+                if preferred_types: # Ensure list is not empty
+                    query = query.filter(db_models.Product.meat_type.in_(preferred_types))
+            
+            # --- Apply other standard filters ---
+            # Removed meat_type filter here as it's handled above
+            # if meat_type:
+            #     query = query.filter(db_models.Product.meat_type == meat_type)
             if risk_rating:
                 query = query.filter(db_models.Product.risk_rating == risk_rating)
             
-            # Get products from database
-            products = query.offset(skip).limit(limit).all()
-            
-            # Manually create Pydantic models instead of relying on automatic conversion
+            # Get products from database with pagination
+            db_products = query.offset(skip).limit(limit).all()
+
+            # Convert to Pydantic models and apply preference sorting/filtering if applicable
             result = []
-            for db_product in products:
-                # Create a simple Product model without trying to load ingredients relationship
-                product = models.Product(
+            # preferences = current_user.preferences if current_user else None # Already defined above
+
+            # Define sodium threshold (e.g., grams per 100g) - adjust as needed
+            REDUCED_SODIUM_THRESHOLD = 0.5 
+
+            for db_product in db_products:
+                product_model = models.Product(
                     code=db_product.code,
                     name=db_product.name,
                     brand=db_product.brand,
                     description=db_product.description,
                     ingredients_text=db_product.ingredients_text,
-                    
-                    # Nutritional information
                     calories=db_product.calories,
                     protein=db_product.protein,
                     fat=db_product.fat,
                     carbohydrates=db_product.carbohydrates,
                     salt=db_product.salt,
-                    
-                    # Meat-specific information
                     meat_type=db_product.meat_type,
-                    
-                    # Risk rating
                     risk_rating=db_product.risk_rating,
-                    
-                    # Image fields
                     image_url=db_product.image_url,
                     image_data=db_product.image_data,
-                    
-                    # Timestamps
                     last_updated=db_product.last_updated,
                     created_at=db_product.created_at,
-                    
-                    # Empty ingredients list to avoid complex relationship loading
                     ingredients=[]
                 )
-                result.append(product)
-            
-            return result
+                
+                # Calculate match score if preferences exist
+                match_score = 0
+                if preferences:
+                    search_text = (f"{db_product.name or ''} {db_product.brand or ''} "
+                                   f"{db_product.description or ''} {db_product.ingredients_text or ''}").lower()
+
+                    # Q1: Check for preservatives
+                    if preferences.get('prefer_no_preservatives'):
+                        preservative_keywords = ['sorbate', 'benzoate', 'nitrite', 'sulfite', 'bha', 'bht', 'sodium erythorbate']
+                        if any(keyword in search_text for keyword in preservative_keywords):
+                            match_score -= 1 # Penalize
+                        else:
+                            match_score += 1 # Reward
+                    
+                    # Q2: Check for antibiotic preference
+                    if preferences.get('prefer_antibiotic_free'):
+                        antibiotic_free_keywords = [
+                            'antibiotic-free', 'no antibiotics', 'raised without antibiotics', 
+                            'never administered antibiotics'
+                        ]
+                        if any(keyword in search_text for keyword in antibiotic_free_keywords):
+                            match_score += 1 # Reward
+
+                    # Q3: Check for hormone preference
+                    if preferences.get('prefer_hormone_free'):
+                        hormone_free_keywords = ['hormone-free', 'no added hormones', 'no hormones administered']
+                        if any(keyword in search_text for keyword in hormone_free_keywords):
+                            match_score += 1 # Reward
+
+                    # Q4: Check for added sugars
+                    if preferences.get('prefer_no_added_sugars'):
+                        # Check ingredients list primarily
+                        ingredients_lower = (db_product.ingredients_text or '').lower()
+                        sugar_keywords = [
+                            'sugar', 'syrup', 'dextrose', 'fructose', 'sucrose', 'maltodextrin', 
+                            'corn syrup solids', 'brown sugar' # Add more as needed
+                        ]
+                        if any(keyword in ingredients_lower for keyword in sugar_keywords):
+                            match_score -= 1 # Penalize
+                        else:
+                            match_score += 1 # Reward
+                            
+                    # Q5: Check for flavor enhancers (MSG)
+                    if preferences.get('prefer_no_flavor_enhancers'):
+                        enhancer_keywords = ['monosodium glutamate', 'msg', 'hydrolyzed', 'autolyzed yeast extract'] # Add more as needed
+                        if any(keyword in search_text for keyword in enhancer_keywords):
+                            match_score -= 1 # Penalize
+                        else:
+                            match_score += 1 # Reward
+                            
+                    # Q6: Check for reduced sodium (based on value)
+                    if preferences.get('prefer_reduced_sodium') and product_model.salt is not None:
+                        if product_model.salt < REDUCED_SODIUM_THRESHOLD:
+                            match_score += 1 # Reward if below threshold
+                        # Optional: Penalize if significantly above threshold?
+                        # elif product_model.salt > HIGH_SODIUM_THRESHOLD:
+                        #    match_score -= 1
+
+                    # --- Removed Old Preference Logic ---
+                    # if preferences.get('prefer_grass_fed'):
+                    #    grass_fed_keywords = ['grass-fed', 'grass fed', 'pasture-raised']
+                    #    if any(keyword in search_text for keyword in grass_fed_keywords):
+                    #        match_score += 1 # Reward if keywords found
+
+                    # --- TODO: Refine scoring weights? ---
+
+                result.append((match_score, product_model))
+
+            # Sort by score if preferences were applied
+            if preferences:
+                result.sort(key=lambda item: item[0], reverse=True)
+                # Extract only the product models after sorting
+                final_products = [item[1] for item in result]
+            else:
+                # No preferences, just return the models in DB order
+                final_products = [item[1] for item in result]
+                
+            return final_products
+
         except Exception as sqlalchemy_error:
             logger.error(f"SQLAlchemy query failed: {sqlalchemy_error}", exc_info=True)
             raise HTTPException(

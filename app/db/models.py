@@ -55,15 +55,10 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=True)  # Managed by Supabase Auth
     full_name = Column(String, nullable=True)
     
-    # Add our application-specific fields to the profiles table
-    is_active = Column(Boolean, default=True, nullable=True)
-    is_superuser = Column(Boolean, default=False, nullable=True)
-    role = Column(String, default="basic", nullable=True)  # basic, contributor, moderator, admin
-    
     # User preferences from onboarding
     preferences = Column(JSONB, nullable=True)
     
-    # Metadata
+    # Metadata (These are likely managed by Supabase Auth triggers/defaults)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=True)
     
