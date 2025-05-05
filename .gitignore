@@ -1,7 +1,9 @@
 # Environment variables
-.env
+# .env # No longer used directly
 .env.*
 !.env.example
+.env.local
+.env.remote
 
 # Python
 __pycache__/

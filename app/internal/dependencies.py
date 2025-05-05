@@ -128,14 +128,17 @@ def get_current_user(
                 # User found in database - ensure ID is string
                 if hasattr(user.id, 'hex') or isinstance(user.id, uuid.UUID):
                     user.id = str(user.id)
+                logger.debug(f"User {user_id} found in local DB.")
                 return user
             else:
                 # User exists in Supabase but not in our database yet
                 # Create temporary user object with data from Supabase
+                logger.warning(f"User {user_id} not found in local DB profiles. Creating record.")
                 user_metadata = getattr(supabase_user, 'user_metadata', {}) or {}
                 full_name = user_metadata.get('full_name', '')
-                role = user_metadata.get('role', 'basic')
+                # role = user_metadata.get('role', 'basic') # Role field removed from model
                 
+                # --- Restoring INSERT logic --- 
                 # Create and save the user to our database
                 # Pass only fields that exist in the db_models.User model
                 new_user = db_models.User(
@@ -143,23 +146,42 @@ def get_current_user(
                     email=user_email,
                     full_name=full_name,
                     # preferences=None # Initialize preferences if needed
-                    # --- Removed fields that don't exist in the model ---
-                    # is_active=True,
-                    # is_superuser=False,
-                    # role=role
                 )
                 
                 # Add the user to the database to avoid recreating it on every request
-                db.add(new_user)
-                db.commit()
-                db.refresh(new_user)
-                
-                logger.info(f"Created new user record for Supabase user {user_id}")
-                return new_user
+                # This might fail if there are transaction/timing issues with auth.users
+                try:
+                    db.add(new_user)
+                    db.commit()
+                    db.refresh(new_user)
+                    logger.info(f"Created new user record for Supabase user {user_id}")
+                    return new_user
+                except Exception as insert_exc:
+                     logger.error(f"Failed to insert user {user_id} into local DB: {insert_exc}")
+                     db.rollback()
+                     # If insert fails, fall back to manual verification for this request
+                     logger.warning("Falling back to manual verification due to DB insert failure.")
+                     return verify_manually()
+
+                # --- Removed temporary object creation logic ---
+                # temp_user_obj = type('TempUser', (object,), {
+                #     'id': user_id,
+                #     'email': user_email,
+                #     'full_name': full_name,
+                #     'preferences': None, # No preferences known yet
+                #     'created_at': None, # Not available without DB record
+                #     'updated_at': None  # Not available without DB record
+                # })
+                # return temp_user_obj
             
         except Exception as e:
-            # Log the specific error from Supabase
-            logger.warning(f"Supabase token verification error: {str(e)}. Falling back to manual verification.")
+            # Log the specific error from Supabase or DB interaction
+            logger.warning(f"Supabase/DB error during user lookup/creation: {str(e)}. Falling back to manual verification.")
+            # Rollback any potential transaction changes from failed insert attempt
+            try:
+                db.rollback()
+            except Exception as rb_exc:
+                 logger.error(f"Error during rollback: {rb_exc}")
             return verify_manually()
             
     except Exception as e:
