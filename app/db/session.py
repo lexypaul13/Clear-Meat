@@ -9,29 +9,34 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from contextlib import contextmanager
 
-from app.core.config import settings
-
-# Environment detection
-IS_PRODUCTION = os.getenv("ENVIRONMENT", "development").lower() == "production"
-
-# Configure logging with a more structured approach for production
+# Configure logging with a more structured approach
 logger = logging.getLogger(__name__)
-if IS_PRODUCTION:
-    # More structured logging for production
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    )
-else:
-    # More verbose logging for development
-    logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.DEBUG)
+
+# Check for DATABASE_URL directly first
+database_url = os.environ.get("DATABASE_URL")
+
+# If not found directly, then try to import from settings
+if not database_url:
+    try:
+        from app.core.config import settings
+        database_url = settings.DATABASE_URL
+        logger.debug("Loaded DATABASE_URL from settings")
+    except Exception as e:
+        logger.error(f"Failed to load DATABASE_URL from settings: {str(e)}")
+        database_url = None
+
+# Fall back to a default if still not found
+if not database_url:
+    default_url = "postgresql://postgres:postgres@localhost:54322/postgres"
+    logger.warning(f"No DATABASE_URL found in environment or settings, using default: {default_url}")
+    database_url = default_url
 
 # Log the database URL (with password masked)
-db_url = settings.DATABASE_URL
-if db_url:
-    parsed_url = urlparse(db_url)
-    masked_url = db_url.replace(parsed_url.password, "****") if parsed_url.password else db_url
-    logger.debug(f"Connecting to database: {masked_url}")
+if database_url:
+    parsed_url = urlparse(database_url)
+    masked_url = database_url.replace(parsed_url.password, "****") if parsed_url.password else database_url
+    logger.info(f"Using database connection: {masked_url}")
     
     # Try to resolve the hostname
     try:
@@ -44,35 +49,29 @@ if db_url:
         logger.error(f"Failed to resolve hostname {hostname}: {str(e)}")
     except Exception as e:
         logger.error(f"Unexpected error while resolving hostname: {str(e)}")
-
-# Adjust pool settings based on environment
-if IS_PRODUCTION:
-    # Production settings with larger pool
-    pool_size = int(os.getenv("DB_POOL_SIZE", "20"))
-    max_overflow = int(os.getenv("DB_MAX_OVERFLOW", "30"))
-    pool_timeout = int(os.getenv("DB_POOL_TIMEOUT", "30"))
-    pool_recycle = int(os.getenv("DB_POOL_RECYCLE", "300"))
 else:
-    # Development settings
-    pool_size = 5
-    max_overflow = 10
-    pool_timeout = 30
-    pool_recycle = 900  # 15 minutes
+    logger.critical("No DATABASE_URL found and no default could be set")
+    raise ValueError("DATABASE_URL must be set")
 
 # Create SQLAlchemy engine
 try:
+    # Convert postgres:// to postgresql:// if needed
+    if database_url.startswith('postgres://'):
+        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+        logger.debug("Converted postgres:// to postgresql:// in DATABASE_URL")
+
     engine = create_engine(
-        settings.DATABASE_URL,
-        pool_pre_ping=True,  # Enable connection health checks
-        echo=not IS_PRODUCTION,  # Enable SQL query logging in development
-        pool_size=pool_size,
-        max_overflow=max_overflow,
-        pool_timeout=pool_timeout,
-        pool_recycle=pool_recycle  # Recycle connections after this many seconds
+        database_url,
+        pool_pre_ping=True,
+        echo=False,
+        pool_size=5,
+        max_overflow=10,
+        pool_timeout=30,
+        pool_recycle=900
     )
-    logger.info(f"Database engine created with pool_size={pool_size}, max_overflow={max_overflow}")
+    logger.info("Database engine created successfully")
 except Exception as e:
-    logger.error(f"Failed to create database engine: {str(e)}")
+    logger.critical(f"Failed to create database engine: {str(e)}")
     raise
 
 # Create SessionLocal class

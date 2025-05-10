@@ -151,17 +151,17 @@ def get_current_user(
                 # Add the user to the database to avoid recreating it on every request
                 # This might fail if there are transaction/timing issues with auth.users
                 try:
-                db.add(new_user)
-                db.commit()
-                db.refresh(new_user)
-                logger.info(f"Created new user record for Supabase user {user_id}")
-                return new_user
+                    db.add(new_user)
+                    db.commit()
+                    db.refresh(new_user)
+                    logger.info(f"Created new user record for Supabase user {user_id}")
+                    return new_user
                 except Exception as insert_exc:
-                     logger.error(f"Failed to insert user {user_id} into local DB: {insert_exc}")
-                     db.rollback()
-                     # If insert fails, fall back to manual verification for this request
-                     logger.warning("Falling back to manual verification due to DB insert failure.")
-                     return verify_manually()
+                    logger.error(f"Failed to insert user {user_id} into local DB: {insert_exc}")
+                    db.rollback()
+                    # If insert fails, fall back to manual verification for this request
+                    logger.warning("Falling back to manual verification due to DB insert failure.")
+                    return verify_manually()
 
                 # --- Removed temporary object creation logic ---
                 # temp_user_obj = type('TempUser', (object,), {
