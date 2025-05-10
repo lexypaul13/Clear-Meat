@@ -113,7 +113,7 @@ def update_current_user(
         existing_preferences = getattr(current_user, "preferences", {}) or {}
         if isinstance(existing_preferences, str):
             try:
-                existing_preferences = json.loads(existing_preferences)
+            existing_preferences = json.loads(existing_preferences)
             except json.JSONDecodeError:
                  logger.warning(f"Could not decode existing preferences for user {current_user.id}: {existing_preferences}")
                  existing_preferences = {}
@@ -134,7 +134,7 @@ def update_current_user(
     allowed_fields = ["email", "full_name"] # Only allow updating these via this endpoint
     for key, value in update_data.items():
         if key in allowed_fields:
-            setattr(current_user, key, value)
+        setattr(current_user, key, value)
         elif key not in ["preferences", "password"]:
              logger.warning(f"Attempted to update unallowed field '{key}' via /users/me")
 

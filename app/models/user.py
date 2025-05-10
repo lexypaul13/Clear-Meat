@@ -22,7 +22,7 @@ class UserPreferences(BaseModel):
     prefer_no_flavor_enhancers: Optional[bool] = None # Q5: Avoid flavor enhancers (MSG)?
     prefer_reduced_sodium: Optional[bool] = None   # Q6: Interested in lower sodium?
     preferred_meat_types: Optional[List[str]] = None # Q7: Primary meat types?
-
+    
     # Keeping legacy fields for backward compatibility
     health_goal: Optional[str] = None  
     sourcing_preference: Optional[str] = None
