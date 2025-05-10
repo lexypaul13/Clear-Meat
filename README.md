@@ -200,6 +200,69 @@ meat-products-api/
   - GET `/api/v1/products/{id}`: Get product details
   - GET `/api/v1/products/recommendations`: Get recommendations
 
+## User Onboarding and Preferences
+
+The MeatWise application includes a comprehensive onboarding process that collects user preferences through six questions:
+
+1. **Nutrition Priorities**: User can select their primary nutritional focus (protein, fat, or salt).
+2. **Additives and Preservatives**: User can indicate if they want to avoid preservatives.
+3. **Antibiotics and Hormones**: User can specify if they prefer meat from animals raised without antibiotics/hormones.
+4. **Sourcing & Animal Diet**: User can indicate if they prefer grass-fed or pasture-raised options.
+5. **Typical Cooking Style**: User can select their typical cooking method (grilling, pan-frying, or oven/slow-cooker).
+6. **Openness to Alternatives**: User can specify if they're open to trying plant-based meat alternatives.
+
+These preferences are stored in the user's profile and used to personalize recommendations and product insights.
+
+## Personalized Recommendations
+
+MeatWise implements a sophisticated personalized recommendation system based on user preferences collected during onboarding:
+
+### Enhanced Rule-Based Weighted Scoring
+
+The explore endpoint uses an advanced, rule-based weighted scoring algorithm that:
+
+1. **Normalizes Product Attributes**:
+   - Nutritional values (protein, fat, sodium) are normalized against the maximum values in the dataset
+   - This ensures fair scoring across different scales and product types
+
+2. **Balanced Weighting System**:
+   - Base weights are set for all factors (protein, fat, sodium, etc.)
+   - Weights are dynamically adjusted based on user preferences
+   - No single factor can dominate the final score
+   - Preference-specific weights increase by 50% when a user indicates a strong preference
+
+3. **Diversity Factor**:
+   - Ensures representation of different meat types in recommendations
+   - Allocates slots fairly across preferred meat types
+   - Maintains at least one product per preferred meat type
+   - Fills remaining slots with highest-scoring products
+
+4. **Scoring Formula**:
+   ```
+   score = (w_protein * protein_normalized) +
+           (w_fat * (1 - fat_normalized)) +
+           (w_sodium * (1 - sodium_normalized)) +
+           (w_antibiotic * antibiotic_free) +
+           (w_grass * pasture_raised) +
+           (w_preservatives * preservative_free) +
+           (1.5 * meat_type_match)
+   ```
+
+5. **Increased Product Limit**:
+   - Returns up to 30 products for better representation
+   - Provides more diverse recommendations
+   - Allows users to explore a wider range of options
+
+### Benefits
+
+This enhanced recommendation approach provides:
+- **Fair Representation**: All meat types get fair consideration
+- **Balanced Scoring**: No single factor dominates the recommendations
+- **Personalization**: Direct mapping from user preferences to recommendations
+- **Diversity**: Ensures variety in recommended products
+- **Transparency**: Clear explanation of scoring factors
+- **Efficiency**: Fast performance with minimal computational overhead
+
 ## Troubleshooting
 
 1. **Database Connection Issues**
@@ -231,10 +294,6 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ## Project Overview
 
 MeatWise is a specialized database and API focused on meat products, providing detailed information about:
-- Product descriptions and ingredients
-- Nutritional information
-- Risk ratings and preservative content
-- Processing methods and quality indicators
 
 ### Key Features
 
@@ -541,44 +600,78 @@ This migration:
 
 ## Personalized Recommendations
 
-MeatWise implements a personalized recommendation system based on user preferences collected during onboarding:
+MeatWise implements a sophisticated personalized recommendation system based on user preferences collected during onboarding:
 
-### Rule-Based Weighted Scoring
+### Enhanced Rule-Based Weighted Scoring
 
-The explore endpoint uses a transparent, rule-based weighted scoring algorithm that:
+The explore endpoint uses an advanced, rule-based weighted scoring algorithm that:
 
-1. **Normalizes product attributes** (protein, fat, sodium, etc.)
-2. **Applies preference-based weights** derived from user onboarding responses
-3. **Calculates a "fit score"** for each product using this formula:
+1. **Normalizes Product Attributes**:
+   - Nutritional values (protein, fat, sodium) are normalized against the maximum values in the dataset
+   - This ensures fair scoring across different scales and product types
 
-```
-score = (w_protein * protein_normalized) +
-        (w_fat * (1 - fat_normalized)) +
-        (w_sodium * (1 - sodium_normalized)) +
-        (w_antibiotic * antibiotic_free) +
-        (w_grass * pasture_raised) +
-        (w_preservatives * !contains_preservatives)
-```
+2. **Balanced Weighting System**:
+   - Base weights are set for all factors (protein, fat, sodium, etc.)
+   - Weights are dynamically adjusted based on user preferences
+   - No single factor can dominate the final score
+   - Preference-specific weights increase by 50% when a user indicates a strong preference
 
-Where weights are adjusted according to user preferences - for example, if a user indicates they prioritize protein, the protein weight increases significantly.
+3. **Diversity Factor**:
+   - Ensures representation of different meat types in recommendations
+   - Allocates slots fairly across preferred meat types
+   - Maintains at least one product per preferred meat type
+   - Fills remaining slots with highest-scoring products
 
-### Implementation
+4. **Scoring Formula**:
+   ```
+   score = (w_protein * protein_normalized) +
+           (w_fat * (1 - fat_normalized)) +
+           (w_sodium * (1 - sodium_normalized)) +
+           (w_antibiotic * antibiotic_free) +
+           (w_grass * pasture_raised) +
+           (w_preservatives * preservative_free) +
+           (1.5 * meat_type_match)
+   ```
 
-The system requires two database functions:
-- `get_product_max_values()`: Retrieves maximum values for normalization
-- `execute_sql(sql_query TEXT)`: Executes dynamic SQL for the scoring calculation
-
-To add these functions, run:
-
-```bash
-# Show SQL instructions to run in the Supabase Dashboard
-python scripts/run_weighted_scoring_migration.py
-```
+5. **Increased Product Limit**:
+   - Returns up to 30 products for better representation
+   - Provides more diverse recommendations
+   - Allows users to explore a wider range of options
 
 ### Benefits
 
-This recommendation approach provides:
-- **Transparency**: Clear explanation of why products are recommended
-- **Efficiency**: Fast performance with minimal computational overhead
+This enhanced recommendation approach provides:
+- **Fair Representation**: All meat types get fair consideration
+- **Balanced Scoring**: No single factor dominates the recommendations
 - **Personalization**: Direct mapping from user preferences to recommendations
-- **Explainability**: Each recommendation includes the factors that contributed to its score
+- **Diversity**: Ensures variety in recommended products
+- **Transparency**: Clear explanation of scoring factors
+- **Efficiency**: Fast performance with minimal computational overhead
+
+## Troubleshooting
+
+1. **Database Connection Issues**
+   - Check if Supabase credentials are correct in `.env`
+   - Verify network connection to Supabase
+
+2. **Frontend Not Loading**
+   - Ensure backend is running on port 8001
+   - Check browser console for errors
+   - Verify Streamlit installation
+
+3. **Authentication Issues**
+   - Clear browser cookies
+   - Check JWT_SECRET in `.env`
+   - Verify user credentials
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
