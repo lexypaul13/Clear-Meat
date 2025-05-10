@@ -26,7 +26,7 @@ A backend API service that provides personalized meat product recommendations an
    # Add these variables to .env for local development:
    DATABASE_URL=postgresql://postgres:postgres@localhost:54322/postgres
    SUPABASE_URL=http://localhost:54321
-   SUPABASE_KEY=***REMOVED***
+   SUPABASE_KEY=your-supabase-anon-key-here
    JWT_SECRET=your-super-secret-jwt-token-with-at-least-32-characters-long
    API_V1_STR=/api/v1
    ```
