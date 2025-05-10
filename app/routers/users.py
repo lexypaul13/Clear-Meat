@@ -623,60 +623,200 @@ async def get_personalized_explore(
     db: Session = Depends(get_db),
     current_user: db_models.User = Depends(get_current_active_user),
 ):
-    """Get personalized product recommendations for explore page."""
+    """Get personalized product recommendations for explore page using rule-based scoring."""
     try:
         # Get user preferences
         user_preferences = current_user.preferences or {}
         
-        # Get recent scan history
-        recent_scans = (
-            db.query(db_models.ScanHistory)
-            .filter(db_models.ScanHistory.user_id == current_user.id)
-            .order_by(db_models.ScanHistory.scanned_at.desc())
-            .limit(5)
-            .all()
-        )
-        
-        # Get available products
+        # Get all available products from database
         products = db.query(db_models.Product).all()
         
-        # Format products for Gemini prompt
-        formatted_products = []
-        for product in products:
-            formatted_products.append({
-                "code": product.code,
-                "name": product.name,
-                "brand": product.brand,
-                "description": product.description,
-                "ingredients": product.ingredients_text,
-                "meat_type": product.meat_type,
-                "nutrition": {
-                    "calories": product.calories,
-                    "protein": product.protein,
-                    "fat": product.fat,
-                    "carbohydrates": product.carbohydrates,
-                    "salt": product.salt
-                },
-                "attributes": {
-                    "contains_nitrites": product.contains_nitrites,
-                    "contains_phosphates": product.contains_phosphates,
-                    "contains_preservatives": product.contains_preservatives,
-                    "antibiotic_free": product.antibiotic_free,
-                    "hormone_free": product.hormone_free,
-                    "pasture_raised": product.pasture_raised
-                },
-                "risk_rating": product.risk_rating
-            })
+        # Filter products by preferred meat types if specified
+        preferred_types = user_preferences.get('preferred_meat_types', [])
+        if preferred_types:
+            filtered_products = [p for p in products if p.meat_type in preferred_types]
+            logger.info(f"Filtered to {len(filtered_products)} products matching preferred meat types: {', '.join(preferred_types)}")
+        else:
+            filtered_products = products
+            logger.info("No meat type preferences specified, using all products.")
         
-        # Generate recommendations with Gemini
-        recommendations = get_personalized_recommendations(
-            user_preferences, 
-            formatted_products, 
-            recent_scans
-        )
+        # Score products based on preferences
+        scored_products = []
+        for product in filtered_products:
+            score = score_product_by_preferences(product, user_preferences, filtered_products)
+            scored_products.append((product, score))
         
-        return recommendations
+        # Sort by score (highest first)
+        scored_products.sort(key=lambda x: x[1], reverse=True)
         
+        # Apply diversity factor to ensure representation of different meat types
+        recommended_products = apply_diversity_factor(scored_products, 30, preferred_types)
+        
+        # Convert to Pydantic models for response
+        from app.models.product import Product as ProductModel
+        result = []
+        for product in recommended_products:
+            result.append(
+                ProductModel(
+                    code=product.code,
+                    name=product.name,
+                    brand=product.brand,
+                    description=product.description,
+                    ingredients_text=product.ingredients_text,
+                    calories=product.calories,
+                    protein=product.protein,
+                    fat=product.fat,
+                    carbohydrates=product.carbohydrates,
+                    salt=product.salt,
+                    meat_type=product.meat_type,
+                    contains_nitrites=product.contains_nitrites,
+                    contains_phosphates=product.contains_phosphates,
+                    contains_preservatives=product.contains_preservatives,
+                    antibiotic_free=product.antibiotic_free,
+                    hormone_free=product.hormone_free,
+                    pasture_raised=product.pasture_raised,
+                    risk_rating=product.risk_rating,
+                    image_url=product.image_url,
+                    last_updated=product.last_updated,
+                    created_at=product.created_at,
+                    ingredients=[]
+                )
+            )
+        
+        return result
     except Exception as e:
         logger.error(f"Error in personalized explore: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) 
+        raise HTTPException(status_code=500, detail=str(e))
+
+def score_product_by_preferences(product, preferences, all_products):
+    """Score a product based on how well it matches user preferences with normalized values."""
+    search_text = (f"{product.name or ''} {product.brand or ''} "
+                  f"{product.description or ''} {product.ingredients_text or ''}").lower()
+    
+    score = 0
+    
+    # Normalize nutritional values
+    protein = 0
+    fat = 0
+    sodium = 0
+    
+    # Get max values for normalization
+    max_protein = max((float(p.protein or 0) for p in all_products), default=1)
+    max_fat = max((float(p.fat or 0) for p in all_products), default=1)
+    max_sodium = max((float(p.salt or 0) for p in all_products), default=1)
+    
+    try:
+        if product.protein is not None:
+            protein = float(product.protein) / max_protein
+        if product.fat is not None:
+            fat = float(product.fat) / max_fat
+        if product.salt is not None:
+            sodium = float(product.salt) / max_sodium
+    except (ValueError, TypeError):
+        pass
+    
+    # Default weights - adjusted for balance
+    w_protein = 1.0
+    w_fat = 1.0
+    w_sodium = 1.0
+    w_antibiotic = 1.2
+    w_grass = 1.2
+    w_preservatives = 1.2
+    
+    # Adjust weights based on preferences
+    if preferences.get('prefer_reduced_sodium'):
+        w_sodium = 1.5
+    
+    if preferences.get('prefer_antibiotic_free'):
+        w_antibiotic = 1.5
+    
+    if preferences.get('prefer_no_preservatives'):
+        w_preservatives = 1.5
+    
+    # Check for preservatives (negative)
+    preservative_free = 1.0
+    if preferences.get('prefer_no_preservatives'):
+        preservative_keywords = ['sorbate', 'benzoate', 'nitrite', 'sulfite', 'bha', 'bht', 'sodium erythorbate']
+        if any(kw in search_text for kw in preservative_keywords) or product.contains_preservatives:
+            preservative_free = 0.0
+    
+    # Check for antibiotic-free (positive)
+    antibiotic_free = 0.0
+    if preferences.get('prefer_antibiotic_free'):
+        antibiotic_keywords = ['antibiotic-free', 'no antibiotics', 'raised without antibiotics']
+        if any(kw in search_text for kw in antibiotic_keywords) or product.antibiotic_free:
+            antibiotic_free = 1.0
+    
+    # Check for grass-fed/pasture-raised (positive)
+    pasture_raised = 0.0
+    grass_keywords = ['grass-fed', 'pasture-raised', 'free-range']
+    if any(kw in search_text for kw in grass_keywords) or product.pasture_raised:
+        pasture_raised = 1.0
+    
+    # Check for meat type match - reduced weight
+    meat_type_match = 0.0
+    preferred_types = preferences.get('preferred_meat_types', [])
+    if preferred_types and product.meat_type in preferred_types:
+        meat_type_match = 1.0  # Reduced to avoid over-emphasis
+    
+    # Calculate final score - using normalized values
+    score = (
+        (w_protein * protein) +
+        (w_fat * (1 - fat)) +  # Lower fat is better
+        (w_sodium * (1 - sodium)) +  # Lower sodium is better
+        (w_antibiotic * antibiotic_free) +
+        (w_grass * pasture_raised) +
+        (w_preservatives * preservative_free) +
+        (1.5 * meat_type_match)  # Adjusted weight for preferred meat type
+    )
+    
+    return score
+
+def apply_diversity_factor(scored_products, limit, preferred_types):
+    """Apply a diversity factor to ensure representation of different meat types."""
+    if not scored_products:
+        return []
+    
+    # If no preferred types, use all available types from scored products
+    if not preferred_types:
+        preferred_types = sorted(list(set(p.meat_type for p, _ in scored_products if p.meat_type)))
+    
+    if not preferred_types:
+        return [product for product, score in scored_products[:limit]]
+    
+    # Calculate target distribution based on available types
+    num_types = len(preferred_types)
+    slots_per_type = max(1, limit // num_types)  # Ensure at least 1 slot per type
+    
+    selected_products = []
+    type_counts = {meat_type: 0 for meat_type in preferred_types}
+    type_products = {meat_type: [] for meat_type in preferred_types}
+    
+    # Group products by meat type
+    for product, score in scored_products:
+        meat_type = product.meat_type
+        if meat_type in type_products:
+            type_products[meat_type].append((product, score))
+    
+    # Distribute slots fairly across meat types
+    remaining_slots = limit
+    while remaining_slots > 0 and any(type_products[mt] for mt in preferred_types):
+        for meat_type in preferred_types:
+            if remaining_slots <= 0:
+                break
+            if type_counts[meat_type] < slots_per_type and type_products[meat_type]:
+                product, score = type_products[meat_type].pop(0)
+                selected_products.append(product)
+                type_counts[meat_type] += 1
+                remaining_slots -= 1
+    
+    # Fill remaining slots with best remaining products if needed
+    if remaining_slots > 0:
+        remaining_products = []
+        for meat_type in preferred_types:
+            remaining_products.extend(type_products[meat_type])
+        remaining_products.sort(key=lambda x: x[1], reverse=True)  # Sort by score
+        for product, score in remaining_products[:remaining_slots]:
+            selected_products.append(product)
+    
+    return selected_products[:limit] 
