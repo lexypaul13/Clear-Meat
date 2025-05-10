@@ -18,7 +18,7 @@ from app.internal.dependencies import get_current_active_user
 
 # Configure logging for this module
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 router = APIRouter()
 
@@ -27,7 +27,7 @@ def get_products(
     db: Session = Depends(get_db),
     skip: int = 0,
     limit: int = 100,
-    risk_rating: Optional[str] = None,
+    risk_rating: Optional[int] = None,
     current_user: db_models.User = Depends(get_current_active_user)
 ) -> Any:
     """
@@ -44,32 +44,29 @@ def get_products(
         List[models.Product]: List of products
     """
     try:
-        # Add debug logging
-        logger.debug("Getting products using Supabase")
-        
-        # Get Supabase client and add detailed logging
+        logger.info("Getting products using Supabase")
         supabase = get_supabase()
-        logger.debug(f"Supabase URL being used: {supabase.supabase_url}")
         
-        # Build and log the query
-        query = supabase.table("products").select("*")
+        # Remove sensitive URL logging
         logger.debug("Building Supabase query...")
         
-        # Apply filters
-        if risk_rating:
-            query = query.eq("risk_rating", risk_rating)
-            logger.debug(f"Added risk_rating filter: {risk_rating}")
-            
-        # Apply pagination
-        # Note: Supabase doesn't directly support skip, but we'll use limit+offset
-        query = query.range(skip, skip + limit - 1)
-        logger.debug(f"Added pagination: range({skip}, {skip + limit - 1})")
+        query = supabase.table('products').select('*')
         
-        # Execute query and log
+        if risk_rating is not None:
+            query = query.eq('risk_rating', risk_rating)
+            logger.debug("Added risk rating filter")
+        
+        # Add pagination
+        query = query.range(skip, skip + limit - 1)
+        logger.debug("Added pagination")
+        
         logger.debug("Executing Supabase query...")
         response = query.execute()
-        logger.debug(f"Supabase response count: {len(response.data) if response.data else 0}")
         
+        if not response.data:
+            logger.warning("No products found")
+            return []
+            
         # Further filtering and sorting based on user preferences can be applied here
         # after fetching the data from Supabase
         
@@ -131,12 +128,8 @@ def get_products(
         return products
             
     except Exception as e:
-        # Log the error
-        logger.error(f"Error retrieving products: {str(e)}")
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Error retrieving products: {str(e)}"
-        )
+        logger.error("Error retrieving products")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/{code}")
@@ -158,20 +151,14 @@ def get_product(
         HTTPException: If product not found or if there's an error processing the data
     """
     try:
-        # Add debug logging
-        logger.debug(f"Getting product with code {code} using Supabase")
-        
-        # Get Supabase client
+        logger.info(f"Getting product with code {code}")
         supabase = get_supabase()
-        logger.debug(f"Supabase URL being used: {supabase.supabase_url}")
         
-        # Query product by code
-        response = supabase.table("products").select("*").eq("code", code).execute()
-        logger.debug(f"Supabase response received: {len(response.data) if response.data else 0} items")
+        # Remove sensitive URL logging
+        response = supabase.table('products').select('*').eq('code', code).execute()
         
-        # Check if product exists in Supabase
-        if not response.data or len(response.data) == 0:
-            logger.warning(f"Product with code {code} not found in Supabase")
+        if not response.data:
+            logger.warning(f"Product with code {code} not found")
             raise HTTPException(status_code=404, detail="Product not found")
             
         # Process Supabase product data
@@ -246,11 +233,10 @@ def get_product(
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        # Log the error
-        logger.error(f"Error processing product data: {str(e)}")
+        logger.error("Error retrieving product")
         raise HTTPException(
             status_code=500, 
-            detail=f"Error processing product data: {str(e)}"
+            detail=f"Error retrieving product: {str(e)}"
         )
 
 

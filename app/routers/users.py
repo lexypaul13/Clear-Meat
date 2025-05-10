@@ -23,6 +23,7 @@ from app.services.ai_service import generate_personalized_insights
 from app.services.gemini_service import get_personalized_recommendations
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 router = APIRouter()
 
 
@@ -635,10 +636,10 @@ async def get_personalized_explore(
         preferred_types = user_preferences.get('preferred_meat_types', [])
         if preferred_types:
             filtered_products = [p for p in products if p.meat_type in preferred_types]
-            logger.info(f"Filtered to {len(filtered_products)} products matching preferred meat types: {', '.join(preferred_types)}")
+            logger.info(f"Filtered to {len(filtered_products)} products matching preferred meat types")
         else:
             filtered_products = products
-            logger.info("No meat type preferences specified, using all products.")
+            logger.info("No meat type preferences specified, using all products")
         
         # Score products based on preferences
         scored_products = []
@@ -685,8 +686,8 @@ async def get_personalized_explore(
         
         return result
     except Exception as e:
-        logger.error(f"Error in personalized explore: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error in personalized explore")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 def score_product_by_preferences(product, preferences, all_products):
     """Score a product based on how well it matches user preferences with normalized values."""
