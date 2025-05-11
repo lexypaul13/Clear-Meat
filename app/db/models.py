@@ -18,7 +18,6 @@ class Product(Base):
     brand = Column(String)
     description = Column(Text)
     ingredients_text = Column(Text)
-    ingredients_array = Column(ARRAY(String), nullable=True)
     
     # Nutritional information
     calories = Column(Float)
@@ -40,14 +39,12 @@ class Product(Base):
     
     # Risk assessment
     risk_rating = Column(String)
-    risk_score = Column(Integer)
     
     # Image data
     image_url = Column(String)
     image_data = Column(Text)
     
     # Metadata
-    source = Column(String)
     last_updated = Column(DateTime(timezone=True), onupdate=func.now())
     created_at = Column(DateTime(timezone=True), default=func.now())
     

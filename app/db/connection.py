@@ -77,16 +77,24 @@ try:
     logger.info(f"Using database connection: {masked_url}")
     logger.info(f"Environment: {ENVIRONMENT}, Testing mode: {TESTING}")
 
-    # Create engine with appropriate settings
-    engine = create_engine(
-        active_db_url,
-        pool_pre_ping=True,
-        echo=False,
-        pool_size=5,
-        max_overflow=10,
-        pool_timeout=30,
-        pool_recycle=900
-    )
+    # Create engine with appropriate settings based on database type
+    if TESTING or active_db_url.startswith('sqlite'):
+        # SQLite doesn't support the same connection pool parameters
+        engine = create_engine(
+            active_db_url,
+            echo=False,
+        )
+    else:
+        # PostgreSQL can use full connection pooling
+        engine = create_engine(
+            active_db_url,
+            pool_pre_ping=True,
+            echo=False,
+            pool_size=5,
+            max_overflow=10,
+            pool_timeout=30,
+            pool_recycle=900
+        )
     logger.info("Database engine created successfully")
 except Exception as e:
     logger.critical(f"Failed to create database engine: {str(e)}")

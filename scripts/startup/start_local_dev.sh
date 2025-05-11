@@ -91,8 +91,8 @@ if command -v lsof &> /dev/null; then
 fi
 
 # Enable test mode for development without strict database dependency
-echo "Enabling test mode to bypass strict database checks..."
-export TESTING=true
+echo "Disabling test mode to use the local PostgreSQL database..."
+export TESTING=false
 
 # Start the server on port 8001 with hot reload
 echo "Starting server (config from .env)..."
