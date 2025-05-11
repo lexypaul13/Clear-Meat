@@ -11,6 +11,7 @@ __pycache__/
 *$py.class
 *.so
 .Python
+env/
 build/
 develop-eggs/
 dist/
@@ -22,14 +23,13 @@ lib64/
 parts/
 sdist/
 var/
-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
 
 # Virtual Environment
+.venv
 venv/
-.venv/
 ENV/
 
 # IDE
@@ -123,3 +123,6 @@ error_log.txt
 # Utility scripts
 get_*.py
 update_env.py
+
+# BFG Report files
+..bfg-report/

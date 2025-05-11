@@ -279,6 +279,89 @@ This enhanced recommendation approach provides:
    - Check JWT_SECRET in `.env`
    - Verify user credentials
 
+## Authentication Troubleshooting Guide
+
+When setting up the MeatWise API, you might encounter authentication issues if the environment variables are not properly configured. Here's a guide to avoid common authentication problems:
+
+### Required Environment Variables
+
+Ensure these critical variables are set in your `.env` file:
+
+```bash
+# Database Connection
+DATABASE_URL=postgresql://postgres:postgres@localhost:54322/postgres
+
+# Supabase Configuration
+SUPABASE_URL=http://localhost:54321
+SUPABASE_KEY=<your-supabase-anon-key>
+SUPABASE_SERVICE_KEY=<your-supabase-service-key>  # Required for admin operations
+
+# JWT Authentication
+SECRET_KEY=<your-secret-key-at-least-32-characters>
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=1440  # Token validity period in minutes
+```
+
+### Avoiding Test Mode Issues
+
+The `start_local_dev.sh` script includes test mode, which is useful for development but has limitations:
+
+1. **User Registration:** Test mode disables actual user registration in the database
+2. **Database Operations:** Many endpoints will return mock data instead of actual database records
+
+To use the API with the full database functionality:
+
+```bash
+# Edit start_local_dev.sh and comment out or remove this line:
+# export TESTING=true
+
+# Or override it when running the script
+TESTING=false ./start_local_dev.sh
+```
+
+### Authentication Flow
+
+For proper authentication:
+
+1. **Register a User First:**
+   ```bash
+   curl -X POST "http://localhost:8001/api/v1/auth/register" \
+     -H "Content-Type: application/json" \
+     -d '{"email": "user@example.com", "password": "SecurePassword123!", "full_name": "Example User"}'
+   ```
+
+2. **Login to Get Token:**
+   ```bash
+   curl -X POST "http://localhost:8001/api/v1/auth/login" \
+     -H "Content-Type: application/x-www-form-urlencoded" \
+     -d "username=user@example.com&password=SecurePassword123!"
+   ```
+
+3. **Use Token for Authenticated Requests:**
+   ```bash
+   curl -X GET "http://localhost:8001/api/v1/products" \
+     -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+   ```
+
+### Common Issues and Solutions
+
+1. **"User registration disabled" Error:**
+   - Ensure TESTING environment variable is set to "false" or not set at all
+   - Check that SUPABASE_SERVICE_KEY is correctly set in your .env file
+
+2. **"Could not validate credentials" Error:**
+   - Verify SECRET_KEY and ALGORITHM are correctly set
+   - Ensure your access token is valid and not expired
+   - Include the token with "Bearer " prefix in Authorization header
+
+3. **Database Connection Timeout:**
+   - Increase timeout settings in your startup script (already included in start_local_dev.sh)
+   - Verify PostgreSQL is running and accessible
+
+4. **JWT Token Invalid:**
+   - Ensure you're using the latest token from a successful login
+   - Check that your SECRET_KEY hasn't changed since the token was issued
+
 ## Contributing
 
 1. Fork the repository
@@ -623,15 +706,15 @@ The explore endpoint uses an advanced, rule-based weighted scoring algorithm tha
    - Fills remaining slots with highest-scoring products
 
 4. **Scoring Formula**:
-   ```
-   score = (w_protein * protein_normalized) +
-           (w_fat * (1 - fat_normalized)) +
-           (w_sodium * (1 - sodium_normalized)) +
-           (w_antibiotic * antibiotic_free) +
-           (w_grass * pasture_raised) +
+```
+score = (w_protein * protein_normalized) +
+        (w_fat * (1 - fat_normalized)) +
+        (w_sodium * (1 - sodium_normalized)) +
+        (w_antibiotic * antibiotic_free) +
+        (w_grass * pasture_raised) +
            (w_preservatives * preservative_free) +
            (1.5 * meat_type_match)
-   ```
+```
 
 5. **Increased Product Limit**:
    - Returns up to 30 products for better representation
