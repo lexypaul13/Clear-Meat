@@ -1,4 +1,10 @@
 #!/bin/bash
+# Creates a new .env file with proper configuration
+
+# Navigate to the project root directory
+cd "$(dirname "$0")/../.."
+PROJECT_ROOT="$(pwd)"
+echo "Project root: $PROJECT_ROOT"
 
 # Make sure any existing .env is removed first
 if [ -f .env ]; then
@@ -31,4 +37,6 @@ EOL
 chmod 600 .env
 
 echo ".env file created successfully with remote Supabase settings."
-echo "The file is set to be readable only by you for security." 
+echo "The file is set to be readable only by you for security."
+echo ""
+echo "To start the application, run: ./scripts/startup/start_local_dev.sh" 

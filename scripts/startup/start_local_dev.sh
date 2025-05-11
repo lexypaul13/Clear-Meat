@@ -1,10 +1,21 @@
 #!/bin/bash
 # This script starts the MeatWise API, loading configuration from .env with increased timeout
 
+# Navigate to the project root directory
+cd "$(dirname "$0")/../.."
+PROJECT_ROOT="$(pwd)"
+echo "Project root: $PROJECT_ROOT"
+
 # Activate virtual environment if not already activated
 if [[ -z "$VIRTUAL_ENV" ]]; then
     echo "Activating virtual environment..."
-    source .venv/bin/activate
+    if [[ -f .venv/bin/activate ]]; then
+        source .venv/bin/activate
+    else
+        echo "Virtual environment not found at $PROJECT_ROOT/.venv"
+        echo "Please create a virtual environment first"
+        exit 1
+    fi
 fi
 
 # Clear any environment variables that might conflict
@@ -30,7 +41,7 @@ if [[ -f .env ]]; then
         echo "DATABASE_URL is set from .env"
     fi
 else
-    echo "ERROR: .env file not found. Please run create_new_env.sh first."
+    echo "ERROR: .env file not found. Please run scripts/startup/create_new_env.sh first."
     exit 1
 fi
 

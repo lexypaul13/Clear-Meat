@@ -8,7 +8,6 @@ files_to_move = [
     'test_gemini_service.py',
     'add_test_product.py',
     'check_db_schemas.py',
-    'check_product.py',
 ]
 
 # Log files to delete

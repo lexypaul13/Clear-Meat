@@ -1,10 +1,9 @@
 """SQLAlchemy models for the MeatWise application."""
 
-from sqlalchemy import Boolean, Column, Float, ForeignKey, Integer, String, Text, DateTime
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy import Column, String, Float, Boolean, DateTime, Text, ForeignKey, Integer, ARRAY
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-import uuid
+from datetime import datetime
 
 from app.db.session import Base
 
@@ -14,11 +13,12 @@ class Product(Base):
     
     __tablename__ = "products"
     
-    code = Column(String, primary_key=True, index=True)
-    name = Column(String, nullable=False, index=True)
+    code = Column(String, primary_key=True)
+    name = Column(String, nullable=False)
     brand = Column(String)
     description = Column(Text)
     ingredients_text = Column(Text)
+    ingredients_array = Column(ARRAY(String), nullable=True)
     
     # Nutritional information
     calories = Column(Float)
@@ -28,18 +28,28 @@ class Product(Base):
     salt = Column(Float)
     
     # Meat-specific information
-    meat_type = Column(String, index=True)
+    meat_type = Column(String)
     
-    # Risk rating
-    risk_rating = Column(String, index=True)
+    # Additives and criteria
+    contains_nitrites = Column(Boolean, default=False)
+    contains_phosphates = Column(Boolean, default=False)
+    contains_preservatives = Column(Boolean, default=False)
+    antibiotic_free = Column(Boolean, default=False)
+    hormone_free = Column(Boolean, default=False)
+    pasture_raised = Column(Boolean, default=False)
     
-    # Image fields
+    # Risk assessment
+    risk_rating = Column(String)
+    risk_score = Column(Integer)
+    
+    # Image data
     image_url = Column(String)
     image_data = Column(Text)
     
     # Metadata
-    last_updated = Column(DateTime(timezone=True), server_default=func.now())
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    source = Column(String)
+    last_updated = Column(DateTime(timezone=True), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), default=func.now())
     
     # Relationships
     scan_history = relationship("ScanHistory", back_populates="product")
@@ -47,22 +57,18 @@ class Product(Base):
 
 
 class User(Base):
-    """User model that maps to Supabase profiles table."""
+    """User model."""
     
-    __tablename__ = "profiles"
+    __tablename__ = "users"
     
-    id = Column(String, primary_key=True, index=True)  # This is the Supabase user ID
-    email = Column(String, unique=True, index=True, nullable=True)  # Managed by Supabase Auth
-    full_name = Column(String, nullable=True)
+    id = Column(String, primary_key=True)
+    email = Column(String, unique=True, nullable=False)
+    full_name = Column(String)
+    preferences = Column(Text)  # JSON stored as text
+    created_at = Column(DateTime(timezone=True), default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
-    # User preferences from onboarding
-    preferences = Column(JSONB, nullable=True)
-    
-    # Metadata (These are likely managed by Supabase Auth triggers/defaults)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=True)
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=True)
-    
-    # Relationships
+    # Relationships - Fix duplicate backref issue
     scan_history = relationship("ScanHistory", back_populates="user")
     favorites = relationship("UserFavorite", back_populates="user")
 
@@ -72,15 +78,12 @@ class ScanHistory(Base):
     
     __tablename__ = "scan_history"
     
-    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String, ForeignKey("profiles.id", ondelete="CASCADE"))
-    product_code = Column(String, ForeignKey("products.code", ondelete="SET NULL"))
-    scanned_at = Column(DateTime(timezone=True), server_default=func.now())
-    location = Column(Text) # JSON stored as text
-    device_info = Column(Text)
-    personalized_insights = Column(JSONB, nullable=True)
+    id = Column(String, primary_key=True)
+    user_id = Column(String, ForeignKey("users.id"))
+    product_code = Column(String, ForeignKey("products.code"))
+    scanned_at = Column(DateTime(timezone=True), default=func.now())
     
-    # Relationships
+    # Relationships - Fix backref issue
     user = relationship("User", back_populates="scan_history")
     product = relationship("Product", back_populates="scan_history")
 
@@ -90,12 +93,12 @@ class UserFavorite(Base):
     
     __tablename__ = "user_favorites"
     
-    user_id = Column(String, ForeignKey("profiles.id", ondelete="CASCADE"), primary_key=True)
-    product_code = Column(String, ForeignKey("products.code", ondelete="CASCADE"), primary_key=True)
-    added_at = Column(DateTime(timezone=True), server_default=func.now())
-    notes = Column(Text)
+    id = Column(String, primary_key=True)
+    user_id = Column(String, ForeignKey("users.id"))
+    product_code = Column(String, ForeignKey("products.code"))
+    added_at = Column(DateTime(timezone=True), default=func.now())
     
-    # Relationships
+    # Relationships - Fix backref issue
     user = relationship("User", back_populates="favorites")
     product = relationship("Product", back_populates="user_favorites")
 

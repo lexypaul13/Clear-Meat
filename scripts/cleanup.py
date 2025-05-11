@@ -19,8 +19,7 @@ def clean_repo():
     
     temp_files = [
         'token.json', 'token_new.json', 'token2.json', 'token3.json',
-        'add_test_product.py', 'test_gemini_directly.py', 'test_gemini_service.py',
-        'test_connection.py', 'check_product.py'
+        'add_test_product.py', 'test_gemini_directly.py', 'test_gemini_service.py'
     ]
     
     cache_dirs = [

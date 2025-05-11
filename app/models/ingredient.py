@@ -3,16 +3,13 @@
 This file previously contained ingredient models that were connected to the 
 ingredients table in the database. That table has been removed, and now this
 file only contains the AdditiveInfo model which is used for structured responses.
+
+The AdditiveInfo model is now imported from app.api.v1.models to ensure
+consistency across the application and avoid validation errors.
 """
 
-from typing import List, Optional
-from pydantic import BaseModel
+# Import the AdditiveInfo model from the central models file
+from app.api.v1.models import AdditiveInfo
 
-
-class AdditiveInfo(BaseModel):
-    """Additive information model."""
-    name: str
-    category: Optional[str] = None
-    risk_level: Optional[str] = None
-    concerns: Optional[List[str]] = None
-    alternatives: Optional[List[str]] = None 
+# Re-export the model
+__all__ = ['AdditiveInfo'] 

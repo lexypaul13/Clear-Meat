@@ -13,24 +13,8 @@ from contextlib import contextmanager
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
 
-# Check for DATABASE_URL directly first
-database_url = os.environ.get("DATABASE_URL")
-
-# If not found directly, then try to import from settings
-if not database_url:
-    try:
-        from app.core.config import settings
-        database_url = settings.DATABASE_URL
-        logger.debug("Loaded DATABASE_URL from settings")
-    except Exception as e:
-        logger.error(f"Failed to load DATABASE_URL from settings: {str(e)}")
-        database_url = None
-
-# Fall back to a default if still not found
-if not database_url:
-    default_url = "postgresql://postgres:postgres@localhost:54322/postgres"
-    logger.warning(f"No DATABASE_URL found in environment or settings, using default: {default_url}")
-    database_url = default_url
+# Use local database URL by default
+database_url = "postgresql://postgres:postgres@localhost:54322/meatwise"
 
 # Log the database URL (with password masked)
 if database_url:

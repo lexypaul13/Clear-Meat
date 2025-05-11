@@ -1,34 +1,28 @@
 #!/usr/bin/env python3
 """
-Simple script to start the Streamlit app directly
+MeatWise API Starter Script Wrapper
+
+This script serves as a wrapper that calls the main starter script in scripts/startup/.
 """
+
 import os
-import subprocess
 import sys
+import subprocess
+from pathlib import Path
 
 def main():
-    """Run the Streamlit app directly"""
-    streamlit_path = os.path.join("streamlit", "app.py")
+    """Call the main starter script in scripts/startup/."""
+    script_path = Path(__file__).parent / "scripts" / "startup" / "start_app.py"
     
-    print(f"Starting MeatWise Streamlit app from {streamlit_path}...")
+    if not script_path.exists():
+        print(f"Error: Starter script not found at {script_path}")
+        sys.exit(1)
     
-    # Command to run the Streamlit app
-    cmd = ["streamlit", "run", streamlit_path]
+    print(f"Calling starter script at {script_path}...")
     
-    try:
-        # Try running the command directly
-        subprocess.run(cmd, check=True)
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        print("\nError running Streamlit. Trying with python -m...")
-        try:
-            # Try using python -m streamlit
-            subprocess.run([sys.executable, "-m", "streamlit", "run", streamlit_path], check=True)
-        except Exception as e:
-            print(f"\nError: {e}")
-            print("\nPlease make sure Streamlit is installed:")
-            print("pip install streamlit streamlit-extras extra-streamlit-components")
-            print("\nThen run:")
-            print(f"streamlit run {streamlit_path}")
+    # Pass all arguments to the actual script
+    args = [sys.executable, str(script_path)] + sys.argv[1:]
+    subprocess.run(args)
 
 if __name__ == "__main__":
     main() 

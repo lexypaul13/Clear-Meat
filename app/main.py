@@ -1,4 +1,6 @@
-"""Main application module."""
+"""
+Main application module for the MeatWise API.
+"""
 
 import sys
 import uvicorn
@@ -39,7 +41,7 @@ from app.routers import api_router
 from app.middleware.security import add_security_middleware
 from app.middleware.validation import add_validation_middleware
 from app.middleware.caching import add_caching_middleware
-from app.db.session import close_db_connections
+from app.db.connection import close_db_connections, is_using_local_db
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -86,7 +88,7 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 @app.get("/health", tags=["Health"])
 async def health_check():
     """Health check endpoint for monitoring and load balancers."""
-    return {"status": "healthy", "timestamp": time.time()}
+    return {"status": "healthy", "timestamp": time.time(), "using_local_db": is_using_local_db()}
 
 @app.get("/health/db", tags=["Health"])
 async def db_health_check():

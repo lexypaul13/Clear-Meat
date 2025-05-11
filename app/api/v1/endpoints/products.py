@@ -11,8 +11,7 @@ import uuid
 
 from app.api.v1 import models
 from app.db import models as db_models
-from app.db.session import get_db
-from app.db.supabase import get_supabase
+from app.db.connection import get_db, get_supabase_client, is_using_local_db
 from app.utils import helpers
 from app.internal.dependencies import get_current_active_user
 
@@ -44,91 +43,32 @@ def get_products(
         List[models.Product]: List of products
     """
     try:
-        logger.info("Getting products using Supabase")
-        supabase = get_supabase()
+        logger.info(f"Getting products (using local DB: {is_using_local_db()})")
         
-        # Remove sensitive URL logging
-        logger.debug("Building Supabase query...")
-        
-        query = supabase.table('products').select('*')
+        # Using SQLAlchemy ORM for either local or production database
+        # Build query
+        query = db.query(db_models.Product)
         
         if risk_rating is not None:
-            query = query.eq('risk_rating', risk_rating)
+            query = query.filter(db_models.Product.risk_rating == risk_rating)
             logger.debug("Added risk rating filter")
         
         # Add pagination
-        query = query.range(skip, skip + limit - 1)
+        query = query.offset(skip).limit(limit)
         logger.debug("Added pagination")
         
-        logger.debug("Executing Supabase query...")
-        response = query.execute()
+        # Execute query
+        products = query.all()
         
-        if not response.data:
+        if not products:
             logger.warning("No products found")
             return []
             
-        # Further filtering and sorting based on user preferences can be applied here
-        # after fetching the data from Supabase
-        
-        preferences = current_user.preferences if current_user else None
-        
-        if not response.data:
-            logger.warning("Supabase returned empty data array")
-            # Check if this is due to a connection issue or truly empty data
-            test_response = supabase.table("products").select("count").limit(1).execute()
-            logger.debug(f"Test query result: {test_response.data}")
-            return []
-            
         # Convert to Pydantic models
-        products = [models.Product(**product) for product in response.data]
-        
-        # If we have user preferences, we can apply sorting/filtering here
-        if preferences:
-            # Process products based on preferences
-            scored_products = []
-            
-            # Define threshold values
-            REDUCED_SODIUM_THRESHOLD = 0.5
-            
-            for product in products:
-                # Calculate match score
-                match_score = 0
-                
-                # Text to search in
-                search_text = (f"{product.name or ''} {product.brand or ''} "
-                               f"{product.description or ''} {product.ingredients_text or ''}").lower()
-                
-                # Apply preference-based scoring similar to the original implementation
-                # Q1: Check for preservatives
-                if preferences.get('prefer_no_preservatives'):
-                    preservative_keywords = ['sorbate', 'benzoate', 'nitrite', 'sulfite', 'bha', 'bht', 'sodium erythorbate']
-                    if any(keyword in search_text for keyword in preservative_keywords):
-                        match_score -= 1 # Penalize
-                    else:
-                        match_score += 1 # Reward
-                
-                # Q2: Check for antibiotic preference
-                if preferences.get('prefer_antibiotic_free'):
-                    antibiotic_free_keywords = [
-                        'antibiotic-free', 'no antibiotics', 'raised without antibiotics', 
-                        'never administered antibiotics'
-                    ]
-                    if any(keyword in search_text for keyword in antibiotic_free_keywords):
-                        match_score += 1 # Reward
-                
-                # Add other preference checks as in the original implementation
-                # ...
-                
-                scored_products.append((match_score, product))
-            
-            # Sort by score
-            scored_products.sort(key=lambda item: item[0], reverse=True)
-            return [item[1] for item in scored_products]
-        
-        return products
+        return [models.Product.from_orm(product) for product in products]
             
     except Exception as e:
-        logger.error("Error retrieving products")
+        logger.error(f"Error retrieving products: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -151,29 +91,25 @@ def get_product(
         HTTPException: If product not found or if there's an error processing the data
     """
     try:
-        logger.info(f"Getting product with code {code}")
-        supabase = get_supabase()
+        logger.info(f"Getting product with code {code} (using local DB: {is_using_local_db()})")
         
-        # Remove sensitive URL logging
-        response = supabase.table('products').select('*').eq('code', code).execute()
+        # Query the product from database
+        product = db.query(db_models.Product).filter(db_models.Product.code == code).first()
         
-        if not response.data:
+        if not product:
             logger.warning(f"Product with code {code} not found")
             raise HTTPException(status_code=404, detail="Product not found")
             
-        # Process Supabase product data
-        product = response.data[0]
-        
         # Extract additives from ingredients text
-        additives = helpers.extract_additives_from_text(product.get("ingredients_text", ""))
+        additives = helpers.extract_additives_from_text(product.ingredients_text or "")
         
-        # Assess health concerns based on Supabase data
+        # Assess health concerns based on data
         health_concerns = []
-        if product.get("protein") and product.get("protein") < 10:
+        if product.protein and product.protein < 10:
             health_concerns.append("Low protein content")
-        if product.get("fat") and product.get("fat") > 25:
+        if product.fat and product.fat > 25:
             health_concerns.append("High fat content")
-        if product.get("salt") and product.get("salt") > 1.5:
+        if product.salt and product.salt > 1.5:
             health_concerns.append("High salt content")
             
         # Create basic environmental impact assessment
@@ -183,36 +119,36 @@ def get_product(
             "sustainability_practices": ["Unknown"]
         }
         
-        if product.get("meat_type") == "beef":
+        if product.meat_type == "beef":
             env_impact["impact"] = "High"
             env_impact["details"] = "Beef production typically has higher environmental impact"
-        elif product.get("meat_type") in ["chicken", "turkey"]:
+        elif product.meat_type in ["chicken", "turkey"]:
             env_impact["impact"] = "Lower"
             env_impact["details"] = "Poultry typically has lower environmental impact compared to red meat"
         
-        # Build structured response from Supabase data
+        # Build structured response
         structured_response = models.ProductStructured(
             product=models.ProductInfo(
-                code=product.get("code", ""),
-                name=product.get("name", "Unknown Product"),
-                brand=product.get("brand", "Unknown Brand"),
-                description=product.get("description", ""),
-                ingredients_text=product.get("ingredients_text", ""),
-                image_url=product.get("image_url", ""),
-                image_data=product.get("image_data", ""),
-                meat_type=product.get("meat_type", "")
+                code=product.code,
+                name=product.name,
+                brand=product.brand,
+                description=product.description,
+                ingredients_text=product.ingredients_text,
+                image_url=product.image_url,
+                image_data=product.image_data,
+                meat_type=product.meat_type
             ),
             criteria=models.ProductCriteria(
-                risk_rating=product.get("risk_rating", ""),
-                additives=additives  # Now using additive info extracted from text
+                risk_rating=product.risk_rating,
+                additives=additives
             ),
             health=models.ProductHealth(
                 nutrition=models.ProductNutrition(
-                    calories=product.get("calories"),
-                    protein=product.get("protein"),
-                    fat=product.get("fat"),
-                    carbohydrates=product.get("carbohydrates"),
-                    salt=product.get("salt")
+                    calories=product.calories,
+                    protein=product.protein,
+                    fat=product.fat,
+                    carbohydrates=product.carbohydrates,
+                    salt=product.salt
                 ),
                 health_concerns=health_concerns
             ),
@@ -222,8 +158,8 @@ def get_product(
                 sustainability_practices=env_impact["sustainability_practices"]
             ),
             metadata=models.ProductMetadata(
-                last_updated=product.get("last_updated"),
-                created_at=product.get("created_at")
+                last_updated=product.last_updated,
+                created_at=product.created_at
             )
         )
         
@@ -233,12 +169,11 @@ def get_product(
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        logger.error("Error retrieving product")
+        logger.error(f"Error retrieving product: {str(e)}")
         raise HTTPException(
             status_code=500, 
             detail=f"Error retrieving product: {str(e)}"
         )
-
 
 
 @router.get("/{code}/alternatives", response_model=List[models.ProductAlternative])
@@ -260,32 +195,71 @@ def get_product_alternatives(
         HTTPException: If product not found
     """
     try:
-        # Add debug logging
-        logger.debug(f"Checking if product {code} exists in Supabase")
+        logger.debug(f"Checking if product {code} exists in database (using local DB: {is_using_local_db()})")
         
-        # Get Supabase client
-        supabase = get_supabase()
+        # Check if product exists
+        product = db.query(db_models.Product).filter(db_models.Product.code == code).first()
         
-        # First check if product exists
-        product_response = supabase.table("products").select("code").eq("code", code).execute()
-        
-        if not product_response.data or len(product_response.data) == 0:
-            logger.warning(f"Product with code {code} not found in Supabase")
+        if not product:
+            logger.warning(f"Product with code {code} not found")
             raise HTTPException(status_code=404, detail="Product not found")
         
-        # Product exists in Supabase - return empty alternatives list
-        # The product_alternatives table has been removed
-        logger.info(f"Product {code} exists, but product_alternatives table has been removed. Returning empty list.")
-        return []
+        # Find alternative products with similar characteristics
+        alternatives = (
+            db.query(db_models.Product)
+            .filter(db_models.Product.meat_type == product.meat_type)
+            .filter(db_models.Product.code != code)
+            .filter(db_models.Product.risk_rating < product.risk_rating)
+            .limit(5)
+            .all()
+        )
+        
+        # Convert to alternative product models
+        return [
+            models.ProductAlternative(
+                code=alt.code,
+                name=alt.name,
+                brand=alt.brand,
+                risk_rating=alt.risk_rating,
+                reason="Lower risk alternative"
+            )
+            for alt in alternatives
+        ]
                 
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        # Log the error
         logger.error(f"Error processing product alternatives: {str(e)}")
         raise HTTPException(
             status_code=500, 
             detail=f"Error processing product alternatives: {str(e)}"
+        )
+
+@router.get("/count", response_model=Dict[str, int])
+def get_product_count(
+    db: Session = Depends(get_db),
+) -> Any:
+    """
+    Get the total count of products in the database.
+    
+    Args:
+        db: Database session
+        
+    Returns:
+        Dict[str, int]: Total count of products
+    """
+    try:
+        logger.info(f"Getting product count (using local DB: {is_using_local_db()})")
+        
+        # Count products using a SQL COUNT query
+        total_count = db.query(func.count(db_models.Product.code)).scalar()
+        
+        return {"count": total_count or 0}
+    except Exception as e:
+        logger.error(f"Error getting product count: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error getting product count: {str(e)}"
         )
 

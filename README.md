@@ -20,9 +20,15 @@ A backend API service that provides personalized meat product recommendations an
 
 2. **Configure Environment**
    ```bash
-   # Create .env file
+   # Either create a .env file manually
    touch .env
 
+   # Or use the provided script to create it interactively
+   ./scripts/startup/create_new_env.sh
+
+   # Or copy an environment template
+   cp scripts/env/.env.example .env
+   
    # Add these variables to .env for local development:
    DATABASE_URL=postgresql://postgres:postgres@localhost:54322/postgres
    SUPABASE_URL=http://localhost:54321
@@ -52,10 +58,14 @@ A backend API service that provides personalized meat product recommendations an
 
    # IMPORTANT: Use the provided script to start the API server
    # This ensures the correct DATABASE_URL is used regardless of your environment
-   ./start_local_dev.sh
+   ./start_app.py
+   
+   # Alternatively, you can specify environment and other options
+   ./start_app.py --env local --reload
+   ./start_app.py --env production --port 8080
 
-   # Terminal 2: Start the Streamlit frontend
-   streamlit run streamlit/app.py
+   # If you prefer the shell script directly
+   ./scripts/startup/start_local_dev.sh
    ```
 
 5. **Access the Application**
@@ -172,17 +182,25 @@ The project uses Supabase for the database and authentication. The local setup i
 meat-products-api/
 ├── app/                 # Backend API
 │   ├── api/            # API endpoints
+│   ├── db/             # Database connections and models
 │   ├── models/         # Data models
 │   └── utils/          # Utilities
-├── streamlit/          # Frontend application
-│   ├── app.py         # Main Streamlit app
-│   └── components/    # UI components
-├── supabase/          # Supabase Configuration
-│   ├── migrations/    # Database migrations
-│   ├── config.toml   # Supabase settings
-│   └── seed.sql      # Initial database data
-├── scripts/            # Utility scripts
-└── requirements.txt    # Project dependencies
+├── tests/               # Test suite
+│   ├── api/            # API tests
+│   ├── db/             # Database tests
+│   └── utils/          # Test utilities
+├── scripts/             # Utility scripts
+│   ├── db/             # Database scripts
+│   ├── env/            # Environment templates
+│   ├── startup/        # Application startup scripts
+│   └── switch_env.py   # Environment switcher
+├── supabase/           # Supabase Configuration
+│   ├── migrations/     # Database migrations
+│   ├── config.toml     # Supabase settings
+│   └── seed.sql        # Initial database data
+├── docs/                # Documentation
+├── start_app.py         # Main application starter
+└── requirements.txt     # Project dependencies
 ```
 
 ## API Endpoints
@@ -758,3 +776,79 @@ This enhanced recommendation approach provides:
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Environment Switching
+
+The MeatWise API supports seamless switching between local development and production environments. This feature enables you to:
+
+1. **Develop Locally**: Use a local PostgreSQL database for fast, offline development
+2. **Deploy to Production**: Switch to Supabase or production database configuration without code changes
+3. **Test Both Environments**: Easily test your changes in both environments before deployment
+
+### How to Switch Environments
+
+Use the provided script to switch between environments:
+
+```bash
+# Switch to local development environment
+python scripts/switch_env.py local
+
+# Switch to production environment
+python scripts/switch_env.py production
+```
+
+This script automatically updates your `.env` file with the appropriate configuration variables. After switching, restart your application:
+
+```bash
+# Using the main starter script
+./start_app.py
+
+# Or using the shell script directly
+./scripts/startup/start_local_dev.sh
+```
+
+### Environment Configuration
+
+The application checks the `ENVIRONMENT` variable to determine which database to use:
+
+- **Development**: Uses local PostgreSQL database (`postgresql://postgres:postgres@localhost:54322/meatwise`)
+- **Production**: Uses Supabase or cloud-hosted PostgreSQL database
+
+### Using Both Databases
+
+You can store both local and production connection details in your `.env` file:
+
+```
+# Active environment configuration
+ENVIRONMENT=development
+DATABASE_URL=postgresql://postgres:postgres@localhost:54322/meatwise
+SUPABASE_URL=http://localhost:54321
+SUPABASE_KEY=your-local-key
+
+# Production configuration (stored but not active)
+PRODUCTION_DATABASE_URL=your-production-db-url
+PRODUCTION_SUPABASE_URL=your-production-supabase-url
+PRODUCTION_SUPABASE_KEY=your-production-key
+```
+
+The environment switcher script will preserve both sets of credentials and switch between them as needed.
+
+### Simple Starter Script
+
+For convenience, a starter script is provided that handles both environment switching and starting the API:
+
+```bash
+# Start in local environment (default)
+./start_app.py
+
+# Start in production environment
+./start_app.py --env production
+
+# Start with auto-reload for development
+./start_app.py --reload
+
+# Start on a different port
+./start_app.py --port 8080
+```
+
+This script combines environment switching and server startup in a single command. Under the hood, it uses `scripts/switch_env.py` to set up the environment and then starts the API server with the appropriate configuration.
