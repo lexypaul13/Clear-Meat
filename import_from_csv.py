@@ -72,14 +72,6 @@ with open(csv_file_path, 'r') as file:
             carbohydrates = float(row.get('carbohydrates', 0)) if row.get('carbohydrates') else None
             salt = float(row.get('salt', 0)) if row.get('salt') else None
             
-            # Convert string 'true'/'false' to boolean
-            contains_nitrites = row.get('contains_nitrites', '').lower() == 'true'
-            contains_phosphates = row.get('contains_phosphates', '').lower() == 'true'
-            contains_preservatives = row.get('contains_preservatives', '').lower() == 'true'
-            antibiotic_free = row.get('antibiotic_free', '').lower() == 'true'
-            hormone_free = row.get('hormone_free', '').lower() == 'true'
-            pasture_raised = row.get('pasture_raised', '').lower() == 'true'
-            
             # Current timestamp for created_at and last_updated
             now = datetime.now()
             
@@ -88,16 +80,12 @@ with open(csv_file_path, 'r') as file:
                 INSERT INTO products (
                     code, name, brand, description, ingredients_text, 
                     calories, protein, fat, carbohydrates, salt,
-                    meat_type, contains_nitrites, contains_phosphates, contains_preservatives,
-                    antibiotic_free, hormone_free, pasture_raised,
-                    risk_rating, image_url, last_updated, created_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    meat_type, risk_rating, image_url, last_updated, created_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (
                 code, name, brand, description, ingredients_text,
                 calories, protein, fat, carbohydrates, salt,
-                meat_type, contains_nitrites, contains_phosphates, contains_preservatives,
-                antibiotic_free, hormone_free, pasture_raised,
-                risk_rating, image_url, now, now
+                meat_type, risk_rating, image_url, now, now
             ))
             
             imported_count += 1
