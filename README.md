@@ -28,7 +28,7 @@ A backend API service that provides personalized meat product recommendations an
 
    # Or copy an environment template
    cp scripts/env/.env.example .env
-   
+
    # Add these variables to .env for local development:
    DATABASE_URL=postgresql://postgres:postgres@localhost:54322/postgres
    SUPABASE_URL=http://localhost:54321

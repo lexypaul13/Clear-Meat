@@ -10,7 +10,7 @@ echo "Project root: $PROJECT_ROOT"
 if [[ -z "$VIRTUAL_ENV" ]]; then
     echo "Activating virtual environment..."
     if [[ -f .venv/bin/activate ]]; then
-        source .venv/bin/activate
+    source .venv/bin/activate
     else
         echo "Virtual environment not found at $PROJECT_ROOT/.venv"
         echo "Please create a virtual environment first"

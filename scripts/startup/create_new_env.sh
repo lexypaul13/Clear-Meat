@@ -37,6 +37,6 @@ EOL
 chmod 600 .env
 
 echo ".env file created successfully with remote Supabase settings."
-echo "The file is set to be readable only by you for security."
+echo "The file is set to be readable only by you for security." 
 echo ""
 echo "To start the application, run: ./scripts/startup/start_local_dev.sh" 
