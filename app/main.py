@@ -131,13 +131,21 @@ async def supabase_health_check():
                 content={"status": "unhealthy", "supabase": "client_init_failed"}
             )
             
-        # Try a simple query
-        test_response = supabase.table("products").select("count").limit(1).execute()
-        return {
-            "status": "healthy", 
-            "supabase": "connected",
-            "data": test_response.data if test_response.data else None
-        }
+        # Try a simple query that doesn't count all records
+        try:
+            # Use a faster query - select a single record instead of counting all
+            test_response = supabase.table("products").select("code").limit(1).execute()
+            return {
+                "status": "healthy", 
+                "supabase": "connected",
+                "data": test_response.data if test_response.data else None
+            }
+        except Exception as query_err:
+            logger.error(f"Supabase query failed: {str(query_err)}")
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content={"status": "unhealthy", "supabase": "query_failed", "error": str(query_err)}
+            )
     except Exception as e:
         logger.error(f"Supabase health check failed: {str(e)}")
         return JSONResponse(

@@ -12,6 +12,7 @@ from functools import lru_cache
 from typing import Optional, Tuple, Dict, Any
 
 from supabase import create_client, Client
+from supabase.lib.client_options import ClientOptions
 
 from app.core.config import settings
 
@@ -56,7 +57,6 @@ def get_supabase() -> Client:
         # Log connection attempt with more detailed info
         key_info = f"{SUPABASE_KEY[:8]}..." if SUPABASE_KEY else 'None' # Store key info temporarily
         logger.info(f"Initializing Supabase public client with URL: {SUPABASE_URL}")
-        # logger.debug(f"Using anon key (first 8 chars): {key_info}") # Commented out sensitive log
         logger.debug(f"Settings object contains SUPABASE_URL: {bool(settings.SUPABASE_URL)}")
         logger.debug(f"Environment contains SUPABASE_URL: {bool(os.environ.get('SUPABASE_URL'))}")
         
@@ -69,8 +69,8 @@ def get_supabase() -> Client:
             
             logger.debug(f"Testing connection to Supabase host: {test_url}")
             
-            # Make a simple HTTP request to verify network connectivity
-            with httpx.Client(timeout=10.0) as client:
+            # Increase timeout for the connection test
+            with httpx.Client(timeout=30.0) as client:
                 response = client.get(test_url, headers={"apikey": SUPABASE_KEY})
                 logger.debug(f"Connection test response status: {response.status_code}")
                 logger.debug(f"Connection test response headers: {dict(response.headers)}")
@@ -78,17 +78,26 @@ def get_supabase() -> Client:
             logger.error(f"Failed to connect to Supabase host: {str(e)}")
             # Continue with client creation despite connection test failure
         
+        # Create client options with increased timeouts
+        client_options = ClientOptions(
+            postgrest_client_timeout=60,  # Increase from default 4s to 60s
+            storage_client_timeout=30     # Increase storage timeout as well
+        )
+        
         # Create and cache the client
-        logger.debug("Creating Supabase client instance")
-        _public_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        logger.debug("Creating Supabase client instance with extended timeout")
+        _public_client = create_client(SUPABASE_URL, SUPABASE_KEY, options=client_options)
         
-        # Test the client by making a simple query
-        logger.debug("Testing Supabase client with a simple query")
-        test_response = _public_client.table("products").select("count").limit(1).execute()
-        logger.debug(f"Test query response: {json.dumps(test_response.dict())}")
+        # Test the client with a lightweight query instead of counting all products
+        logger.debug("Testing Supabase client with a lightweight query")
+        try:
+            # Use a faster query - limit to 1 record instead of counting all
+            test_response = _public_client.table("products").select("code").limit(1).execute()
+            logger.debug(f"Test query response: {json.dumps(test_response.dict())}")
+            logger.info("Supabase public client initialized successfully")
+        except Exception as e:
+            logger.warning(f"Test query failed, but client initialization will continue: {str(e)}")
         
-        # Log success
-        logger.info("Supabase public client initialized successfully")
         return _public_client
     except Exception as e:
         logger.error(f"Failed to initialize Supabase public client: {str(e)}")

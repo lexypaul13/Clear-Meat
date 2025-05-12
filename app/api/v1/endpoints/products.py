@@ -21,6 +21,58 @@ logger.setLevel(logging.INFO)
 
 router = APIRouter()
 
+@router.get("/count", response_model=Dict[str, int])
+def get_product_count(
+    db: Session = Depends(get_db),
+) -> Any:
+    """
+    Get the total count of products in the database.
+    
+    Args:
+        db: Database session
+        
+    Returns:
+        Dict[str, int]: Total count of products
+    """
+    try:
+        logger.info(f"Getting product count (using local DB: {is_using_local_db()})")
+        
+        try:
+            # Try an optimized SQL count that's more efficient than ORM
+            from sqlalchemy import text
+            result = db.execute(text("SELECT COUNT(*) FROM products")).scalar()
+            return {"count": result or 0}
+        except Exception as sql_err:
+            logger.warning(f"Optimized count failed, falling back to ORM: {str(sql_err)}")
+            
+            # Fallback to ORM method if direct SQL fails
+            try:
+                # Count products using a SQL COUNT query through ORM
+                total_count = db.query(func.count(db_models.Product.code)).scalar()
+                return {"count": total_count or 0}
+            except Exception as orm_err:
+                logger.warning(f"ORM count failed, trying Supabase direct: {str(orm_err)}")
+                
+                # Try with Supabase directly as last resort
+                if not is_using_local_db():
+                    try:
+                        with get_supabase_client() as supabase:
+                            # Use a more efficient query that doesn't try to count exact records
+                            # but instead gets the first 1000 and returns that count
+                            response = supabase.table("products").select("code").limit(1000).execute()
+                            return {"count": len(response.data), "note": "Approximate count"}
+                    except Exception as sb_err:
+                        logger.error(f"All count methods failed: {str(sb_err)}")
+                        
+                # If everything fails, raise the original error
+                raise
+    except Exception as e:
+        logger.error(f"Error getting product count: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error getting product count: {str(e)}"
+        )
+
 @router.get("/", response_model=List[models.Product])
 def get_products(
     db: Session = Depends(get_db),
@@ -234,32 +286,5 @@ def get_product_alternatives(
         raise HTTPException(
             status_code=500, 
             detail=f"Error processing product alternatives: {str(e)}"
-        )
-
-@router.get("/count", response_model=Dict[str, int])
-def get_product_count(
-    db: Session = Depends(get_db),
-) -> Any:
-    """
-    Get the total count of products in the database.
-    
-    Args:
-        db: Database session
-        
-    Returns:
-        Dict[str, int]: Total count of products
-    """
-    try:
-        logger.info(f"Getting product count (using local DB: {is_using_local_db()})")
-        
-        # Count products using a SQL COUNT query
-        total_count = db.query(func.count(db_models.Product.code)).scalar()
-        
-        return {"count": total_count or 0}
-    except Exception as e:
-        logger.error(f"Error getting product count: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error getting product count: {str(e)}"
         )
 
