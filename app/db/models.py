@@ -29,14 +29,6 @@ class Product(Base):
     # Meat-specific information
     meat_type = Column(String)
     
-    # Additives and criteria
-    contains_nitrites = Column(Boolean, default=False)
-    contains_phosphates = Column(Boolean, default=False)
-    contains_preservatives = Column(Boolean, default=False)
-    antibiotic_free = Column(Boolean, default=False)
-    hormone_free = Column(Boolean, default=False)
-    pasture_raised = Column(Boolean, default=False)
-    
     # Risk assessment
     risk_rating = Column(String)
     

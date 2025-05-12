@@ -26,9 +26,6 @@ def get_products(
     limit: int = 100,
     meat_type: Optional[str] = None,
     risk_rating: Optional[str] = None,
-    contains_nitrites: Optional[bool] = None,
-    contains_phosphates: Optional[bool] = None,
-    contains_preservatives: Optional[bool] = None,
 ) -> Any:
     """
     Retrieve products with optional filtering.
@@ -40,9 +37,6 @@ def get_products(
         limit: Maximum number of records to return
         meat_type: Filter by meat type
         risk_rating: Filter by risk rating
-        contains_nitrites: Filter by nitrites content
-        contains_phosphates: Filter by phosphates content
-        contains_preservatives: Filter by preservatives content
         
     Returns:
         List[models.Product]: List of products
@@ -55,12 +49,6 @@ def get_products(
             query = query.filter(db_models.Product.meat_type == meat_type)
         if risk_rating:
             query = query.filter(db_models.Product.risk_rating == risk_rating)
-        if contains_nitrites is not None:
-            query = query.filter(db_models.Product.contains_nitrites == contains_nitrites)
-        if contains_phosphates is not None:
-            query = query.filter(db_models.Product.contains_phosphates == contains_phosphates)
-        if contains_preservatives is not None:
-            query = query.filter(db_models.Product.contains_preservatives == contains_preservatives)
         
         # Apply user preference-based filtering if user is logged in and has preferences
         if current_user and hasattr(current_user, "preferences") and current_user.preferences:
@@ -70,15 +58,6 @@ def get_products(
             if preferences.get("dietary_goal") == "keto":
                 # For keto, prioritize high-protein, low-carb options
                 query = query.order_by(db_models.Product.protein.desc())
-            
-            # Example: Filter by additive preference
-            if preferences.get("additive_preference") == "avoid_antibiotics":
-                query = query.filter(db_models.Product.antibiotic_free == True)
-                
-            # Example: Filter by ethical concerns
-            ethical_concerns = preferences.get("ethical_concerns", [])
-            if "animal_welfare" in ethical_concerns:
-                query = query.filter(db_models.Product.pasture_raised == True)
         
         # Get products from database
         products = query.offset(skip).limit(limit).all()
@@ -104,19 +83,8 @@ def get_products(
                 # Meat-specific information
                 meat_type=db_product.meat_type,
                 
-                # Additives and criteria - handle fields that might be missing
-                contains_nitrites=getattr(db_product, 'contains_nitrites', False),
-                contains_phosphates=getattr(db_product, 'contains_phosphates', False),
-                contains_preservatives=getattr(db_product, 'contains_preservatives', False),
-                
-                # Animal welfare criteria - handle fields that might be missing
-                antibiotic_free=getattr(db_product, 'antibiotic_free', None),
-                hormone_free=getattr(db_product, 'hormone_free', None),
-                pasture_raised=getattr(db_product, 'pasture_raised', None),
-                
-                # Risk rating - handle fields that might be missing
+                # Risk rating
                 risk_rating=getattr(db_product, 'risk_rating', None),
-                risk_score=None,  # risk_score removed from database schema
                 
                 # Additional fields
                 image_url=db_product.image_url,
@@ -196,17 +164,11 @@ def get_product(
                 description=product.description,
                 ingredients_text=product.ingredients_text,
                 image_url=product.image_url,
+                image_data=product.image_data,
                 meat_type=product.meat_type
             ),
             criteria=ProductCriteria(
                 risk_rating=getattr(product, 'risk_rating', None),
-                risk_score=None,  # risk_score removed from database schema
-                contains_nitrites=getattr(product, 'contains_nitrites', False),
-                contains_phosphates=getattr(product, 'contains_phosphates', False),
-                contains_preservatives=getattr(product, 'contains_preservatives', False),
-                antibiotic_free=getattr(product, 'antibiotic_free', None),
-                hormone_free=getattr(product, 'hormone_free', None),
-                pasture_raised=getattr(product, 'pasture_raised', None),
                 additives=additives
             ),
             health=ProductHealth(

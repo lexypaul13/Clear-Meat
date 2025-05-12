@@ -26,19 +26,8 @@ class ProductBase(BaseModel):
     # Meat-specific information
     meat_type: Optional[str] = None
     
-    # Additives and criteria
-    contains_nitrites: Optional[bool] = False
-    contains_phosphates: Optional[bool] = False
-    contains_preservatives: Optional[bool] = False
-    
-    # Animal welfare criteria
-    antibiotic_free: Optional[bool] = None
-    hormone_free: Optional[bool] = None
-    pasture_raised: Optional[bool] = None
-    
     # Risk rating
     risk_rating: Optional[str] = None
-    risk_score: Optional[int] = None
     
     # Additional fields
     image_url: Optional[str] = None
@@ -87,13 +76,6 @@ class ProductNutrition(BaseModel):
 class ProductCriteria(BaseModel):
     """Product criteria model."""
     risk_rating: Optional[str] = None
-    risk_score: Optional[int] = None
-    contains_nitrites: Optional[bool] = False
-    contains_phosphates: Optional[bool] = False
-    contains_preservatives: Optional[bool] = False
-    antibiotic_free: Optional[bool] = None
-    hormone_free: Optional[bool] = None
-    pasture_raised: Optional[bool] = None
     additives: Optional[List[AdditiveInfo]] = Field(default_factory=list)
 
 
@@ -118,6 +100,7 @@ class ProductInfo(BaseModel):
     description: Optional[str] = None
     ingredients_text: Optional[str] = None
     image_url: Optional[str] = None
+    image_data: Optional[str] = None
     meat_type: Optional[str] = None
 
 
@@ -145,4 +128,4 @@ class ProductStructured(BaseModel):
 
 
 # Update forward references - removed Ingredient import and model rebuild call
-    Product.model_rebuild()
+Product.model_rebuild()
