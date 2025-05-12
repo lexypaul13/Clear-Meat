@@ -52,6 +52,10 @@ class Product(Base):
     scan_history = relationship("ScanHistory", back_populates="product")
     user_favorites = relationship("UserFavorite", back_populates="product")
 
+    def __repr__(self):
+        """String representation of Product."""
+        return f"<Product {self.code}: {self.name}>"
+
 
 class User(Base):
     """User model."""

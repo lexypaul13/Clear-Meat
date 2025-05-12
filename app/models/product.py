@@ -42,6 +42,7 @@ class ProductBase(BaseModel):
     
     # Additional fields
     image_url: Optional[str] = None
+    image_data: Optional[str] = None
 
 
 class ProductCreate(ProductBase):
