@@ -14,6 +14,9 @@ from app.db import models as db_models
 from app.db.connection import get_db, get_supabase_client, is_using_local_db
 from app.utils import helpers
 from app.internal.dependencies import get_current_active_user
+from app.services.recommendation_service import (
+    get_personalized_recommendations, analyze_product_match
+)
 
 # Configure logging for this module
 logger = logging.getLogger(__name__)
@@ -286,5 +289,80 @@ def get_product_alternatives(
         raise HTTPException(
             status_code=500, 
             detail=f"Error processing product alternatives: {str(e)}"
+        )
+
+@router.get("/recommendations", response_model=models.RecommendationResponse)
+def get_product_recommendations(
+    db: Session = Depends(get_db),
+    current_user: db_models.User = Depends(get_current_active_user),
+    limit: int = Query(30, ge=1, le=100, description="Maximum number of recommendations to return"),
+) -> Any:
+    """
+    Get personalized product recommendations based on user preferences.
+    
+    Recommendations are tailored based on the preferences set during the user onboarding process,
+    including nutrition focus, additives, ethical concerns, and preferred meat types.
+    
+    Args:
+        db: Database session
+        current_user: Current active user
+        limit: Maximum number of recommendations to return (1-100, default 30)
+        
+    Returns:
+        RecommendationResponse: List of recommended products with match details
+    """
+    try:
+        logger.info(f"Generating personalized recommendations for user {current_user.id}")
+        
+        # Get user preferences
+        preferences = getattr(current_user, "preferences", {}) or {}
+        if not preferences:
+            logger.warning(f"User {current_user.id} has no preferences set. Using defaults.")
+            preferences = {
+                # Default preferences if none are set
+                "nutrition_focus": "protein",
+                "avoid_preservatives": True,
+                "meat_preferences": ["chicken", "beef", "pork"]
+            }
+        
+        # Get personalized recommendations
+        recommended_products = get_personalized_recommendations(db, preferences, limit)
+        
+        if not recommended_products:
+            logger.warning("No recommendations found")
+            return models.RecommendationResponse(
+                recommendations=[],
+                total_matches=0
+            )
+        
+        # Build response with match details
+        result = []
+        for product in recommended_products:
+            # Analyze why this product matches preferences
+            matches, concerns = analyze_product_match(product, preferences)
+            
+            # Create RecommendedProduct object
+            recommended_product = models.RecommendedProduct(
+                product=models.Product.from_orm(product),
+                match_details=models.ProductMatch(
+                    matches=matches,
+                    concerns=concerns
+                ),
+                match_score=None  # We don't expose raw scores to clients
+            )
+            
+            result.append(recommended_product)
+        
+        logger.info(f"Returning {len(result)} personalized recommendations")
+        
+        return models.RecommendationResponse(
+            recommendations=result,
+            total_matches=len(result)
+        )
+    except Exception as e:
+        logger.error(f"Error generating recommendations: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate recommendations: {str(e)}"
         )
 

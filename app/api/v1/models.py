@@ -234,4 +234,35 @@ class ProductProblemReport(BaseModel):
     description: str = Field(..., description="Description of the problem")
     reporter_email: Optional[EmailStr] = Field(None, description="Email of the person reporting the problem")
     want_feedback: Optional[bool] = Field(False, description="Whether the reporter wants to be contacted about the resolution")
-    report_id: Optional[str] = None 
+    report_id: Optional[str] = None
+
+
+class ProductMatch(BaseModel):
+    """Details about why a product matches user preferences."""
+    matches: List[str] = Field(
+        default_factory=list,
+        description="List of ways the product matches user preferences"
+    )
+    concerns: List[str] = Field(
+        default_factory=list,
+        description="List of concerns or non-matches with user preferences"
+    )
+
+
+class RecommendedProduct(BaseModel):
+    """Product with recommendation details."""
+    product: Product
+    match_details: ProductMatch
+    match_score: Optional[float] = Field(
+        None,
+        description="Numerical score representing how well this product matches preferences"
+    )
+
+
+class RecommendationResponse(BaseModel):
+    """Response model for product recommendations."""
+    recommendations: List[RecommendedProduct]
+    total_matches: int = Field(
+        ...,
+        description="Total number of products that matched the criteria before limiting"
+    ) 

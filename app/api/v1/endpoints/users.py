@@ -1,14 +1,25 @@
 """User endpoints for the MeatWise API."""
 
-from typing import Any, List
+from typing import Any, List, Optional, Dict
+import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Body, Path
 from sqlalchemy.orm import Session
+from pydantic import EmailStr
 
 from app.api.v1 import models
 from app.core import security
 from app.db import models as db_models
 from app.db.session import get_db
+from app.db.connection import is_using_local_db
+from app.internal.dependencies import get_current_active_user
+from app.services.recommendation_service import (
+    get_personalized_recommendations, analyze_product_match
+)
+
+# Configure logging for this module
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 router = APIRouter()
 
@@ -250,4 +261,83 @@ def remove_favorite(
     
     db.delete(favorite)
     db.commit()
-    return {"message": "Favorite removed successfully"} 
+    return {"message": "Favorite removed successfully"}
+
+
+@router.get("/explore", response_model=models.RecommendationResponse)
+def get_explore_recommendations(
+    db: Session = Depends(get_db),
+    current_user: db_models.User = Depends(get_current_active_user),
+    limit: int = Query(30, ge=1, le=100, description="Maximum number of recommendations to return"),
+) -> Any:
+    """
+    Get personalized product recommendations for the explore page.
+    
+    Similar to the product recommendations endpoint, but specifically designed for the explore
+    user experience with potentially different weighting or presentation.
+    
+    Args:
+        db: Database session
+        current_user: Current active user
+        limit: Maximum number of recommendations to return (1-100, default 30)
+        
+    Returns:
+        RecommendationResponse: List of recommended products with match details
+    """
+    try:
+        logger.info(f"Generating explore recommendations for user {current_user.id}")
+        
+        # Get user preferences
+        preferences = getattr(current_user, "preferences", {}) or {}
+        if not preferences:
+            logger.warning(f"User {current_user.id} has no preferences set for explore. Using defaults.")
+            preferences = {
+                # Default preferences if none are set
+                "nutrition_focus": "protein",
+                "avoid_preservatives": True,
+                "meat_preferences": ["chicken", "beef", "pork"]
+            }
+            
+        # Add a stronger diversity factor for explore page
+        preferences["_explore_page"] = True
+        
+        # Get personalized recommendations
+        recommended_products = get_personalized_recommendations(db, preferences, limit)
+        
+        if not recommended_products:
+            logger.warning("No explore recommendations found")
+            return models.RecommendationResponse(
+                recommendations=[],
+                total_matches=0
+            )
+        
+        # Build response with match details
+        result = []
+        for product in recommended_products:
+            # Analyze why this product matches preferences
+            matches, concerns = analyze_product_match(product, preferences)
+            
+            # Create RecommendedProduct object
+            recommended_product = models.RecommendedProduct(
+                product=models.Product.from_orm(product),
+                match_details=models.ProductMatch(
+                    matches=matches, 
+                    concerns=concerns
+                ),
+                match_score=None  # We don't expose raw scores to clients
+            )
+            
+            result.append(recommended_product)
+        
+        logger.info(f"Returning {len(result)} explore recommendations")
+        
+        return models.RecommendationResponse(
+            recommendations=result,
+            total_matches=len(result)
+        )
+    except Exception as e:
+        logger.error(f"Error generating explore recommendations: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate explore recommendations: {str(e)}"
+        ) 
