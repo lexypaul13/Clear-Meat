@@ -224,10 +224,10 @@ The MeatWise application includes a comprehensive onboarding process that collec
 
 1. **Nutrition Priorities**: User can select their primary nutritional focus (protein, fat, or salt).
 2. **Additives and Preservatives**: User can indicate if they want to avoid preservatives.
-3. **Antibiotics and Hormones**: User can specify if they prefer meat from animals raised without antibiotics/hormones.
-4. **Sourcing & Animal Diet**: User can indicate if they prefer grass-fed or pasture-raised options.
-5. **Typical Cooking Style**: User can select their typical cooking method (grilling, pan-frying, or oven/slow-cooker).
-6. **Openness to Alternatives**: User can specify if they're open to trying plant-based meat alternatives.
+3. **Antibiotic-Free Meat**: User can specify if they prefer meat from animals raised without antibiotics.
+4. **Organic and Grass-Fed Options**: User can indicate if they prefer organic or grass-fed meat products.
+5. **Added Sugars**: User can specify if they want to avoid products with added sugars.
+6. **Flavor Enhancers**: User can indicate if they want to avoid flavor enhancers like MSG.
 
 These preferences are stored in the user's profile and used to personalize recommendations and product insights.
 

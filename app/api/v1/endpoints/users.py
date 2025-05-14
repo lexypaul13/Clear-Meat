@@ -295,6 +295,7 @@ def get_explore_recommendations(
                 # Default preferences if none are set
                 "nutrition_focus": "protein",
                 "avoid_preservatives": True,
+                "prefer_organic_or_grass_fed": True,
                 "meat_preferences": ["chicken", "beef", "pork"]
             }
             

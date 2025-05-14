@@ -17,7 +17,7 @@ class UserPreferences(BaseModel):
     # Revised Questions (May 2024)
     prefer_no_preservatives: Optional[bool] = None # Q1: Avoid artificial preservatives?
     prefer_antibiotic_free: Optional[bool] = None  # Q2: Antibiotic-free important?
-    prefer_hormone_free: Optional[bool] = None     # Q3: Prefer hormone-free?
+    prefer_organic_or_grass_fed: Optional[bool] = None # Q3: Prefer organic or grass-fed meat?
     prefer_no_added_sugars: Optional[bool] = None  # Q4: Avoid added sugars?
     prefer_no_flavor_enhancers: Optional[bool] = None # Q5: Avoid flavor enhancers (MSG)?
     prefer_reduced_sodium: Optional[bool] = None   # Q6: Interested in lower sodium?
@@ -36,7 +36,7 @@ class UserPreferences(BaseModel):
                 {
                     "prefer_no_preservatives": True,
                     "prefer_antibiotic_free": True,
-                    "prefer_hormone_free": False,
+                    "prefer_organic_or_grass_fed": True,
                     "prefer_no_added_sugars": True,
                     "prefer_no_flavor_enhancers": True,
                     "prefer_reduced_sodium": True,

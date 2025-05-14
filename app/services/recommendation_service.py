@@ -119,14 +119,14 @@ def analyze_product_match(
         else:
             concerns.append("No antibiotic-free claim found")
     
-    # Check for grass-fed/pasture-raised
-    if user_preferences.get('prefer_grass_fed'):
-        grass_fed_keywords = ['grass-fed', 'pasture-raised', 'free-range']
-        found = [kw for kw in grass_fed_keywords if kw in search_text]
+    # Check for organic or grass-fed/pasture-raised
+    if user_preferences.get('prefer_organic_or_grass_fed'):
+        organic_keywords = ['organic', 'grass-fed', 'pasture-raised', 'free-range']
+        found = [kw for kw in organic_keywords if kw in search_text]
         if found:
-            matches.append(f"Pasture-raised: {', '.join(found)}")
+            matches.append(f"Organic/Grass-fed: {', '.join(found)}")
         else:
-            concerns.append("No grass-fed or pasture-raised claim found")
+            concerns.append("No organic or grass-fed claim found")
     
     # Check for added sugars
     sugar_keywords = ['sugar', 'syrup', 'dextrose', 'fructose', 'sucrose', 'maltodextrin']
@@ -389,7 +389,7 @@ def _calculate_product_score(
     w_fat = 0.15 
     w_sodium = 0.15
     w_antibiotic = 0.15
-    w_grass = 0.2
+    w_organic_grass_fed = 0.2
     w_preservatives = 0.2
     
     # Adjust weights based on user preferences
@@ -411,8 +411,8 @@ def _calculate_product_score(
     if preferences.get("prefer_antibiotic_free"):
         w_antibiotic = 0.25
         
-    if preferences.get("prefer_grass_fed"):
-        w_grass = 0.25
+    if preferences.get("prefer_organic_or_grass_fed"):
+        w_organic_grass_fed = 0.25
         
     if preferences.get("avoid_preservatives"):
         w_preservatives = 0.25
@@ -431,12 +431,12 @@ def _calculate_product_score(
         if any(kw in search_text for kw in antibiotic_keywords):
             antibiotic_free = 1.0
     
-    # Check for grass-fed/pasture-raised (positive factor)
-    pasture_raised = 0.0
-    if preferences.get('prefer_grass_fed'):
-        grass_keywords = ['grass-fed', 'pasture-raised', 'free-range']
-        if any(kw in search_text for kw in grass_keywords):
-            pasture_raised = 1.0
+    # Check for organic or grass-fed/pasture-raised (positive factor)
+    organic_grass_fed = 0.0
+    if preferences.get('prefer_organic_or_grass_fed'):
+        organic_keywords = ['organic', 'grass-fed', 'pasture-raised', 'free-range']
+        if any(kw in search_text for kw in organic_keywords):
+            organic_grass_fed = 1.0
     
     # Check for meat type match
     meat_type_match = 0.0
@@ -450,7 +450,7 @@ def _calculate_product_score(
         (w_fat * (1 - fat)) +  # Lower fat is better
         (w_sodium * (1 - sodium)) +  # Lower sodium is better
         (w_antibiotic * antibiotic_free) +
-        (w_grass * pasture_raised) +
+        (w_organic_grass_fed * organic_grass_fed) +
         (w_preservatives * preservative_free) +
         (0.2 * meat_type_match)  # Small boost for preferred meat type
     )
