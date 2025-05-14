@@ -1,1 +1,0 @@
-{"detail":"Authentication failed: Invalid login credentials"}
