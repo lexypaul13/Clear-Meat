@@ -1,3 +1,1 @@
-"""
-Test package for the meat-products-api.
-""" 
+"""Test package for the MeatWise API.""" 
