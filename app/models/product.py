@@ -128,4 +128,4 @@ class ProductStructured(BaseModel):
 
 
 # Update forward references - removed Ingredient import and model rebuild call
-Product.model_rebuild()
+    Product.model_rebuild()

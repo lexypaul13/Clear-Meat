@@ -261,7 +261,7 @@ def remove_favorite(
     
     db.delete(favorite)
     db.commit()
-    return {"message": "Favorite removed successfully"}
+    return {"message": "Favorite removed successfully"} 
 
 
 @router.get("/explore", response_model=models.RecommendationResponse)

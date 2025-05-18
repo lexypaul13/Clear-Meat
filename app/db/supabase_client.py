@@ -93,7 +93,7 @@ def get_supabase() -> Client:
         try:
             # Use a faster query - limit to 1 record instead of counting all
             test_response = _public_client.table("products").select("code").limit(1).execute()
-            logger.debug(f"Test query response: {json.dumps(test_response.dict())}")
+        logger.debug(f"Test query response: {json.dumps(test_response.dict())}")
             logger.info("Supabase public client initialized successfully")
         except Exception as e:
             logger.warning(f"Test query failed, but client initialization will continue: {str(e)}")
