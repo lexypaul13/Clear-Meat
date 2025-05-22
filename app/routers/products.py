@@ -6,13 +6,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.models import (
-    Product, ProductStructured
+    Product, ProductStructured, HealthAssessment
 )
 from app.models.ingredient import AdditiveInfo
 from app.db import models as db_models
 from app.db.session import get_db
 from app.utils import helpers
 from app.services.ai_service import generate_personalized_insights
+from app.services.health_assessment_service import generate_health_assessment
 from app.internal.dependencies import get_current_user_optional
 
 router = APIRouter()
@@ -208,4 +209,106 @@ def get_product(
         raise HTTPException(
             status_code=500,
             detail=f"Error processing product data: {str(e)}"
+        )
+
+
+@router.get("/{code}/health-assessment", response_model=HealthAssessment)
+def get_product_health_assessment(
+    code: str,
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Generate a detailed health assessment for a specific product.
+    
+    The assessment includes:
+    - Risk summary (grade A-F and color)
+    - Nutrition analysis in plain language
+    - Classification of ingredients by risk level
+    - Detailed reports on concerning ingredients
+    
+    Args:
+        code: Product barcode
+        db: Database session
+        
+    Returns:
+        HealthAssessment: AI-generated health assessment
+        
+    Raises:
+        HTTPException: If product not found, if Gemini API is not configured,
+                     or if there's an error generating the assessment
+    """
+    try:
+        # Get product from database using the existing endpoint logic
+        # to ensure consistent data access patterns
+        product = db.query(db_models.Product).filter(db_models.Product.code == code).first()
+        if not product:
+            raise HTTPException(status_code=404, detail="Product not found")
+        
+        # Convert to structured format (reusing the logic from get_product)
+        additives = []
+        if product.ingredients_text:
+            additive_info = helpers.extract_additives_from_text(product.ingredients_text)
+            additives = additive_info or []
+        
+        health_concerns = helpers.assess_health_concerns(product)
+        env_impact = helpers.assess_environmental_impact(product)
+        
+        from app.models.product import ProductStructured, ProductInfo, ProductCriteria, ProductHealth, ProductEnvironment, ProductMetadata, ProductNutrition
+        
+        structured_product = ProductStructured(
+            product=ProductInfo(
+                code=product.code,
+                name=product.name,
+                brand=product.brand or "Unknown Brand",
+                description=product.description,
+                ingredients_text=product.ingredients_text,
+                image_url=product.image_url,
+                image_data=product.image_data,
+                meat_type=product.meat_type
+            ),
+            criteria=ProductCriteria(
+                risk_rating=getattr(product, 'risk_rating', None),
+                additives=additives
+            ),
+            health=ProductHealth(
+                nutrition=ProductNutrition(
+                    calories=product.calories,
+                    protein=product.protein,
+                    fat=product.fat,
+                    carbohydrates=product.carbohydrates,
+                    salt=product.salt
+                ),
+                health_concerns=health_concerns
+            ),
+            environment=ProductEnvironment(
+                impact=env_impact["impact"],
+                details=env_impact["details"],
+                sustainability_practices=env_impact["sustainability_practices"]
+            ),
+            metadata=ProductMetadata(
+                last_updated=product.last_updated,
+                created_at=product.created_at
+            )
+        )
+        
+        # Generate health assessment
+        health_assessment = generate_health_assessment(structured_product)
+        
+        if not health_assessment:
+            raise HTTPException(
+                status_code=503,
+                detail="Unable to generate health assessment. Please try again later."
+            )
+            
+        return health_assessment
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Log the error for debugging
+        print(f"Error generating health assessment for product {code}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generating health assessment: {str(e)}"
         ) 
