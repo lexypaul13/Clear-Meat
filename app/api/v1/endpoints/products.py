@@ -17,6 +17,7 @@ from app.internal.dependencies import get_current_active_user
 from app.services.recommendation_service import (
     get_personalized_recommendations, analyze_product_match
 )
+from app.services.health_assessment_service import generate_health_assessment
 
 # Configure logging for this module
 logger = logging.getLogger(__name__)
@@ -364,5 +365,126 @@ def get_product_recommendations(
         raise HTTPException(
             status_code=500,
             detail=f"Failed to generate recommendations: {str(e)}"
+        )
+
+@router.get("/{code}/health-assessment", response_model=models.HealthAssessment)
+def get_product_health_assessment(
+    code: str,
+    db: Session = Depends(get_db),
+) -> Any:
+    """
+    Generate a detailed health assessment for a specific product using AI.
+    
+    The assessment includes:
+    - Risk summary (grade A-F and color)
+    - Nutrition analysis in plain language
+    - Classification of ingredients by risk level
+    - Detailed reports on concerning ingredients with citations
+    
+    Args:
+        code: Product barcode
+        db: Database session
+        
+    Returns:
+        models.HealthAssessment: AI-generated health assessment
+        
+    Raises:
+        HTTPException: If product not found, if Gemini API is not configured,
+                     or if there's an error generating the assessment
+    """
+    try:
+        logger.info(f"Generating health assessment for product with code {code}")
+        
+        # Query the product from database
+        product = db.query(db_models.Product).filter(db_models.Product.code == code).first()
+        
+        if not product:
+            logger.warning(f"Product with code {code} not found")
+            raise HTTPException(status_code=404, detail="Product not found")
+            
+        # Extract additives from ingredients text
+        additives = helpers.extract_additives_from_text(product.ingredients_text or "")
+        
+        # Assess health concerns based on data
+        health_concerns = []
+        if product.protein and product.protein < 10:
+            health_concerns.append("Low protein content")
+        if product.fat and product.fat > 25:
+            health_concerns.append("High fat content")
+        if product.salt and product.salt > 1.5:
+            health_concerns.append("High salt content")
+            
+        # Create basic environmental impact assessment
+        env_impact = {
+            "impact": "Moderate",
+            "details": "Based on default meat product environmental impact assessment",
+            "sustainability_practices": ["Unknown"]
+        }
+        
+        if product.meat_type == "beef":
+            env_impact["impact"] = "High"
+            env_impact["details"] = "Beef production typically has higher environmental impact"
+        elif product.meat_type in ["chicken", "turkey"]:
+            env_impact["impact"] = "Lower"
+            env_impact["details"] = "Poultry typically has lower environmental impact compared to red meat"
+        
+        # Build structured response for the health assessment service
+        structured_product = models.ProductStructured(
+            product=models.ProductInfo(
+                code=product.code,
+                name=product.name,
+                brand=product.brand,
+                description=product.description,
+                ingredients_text=product.ingredients_text,
+                image_url=product.image_url,
+                image_data=product.image_data,
+                meat_type=product.meat_type
+            ),
+            criteria=models.ProductCriteria(
+                risk_rating=product.risk_rating,
+                additives=additives
+            ),
+            health=models.ProductHealth(
+                nutrition=models.ProductNutrition(
+                    calories=product.calories,
+                    protein=product.protein,
+                    fat=product.fat,
+                    carbohydrates=product.carbohydrates,
+                    salt=product.salt
+                ),
+                health_concerns=health_concerns
+            ),
+            environment=models.ProductEnvironment(
+                impact=env_impact["impact"],
+                details=env_impact["details"],
+                sustainability_practices=env_impact["sustainability_practices"]
+            ),
+            metadata=models.ProductMetadata(
+                last_updated=product.last_updated,
+                created_at=product.created_at
+            )
+        )
+        
+        # Generate health assessment
+        health_assessment = generate_health_assessment(structured_product)
+        
+        if not health_assessment:
+            logger.error(f"Failed to generate health assessment for product {code}")
+            raise HTTPException(
+                status_code=503,
+                detail="Unable to generate health assessment. Please try again later."
+            )
+            
+        logger.info(f"Successfully generated health assessment for product {code}")
+        return health_assessment
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        logger.error(f"Error generating health assessment for product {code}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generating health assessment: {str(e)}"
         )
 

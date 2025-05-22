@@ -264,5 +264,37 @@ class RecommendationResponse(BaseModel):
     recommendations: List[RecommendedProduct]
     total_matches: int = Field(
         ...,
-        description="Total number of products that matched the criteria before limiting"
-    ) 
+        description="Total number of products that match the criteria (before pagination)"
+    )
+
+
+# Health Assessment Models
+class RiskSummary(BaseModel):
+    """Risk summary model for health assessment."""
+    grade: str
+    color: str
+
+
+class IngredientReport(BaseModel):
+    """Detailed report for a specific ingredient."""
+    title: str
+    summary: str
+    health_concerns: List[str] = Field(default_factory=list)
+    common_uses: str
+    safer_alternatives: List[str] = Field(default_factory=list)
+    citations: Dict[str, str] = Field(default_factory=dict)
+
+
+class IngredientAssessment(BaseModel):
+    """Assessment model for categorizing ingredients by risk level."""
+    high_risk: List[Dict[str, Any]] = Field(default_factory=list)
+    moderate_risk: List[Dict[str, Any]] = Field(default_factory=list)
+    low_risk: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class HealthAssessment(BaseModel):
+    """Complete health assessment for a product."""
+    risk_summary: RiskSummary
+    nutrition_labels: List[str] = Field(default_factory=list)
+    ingredients_assessment: IngredientAssessment
+    ingredient_reports: Dict[str, IngredientReport] = Field(default_factory=dict) 

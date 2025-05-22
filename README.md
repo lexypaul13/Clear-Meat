@@ -35,6 +35,8 @@ A backend API service that provides personalized meat product recommendations an
    SUPABASE_KEY=your-supabase-anon-key-here
    JWT_SECRET=your-super-secret-jwt-token-with-at-least-32-characters-long
    API_V1_STR=/api/v1
+   GEMINI_API_KEY=your-gemini-api-key-here
+   GEMINI_MODEL=gemini-2.0-flash
    ```
 
 3. **Start Supabase Locally**
@@ -70,7 +72,7 @@ A backend API service that provides personalized meat product recommendations an
 
 5. **Access the Application**
    - Backend API: http://localhost:8001
-   - API Documentation: http://localhost:8001/docs
+   - API Documentation: http://localhost:8001/api/v1/docs
    - Frontend: http://localhost:8501
    - Supabase Studio: http://localhost:54323
 
@@ -164,6 +166,7 @@ The project uses Supabase for the database and authentication. The local setup i
 - **Product Scanning**: Scan meat products and get detailed information
 - **Personalized Insights**: Receive health and ethical insights based on your preferences
 - **Product Recommendations**: Get personalized product recommendations
+- **AI-Powered Health Assessment**: Get detailed health assessments for meat products
 - **Scan History**: Keep track of all your previously scanned products
 - **Streamlit Frontend**: User-friendly web interface for exploring meat products
 
@@ -215,8 +218,84 @@ meat-products-api/
 
 - **Products**
   - GET `/api/v1/products`: List products
-  - GET `/api/v1/products/{id}`: Get product details
+  - GET `/api/v1/products/{code}`: Get product details
   - GET `/api/v1/products/recommendations`: Get recommendations
+  - GET `/api/v1/products/{code}/health-assessment`: Get AI-generated health assessment
+
+## Health Assessment Feature
+
+The MeatWise API includes a sophisticated health assessment feature powered by Google's Gemini AI. This feature analyzes product ingredients and nutritional information to provide detailed health insights.
+
+### Health Assessment Endpoint
+
+```
+GET /api/v1/products/{code}/health-assessment
+```
+
+### Response Structure
+
+The health assessment provides a comprehensive analysis in the following format:
+
+```json
+{
+  "risk_summary": {
+    "grade": "B",
+    "color": "Yellow"
+  },
+  "nutrition_labels": [
+    "High in protein",
+    "Moderate in fat",
+    "Low in carbohydrates"
+  ],
+  "ingredients_assessment": {
+    "high_risk": [
+      {
+        "name": "Sodium Nitrite",
+        "risk_level": "high",
+        "category": "preservative",
+        "concerns": "Potential carcinogen when heated",
+        "alternatives": ["Celery powder", "Cherry powder"]
+      }
+    ],
+    "moderate_risk": [...],
+    "low_risk": [...]
+  },
+  "ingredient_reports": {
+    "Sodium Nitrite": {
+      "title": "Sodium Nitrite (E250) – Preservative",
+      "summary": "Detailed information about the ingredient...",
+      "health_concerns": [
+        "May form nitrosamines (potential carcinogens) when heated [1]",
+        "Associated with increased risk of colorectal cancer in high consumption [2]"
+      ],
+      "common_uses": "Found in bacon, ham, hot dogs, and other cured meats",
+      "safer_alternatives": [
+        "Celery powder (natural nitrate source)",
+        "Vitamin C (reduces nitrosamine formation)"
+      ],
+      "citations": {
+        "1": "World Health Organization, IARC Monographs",
+        "2": "American Journal of Clinical Nutrition, 2009"
+      }
+    }
+  }
+}
+```
+
+### Key Features
+
+- **Overall Risk Rating**: A letter grade (A-F) and color code (Green, Yellow, Red) indicating the overall health risk level.
+- **Nutrition Analysis**: Plain language interpretation of nutritional values.
+- **Ingredient Risk Assessment**: Categorizes ingredients into high, moderate, and low risk levels.
+- **Detailed Ingredient Reports**: In-depth information about concerning ingredients, including health concerns, common uses, safer alternatives, and citations.
+
+### Requirements
+
+To use this feature, you must set the `GEMINI_API_KEY` environment variable with your Google AI (Gemini) API key. You can optionally specify the `GEMINI_MODEL` (defaults to "gemini-2.0-flash").
+
+### Caching
+
+Health assessments are cached for 24 hours to improve performance and reduce API calls to the Gemini service.
 
 ## User Onboarding and Preferences
 
