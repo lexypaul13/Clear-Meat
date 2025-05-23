@@ -275,6 +275,12 @@ class RiskSummary(BaseModel):
     color: str
 
 
+class WorksCited(BaseModel):
+    """Works cited entry for health assessment."""
+    id: int
+    citation: str
+
+
 class IngredientReport(BaseModel):
     """Detailed report for a specific ingredient."""
     title: str
@@ -294,7 +300,9 @@ class IngredientAssessment(BaseModel):
 
 class HealthAssessment(BaseModel):
     """Complete health assessment for a product."""
+    summary: str
     risk_summary: RiskSummary
     nutrition_labels: List[str] = Field(default_factory=list)
     ingredients_assessment: IngredientAssessment
-    ingredient_reports: Dict[str, IngredientReport] = Field(default_factory=dict) 
+    ingredient_reports: Dict[str, IngredientReport] = Field(default_factory=dict)
+    works_cited: List[WorksCited] = Field(default_factory=list) 

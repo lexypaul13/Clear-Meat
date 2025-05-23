@@ -148,77 +148,146 @@ def _build_health_assessment_prompt(product: ProductStructured) -> str:
         "risk_rating": risk_rating
     }
     
-    # Build instructions section
-    instructions = """## Instructions:
+    # Use the new comprehensive prompt template
+    prompt = f"""You are an AI assistant specialized in generating health-assessment reports for consumer food products. When provided with a JSON payload describing a product's ingredient list and nutritional facts, follow the steps below to produce a compact, UI-ready health summary.
 
-You are a nutritional and health scientist specialized in food safety and ingredient analysis. Your task is to analyze the provided meat product and generate a comprehensive health assessment.
+Your Tasks:
 
-1. Carefully analyze the ingredients list and nutritional information
-2. Identify all food additives, preservatives, and potentially concerning ingredients
-3. Classify each identified ingredient into high_risk, moderate_risk, or low_risk categories
-4. Provide plain language nutrition labels based on the nutritional values
-5. For each concerning ingredient, create a detailed mini health report
-6. Assign an overall health grade (A-F) and color (Green, Yellow, Red) based on your analysis
-7. Cite reputable sources for your claims where possible
-8. Format your response as structured JSON only (no explanatory text)"""
+Analyze each ingredient and assign it to one of three risk categories—high_risk, moderate_risk, or low_risk—based on potential health concerns (e.g., allergenicity, toxicity, processing, regulatory limits).
 
-    # Build response format section
-    response_format = """## Response Format (JSON):
-{
-  "risk_summary": {
-    "grade": "B",
-    "color": "Yellow"
-  },
-  "nutrition_labels": [
-    "High fat",
-    "Moderate carbohydrates",
-    "Low sodium"
-  ],
-  "ingredients_assessment": {
-    "high_risk": [
-      {
-        "name": "Sodium Nitrite",
-        "risk_level": "high",
-        "category": "preservative",
-        "concerns": "Potential carcinogen when heated",
-        "alternatives": ["Celery powder", "Cherry powder"]
-      }
-    ],
-    "moderate_risk": [],
-    "low_risk": []
-  },
-  "ingredient_reports": {
-    "Sodium Nitrite": {
-      "title": "Sodium Nitrite (E250) – Preservative",
-      "summary": "Sodium nitrite is a preservative used to prevent bacterial growth in processed meats. While effective for food safety, it has been associated with health concerns when consumed in large amounts or when heated to high temperatures.",
-      "health_concerns": [
-        "May form nitrosamines (potential carcinogens) when heated [1]",
-        "Associated with increased risk of colorectal cancer in high consumption [2]"
-      ],
-      "common_uses": "Found in bacon, ham, hot dogs, and other cured meats",
-      "safer_alternatives": [
-        "Celery powder (natural nitrate source)",
-        "Vitamin C (reduces nitrosamine formation)"
-      ],
-      "citations": {
-        "1": "World Health Organization, IARC Monographs",
-        "2": "American Journal of Clinical Nutrition, 2009"
-      }
-    }
-  }
-}
+Exclude ingredients from the low_risk group if they have:
 
-Respond with valid JSON only."""
-    
-    # Combine all sections
-    prompt = f"""You are an expert nutritionist and food scientist specializing in meat products. Your task is to analyze the provided product information and generate a detailed health assessment report.
+No health risks or concerns
 
-## Product Information
+Generic or empty descriptions like "None identified"
+
+Do not include alternatives[] in the ingredients_assessment block. Safer alternatives should only appear in detailed ingredient reports.
+
+Generate a 2–3 sentence plain-language summary of the product's overall health profile, including standout ingredients or concerns.
+
+Create a nutrition_labels array based on the nutrition values provided, with AI-generated plain terms like:
+
+"High Fat"
+
+"Moderate Carbohydrates"
+
+"Low Sodium"
+
+For every ingredient in high_risk and moderate_risk, return an entry in the ingredient_reports section that includes:
+
+title: ingredient name + category
+
+summary: short explanation of what it is and why it matters
+
+health_concerns: bulleted list of concerns with in-text citation markers (e.g., "[1]")
+
+common_uses: where it's commonly used
+
+safer_alternatives: optional list of better ingredient swaps
+
+citations: citation dictionary with keys matching in-text markers
+
+Append a works_cited array listing all references used, formatted in APA style and linked where possible.
+
+User Input
+
 {json.dumps(product_data, indent=2)}
 
-{instructions}
+Expected Output (as machine-readable JSON only)
 
-{response_format}"""
+{{
+  "summary": "This product contains multiple processed ingredients...",
+  "risk_summary": {{
+    "grade": "C",
+    "color": "Yellow"
+  }},
+  "nutrition_labels": [
+    "High Fat",
+    "Low Sodium"
+  ],
+  "ingredients_assessment": {{
+    "high_risk": [
+      {{
+        "name": "Ingredient A",
+        "risk_level": "high",
+        "category": "preservative",
+        "concerns": "May cause X or Y"
+      }}
+    ],
+    "moderate_risk": [
+      {{
+        "name": "Ingredient B",
+        "risk_level": "moderate",
+        "category": "coloring",
+        "concerns": "Linked to sensitivity in some individuals"
+      }}
+    ],
+    "low_risk": [
+      {{
+        "name": "Ingredient C",
+        "risk_level": "low",
+        "category": "vegetable",
+        "concerns": "Minimal health concerns"
+      }}
+    ]
+  }},
+  "ingredient_reports": {{
+    "Ingredient A": {{
+      "title": "Ingredient A – Preservative",
+      "summary": "Ingredient A is a synthetic preservative used to extend shelf life...",
+      "health_concerns": [
+        "Linked to kidney strain in sensitive populations [1]"
+      ],
+      "common_uses": "Found in canned meats, processed sauces, and frozen meals.",
+      "safer_alternatives": [
+        "Natural preservatives like vinegar or lemon juice"
+      ],
+      "citations": {{
+        "1": "FDA. (2022). Food Additive Safety. https://fda.gov/..."
+      }}
+    }}
+  }},
+  "works_cited": [
+    {{
+      "id": 1,
+      "citation": "U.S. Food and Drug Administration. (2022). Food Additive Safety. Retrieved from https://fda.gov/..."
+    }}
+  ]
+}}
+
+Approved Sources:
+
+Government & International Health Agencies
+
+U.S. Food and Drug Administration (FDA) – fda.gov
+
+World Health Organization (WHO) – who.int
+
+Centers for Disease Control and Prevention (CDC) – cdc.gov
+
+USDA FoodData Central – fdc.nal.usda.gov
+
+Nutrition.gov – nutrition.gov
+
+Academic & Research Institutions
+
+Harvard T.H. Chan School of Public Health – nutritionsource.hsph.harvard.edu
+
+National Institutes of Health (NIH) – nih.gov
+
+Examine.com – examine.com
+
+Professional & Advocacy Organizations
+
+Academy of Nutrition and Dietetics – eatright.org
+
+Environmental Working Group (EWG) – ewg.org
+
+Center for Science in the Public Interest (CSPI) – cspinet.org
+
+You must ignore information from any other source.
+
+Respond with valid JSON only."""
     
     return prompt
 
