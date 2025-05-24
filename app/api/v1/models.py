@@ -287,7 +287,6 @@ class IngredientReport(BaseModel):
     summary: str
     health_concerns: List[str] = Field(default_factory=list)
     common_uses: str
-    safer_alternatives: List[str] = Field(default_factory=list)
     citations: Dict[str, str] = Field(default_factory=dict)
 
 

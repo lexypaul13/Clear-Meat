@@ -161,7 +161,7 @@ No health risks or concerns
 
 Generic or empty descriptions like "None identified"
 
-Do not include alternatives[] in the ingredients_assessment block. Safer alternatives should only appear in detailed ingredient reports.
+Do not include alternatives[] in the ingredients_assessment block.
 
 Generate a 2–3 sentence plain-language summary of the product's overall health profile, including standout ingredients or concerns.
 
@@ -182,8 +182,6 @@ summary: short explanation of what it is and why it matters
 health_concerns: bulleted list of concerns with in-text citation markers (e.g., "[1]")
 
 common_uses: where it's commonly used
-
-safer_alternatives: optional list of better ingredient swaps
 
 citations: citation dictionary with keys matching in-text markers
 
@@ -239,9 +237,6 @@ Expected Output (as machine-readable JSON only)
         "Linked to kidney strain in sensitive populations [1]"
       ],
       "common_uses": "Found in canned meats, processed sauces, and frozen meals.",
-      "safer_alternatives": [
-        "Natural preservatives like vinegar or lemon juice"
-      ],
       "citations": {{
         "1": "FDA. (2022). Food Additive Safety. https://fda.gov/..."
       }}
