@@ -15,13 +15,13 @@ while True:
         maxInt = int(maxInt/10)
 print(f"CSV field size limit set to {maxInt}")
 
-# PostgreSQL connection details (from local Supabase Docker instance)
+# PostgreSQL connection details from environment variables
 conn = psycopg2.connect(
-    host="localhost",
-    port=54322,
-    dbname="postgres",
-    user="postgres",
-    password="postgres"
+    host=os.getenv("DB_HOST", "localhost"),
+    port=os.getenv("DB_PORT", "54322"),
+    dbname=os.getenv("DB_NAME", "postgres"),
+    user=os.getenv("DB_USER", "postgres"),
+    password=os.getenv("DB_PASSWORD", "postgres")
 )
 cur = conn.cursor()
 

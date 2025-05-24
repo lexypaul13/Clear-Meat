@@ -44,6 +44,30 @@ def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    
+    # Development bypass for testing personalization feature
+    import os
+    if os.environ.get("ENABLE_AUTH_BYPASS") == "true":
+        logger.info("Authentication bypass enabled for development")
+        # Create a mock user for testing - using environment variables for user data
+        mock_user_id = os.environ.get("DEV_USER_ID", "dev-user-123")
+        mock_user_email = os.environ.get("DEV_USER_EMAIL", "dev@example.com")
+        mock_user = type('MockUser', (object,), {
+            'id': mock_user_id,
+            'email': mock_user_email,
+            'full_name': 'Development User',
+            'preferences': {
+                "prefer_no_preservatives": True,
+                "prefer_antibiotic_free": False,
+                "prefer_organic_or_grass_fed": True,
+                "prefer_no_added_sugars": True,
+                "prefer_no_flavor_enhancers": True,
+                "prefer_reduced_sodium": False
+            },
+            'created_at': datetime.now(),
+            'updated_at': datetime.now()
+        })()
+        return mock_user
         
     # If no token provided
     if token is None:
@@ -58,12 +82,13 @@ def get_current_user(
         def verify_manually():
             logger.info("Using manual JWT verification")
             try:
-                # Manually decode the JWT
+                # Manually decode the JWT - use Supabase JWT secret for Supabase tokens
+                jwt_secret = settings.SUPABASE_JWT_SECRET if settings.SUPABASE_JWT_SECRET else settings.SECRET_KEY
                 payload = jwt.decode(
                     token, 
-                    settings.SECRET_KEY, 
-                    algorithms=[settings.ALGORITHM],
-                    options={"verify_signature": False}  # Skip signature verification temporarily 
+                    jwt_secret, 
+                    algorithms=[settings.ALGORITHM, "HS256"],
+                    options={"verify_signature": True, "verify_aud": False}  # Enable signature verification but disable audience verification for local dev
                 )
                 user_id = payload.get("sub")
                 if user_id is None:

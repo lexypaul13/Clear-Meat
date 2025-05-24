@@ -13,8 +13,8 @@ from contextlib import contextmanager
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
 
-# Use local database URL by default
-database_url = "postgresql://postgres:postgres@localhost:54322/meatwise"
+# Use environment variable or default to postgres database
+database_url = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@localhost:54322/postgres")
 
 # Log the database URL (with password masked)
 if database_url:

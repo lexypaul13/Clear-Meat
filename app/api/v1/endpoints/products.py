@@ -18,6 +18,7 @@ from app.services.recommendation_service import (
     get_personalized_recommendations, analyze_product_match
 )
 from app.services.health_assessment_service import generate_health_assessment
+from app.utils.personalization import apply_user_preferences
 
 # Configure logging for this module
 logger = logging.getLogger(__name__)
@@ -371,6 +372,7 @@ def get_product_recommendations(
 def get_product_health_assessment(
     code: str,
     db: Session = Depends(get_db),
+    current_user: db_models.User = Depends(get_current_active_user),
 ) -> Any:
     """
     Generate a detailed health assessment for a specific product using AI.
@@ -476,6 +478,17 @@ def get_product_health_assessment(
             )
             
         logger.info(f"Successfully generated health assessment for product {code}")
+        
+        # Apply user preferences to flag matching ingredients
+        user_preferences = getattr(current_user, "preferences", {}) or {}
+        if user_preferences:
+            # Convert HealthAssessment to dict, apply preferences, then convert back
+            assessment_dict = health_assessment.model_dump()
+            assessment_dict = apply_user_preferences(assessment_dict, user_preferences)
+            
+            # Convert back to HealthAssessment model
+            health_assessment = models.HealthAssessment(**assessment_dict)
+            
         return health_assessment
         
     except HTTPException:

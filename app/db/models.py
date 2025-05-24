@@ -52,7 +52,7 @@ class Product(Base):
 class User(Base):
     """User model."""
     
-    __tablename__ = "users"
+    __tablename__ = "profiles"
     
     id = Column(String, primary_key=True)
     email = Column(String, unique=True, nullable=False)
@@ -72,7 +72,7 @@ class ScanHistory(Base):
     __tablename__ = "scan_history"
     
     id = Column(String, primary_key=True)
-    user_id = Column(String, ForeignKey("users.id"))
+    user_id = Column(String, ForeignKey("profiles.id"))
     product_code = Column(String, ForeignKey("products.code"))
     scanned_at = Column(DateTime(timezone=True), default=func.now())
     
@@ -87,7 +87,7 @@ class UserFavorite(Base):
     __tablename__ = "user_favorites"
     
     id = Column(String, primary_key=True)
-    user_id = Column(String, ForeignKey("users.id"))
+    user_id = Column(String, ForeignKey("profiles.id"))
     product_code = Column(String, ForeignKey("products.code"))
     added_at = Column(DateTime(timezone=True), default=func.now())
     
