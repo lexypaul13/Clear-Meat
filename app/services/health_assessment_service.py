@@ -4,13 +4,15 @@ import logging
 import time
 import random
 import hashlib
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 import google.generativeai as genai
 from pydantic import ValidationError
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.product import HealthAssessment, ProductStructured
+from app.db import models as db_models
 
 logger = logging.getLogger(__name__)
 
@@ -18,12 +20,13 @@ logger = logging.getLogger(__name__)
 # Structure: {product_code: {"data": assessment_data, "expires_at": timestamp}}
 _health_assessment_cache = {}
 
-def generate_health_assessment(product: ProductStructured) -> Optional[HealthAssessment]:
+def generate_health_assessment(product: ProductStructured, db: Optional[Session] = None) -> Optional[HealthAssessment]:
     """
     Generate a detailed health assessment for a product using Gemini.
     
     Args:
         product: The structured product data to analyze
+        db: Database session for finding similar products for recommendations
         
     Returns:
         HealthAssessment: The AI-generated health assessment or None if generation failed
@@ -41,8 +44,13 @@ def generate_health_assessment(product: ProductStructured) -> Optional[HealthAss
         logger.info(f"Returning cached health assessment for product {cache_key}")
         return cached_result
     
-    # Format prompt with product data
-    prompt = _build_health_assessment_prompt(product)
+    # Get similar products for recommendations if database is available
+    similar_products = []
+    if db and product.product.meat_type:
+        similar_products = _get_similar_products(db, product)
+    
+    # Format prompt with product data and similar products
+    prompt = _build_health_assessment_prompt(product, similar_products)
     
     # Use exponential backoff for rate limit handling
     max_retries = 3
@@ -118,7 +126,48 @@ def _clean_expired_cache() -> None:
     if expired_keys:
         logger.debug(f"Cleaned {len(expired_keys)} expired health assessment cache entries")
 
-def _build_health_assessment_prompt(product: ProductStructured) -> str:
+def _get_similar_products(db: Session, target_product: ProductStructured) -> List[Dict[str, Any]]:
+    """Get similar products from database for recommendations."""
+    try:
+        # Query products with same meat type, excluding the current product
+        similar_products = (
+            db.query(db_models.Product)
+            .filter(db_models.Product.meat_type == target_product.product.meat_type)
+            .filter(db_models.Product.code != target_product.product.code)
+            .filter(db_models.Product.ingredients_text.isnot(None))  # Must have ingredients
+            .limit(20)  # Get more than needed, let Gemini choose the best
+            .all()
+        )
+        
+        # Convert to simplified dict format for Gemini
+        products_data = []
+        for product in similar_products:
+            product_data = {
+                "code": product.code,
+                "name": product.name,
+                "brand": product.brand,
+                "meat_type": product.meat_type,
+                "risk_rating": product.risk_rating,
+                "ingredients_text": product.ingredients_text,
+                "image_url": product.image_url,
+                "nutrition": {
+                    "calories": product.calories,
+                    "protein": product.protein,
+                    "fat": product.fat,
+                    "carbohydrates": product.carbohydrates,
+                    "salt": product.salt
+                }
+            }
+            products_data.append(product_data)
+        
+        logger.info(f"Found {len(products_data)} similar products for recommendations")
+        return products_data
+        
+    except Exception as e:
+        logger.error(f"Error getting similar products: {e}")
+        return []
+
+def _build_health_assessment_prompt(product: ProductStructured, similar_products: List[Dict[str, Any]]) -> str:
     """Build prompt for Gemini with product data for health assessment."""
     # Extract relevant data for the assessment
     ingredients_text = product.product.ingredients_text or "Ingredients not available"
@@ -153,45 +202,44 @@ def _build_health_assessment_prompt(product: ProductStructured) -> str:
 
 Your Tasks:
 
-Analyze each ingredient and assign it to one of three risk categories—high_risk, moderate_risk, or low_risk—based on potential health concerns (e.g., allergenicity, toxicity, processing, regulatory limits).
+1. Analyze each ingredient and assign it to one of three risk categories—high_risk, moderate_risk, or low_risk—based on potential health concerns (e.g., allergenicity, toxicity, processing, regulatory limits).
 
-Exclude ingredients from the low_risk group if they have:
+2. Exclude ingredients from the low_risk group if they have:
+   - No health risks or concerns
+   - Generic or empty descriptions like "None identified"
 
-No health risks or concerns
+3. Do not include alternatives[] in the ingredients_assessment block.
 
-Generic or empty descriptions like "None identified"
+4. Generate a 2–3 sentence plain-language summary of the product's overall health profile, including standout ingredients or concerns.
 
-Do not include alternatives[] in the ingredients_assessment block.
+5. Create a nutrition_labels array based on the nutrition values provided, with AI-generated plain terms like:
+   - "High Fat"
+   - "Moderate Carbohydrates"
+   - "Low Sodium"
 
-Generate a 2–3 sentence plain-language summary of the product's overall health profile, including standout ingredients or concerns.
+6. For every ingredient in high_risk and moderate_risk, return an entry in the ingredient_reports section that includes:
+   - title: ingredient name + category
+   - summary: short explanation of what it is and why it matters
+   - health_concerns: bulleted list of concerns with in-text citation markers (e.g., "[1]")
+   - common_uses: where it's commonly used
+   - citations: citation dictionary with keys matching in-text markers
 
-Create a nutrition_labels array based on the nutrition values provided, with AI-generated plain terms like:
+7. **RECOMMENDATIONS**: Analyze the provided similar products database and recommend up to 5 healthier alternatives that:
+   - Are the same meat type (e.g., beef, chicken)
+   - Are similar in product type/category (e.g., jerky, sausage)
+   - Have fewer risky ingredients or better nutrition labels
+   - Include a summary of why it's a better choice
+   If no valid alternatives exist, return an empty array.
 
-"High Fat"
+8. Append a works_cited array listing all references used, formatted in APA style and linked where possible.
 
-"Moderate Carbohydrates"
-
-"Low Sodium"
-
-For every ingredient in high_risk and moderate_risk, return an entry in the ingredient_reports section that includes:
-
-title: ingredient name + category
-
-summary: short explanation of what it is and why it matters
-
-health_concerns: bulleted list of concerns with in-text citation markers (e.g., "[1]")
-
-common_uses: where it's commonly used
-
-citations: citation dictionary with keys matching in-text markers
-
-Append a works_cited array listing all references used, formatted in APA style and linked where possible.
-
-User Input
-
+MAIN PRODUCT TO ANALYZE:
 {json.dumps(product_data, indent=2)}
 
-Expected Output (as machine-readable JSON only)
+SIMILAR PRODUCTS DATABASE FOR RECOMMENDATIONS:
+{json.dumps(similar_products, indent=2) if similar_products else "[]"}
+
+Expected Output (as machine-readable JSON only):
 
 {{
   "summary": "This product contains multiple processed ingredients...",
@@ -242,6 +290,21 @@ Expected Output (as machine-readable JSON only)
       }}
     }}
   }},
+  "recommendations": [
+    {{
+      "code": "0025317005104",
+      "name": "Organic Grass-Fed Beef Jerky",
+      "brand": "Applegate",
+      "image_url": "https://example.com/images/beef_jerky.jpg",
+      "summary": "This jerky contains no artificial preservatives, has low sodium, and is made with organic grass-fed beef.",
+      "nutrition_highlights": [
+        "Low Sodium",
+        "No Preservatives",
+        "Moderate Protein"
+      ],
+      "risk_rating": "Green"
+    }}
+  ],
   "works_cited": [
     {{
       "id": 1,
@@ -250,35 +313,24 @@ Expected Output (as machine-readable JSON only)
   ]
 }}
 
+CRITICAL GUIDELINES FOR RECOMMENDATIONS:
+- Only recommend products with the same meat_type as the main product
+- Prioritize products with risk_rating of "Green" over "Yellow" over "Red"
+- Consider products with fewer/simpler ingredients as healthier
+- Look for products without artificial preservatives, colorings, or flavor enhancers
+- Ensure recommended products are actually different/better than the main product
+- If no suitable alternatives exist, return "recommendations": []
+- Maximum 5 recommendations
+
 Approved Sources:
-
-Government & International Health Agencies
-
-U.S. Food and Drug Administration (FDA) – fda.gov
-
-World Health Organization (WHO) – who.int
-
-Centers for Disease Control and Prevention (CDC) – cdc.gov
-
-USDA FoodData Central – fdc.nal.usda.gov
-
-Nutrition.gov – nutrition.gov
-
-Academic & Research Institutions
-
-Harvard T.H. Chan School of Public Health – nutritionsource.hsph.harvard.edu
-
-National Institutes of Health (NIH) – nih.gov
-
-Examine.com – examine.com
-
-Professional & Advocacy Organizations
-
-Academy of Nutrition and Dietetics – eatright.org
-
-Environmental Working Group (EWG) – ewg.org
-
-Center for Science in the Public Interest (CSPI) – cspinet.org
+- U.S. Food and Drug Administration (FDA) – fda.gov
+- World Health Organization (WHO) – who.int
+- Centers for Disease Control and Prevention (CDC) – cdc.gov
+- USDA FoodData Central – fdc.nal.usda.gov
+- Harvard T.H. Chan School of Public Health – nutritionsource.hsph.harvard.edu
+- National Institutes of Health (NIH) – nih.gov
+- Academy of Nutrition and Dietetics – eatright.org
+- Environmental Working Group (EWG) – ewg.org
 
 You must ignore information from any other source.
 

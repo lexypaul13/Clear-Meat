@@ -297,6 +297,17 @@ class IngredientAssessment(BaseModel):
     low_risk: List[Dict[str, Any]] = Field(default_factory=list)
 
 
+class ProductRecommendation(BaseModel):
+    """Product recommendation model for healthier alternatives."""
+    code: str
+    name: str
+    brand: Optional[str] = None
+    image_url: Optional[str] = None
+    summary: str
+    nutrition_highlights: List[str] = Field(default_factory=list)
+    risk_rating: str
+
+
 class HealthAssessment(BaseModel):
     """Complete health assessment for a product."""
     summary: str
@@ -304,4 +315,5 @@ class HealthAssessment(BaseModel):
     nutrition_labels: List[str] = Field(default_factory=list)
     ingredients_assessment: IngredientAssessment
     ingredient_reports: Dict[str, IngredientReport] = Field(default_factory=dict)
-    works_cited: List[WorksCited] = Field(default_factory=list) 
+    works_cited: List[WorksCited] = Field(default_factory=list)
+    recommendations: List[ProductRecommendation] = Field(default_factory=list) 

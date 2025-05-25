@@ -467,8 +467,8 @@ def get_product_health_assessment(
             )
         )
         
-        # Generate health assessment
-        health_assessment = generate_health_assessment(structured_product)
+        # Generate health assessment with database access for recommendations
+        health_assessment = generate_health_assessment(structured_product, db)
         
         if not health_assessment:
             logger.error(f"Failed to generate health assessment for product {code}")

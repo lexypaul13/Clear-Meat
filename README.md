@@ -335,12 +335,12 @@ The explore endpoint uses an advanced, rule-based weighted scoring algorithm tha
    - Fills remaining slots with highest-scoring products
 
 4. **Scoring Formula**:
-   ```
-   score = (w_protein * protein_normalized) +
-           (w_fat * (1 - fat_normalized)) +
-           (w_sodium * (1 - sodium_normalized)) +
-           (w_antibiotic * antibiotic_free) +
-           (w_grass * pasture_raised) +
+```
+score = (w_protein * protein_normalized) +
+        (w_fat * (1 - fat_normalized)) +
+        (w_sodium * (1 - sodium_normalized)) +
+        (w_antibiotic * antibiotic_free) +
+        (w_grass * pasture_raised) +
            (w_preservatives * preservative_free) +
            (1.5 * meat_type_match)
    ```
