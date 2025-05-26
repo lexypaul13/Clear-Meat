@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  # Main API service
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - ENABLE_AUTH_BYPASS=true
+      - DATABASE_URL=postgresql://postgres:postgres@supabase-db:5432/postgres
+      - SUPABASE_URL=http://supabase-kong:8000
+      - SECRET_KEY=super-secret-jwt-token-with-at-least-32-characters-long
+      - ENVIRONMENT=development
+      - DEBUG=true
+    depends_on:
+      - supabase-db
+      - supabase-kong
+    networks:
+      - meat-api-network
+
+  # Supabase Database
+  supabase-db:
+    image: supabase/postgres:15.1.0.117
+    ports:
+      - "54322:5432"
+    environment:
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=postgres
+    volumes:
+      - supabase-db-data:/var/lib/postgresql/data
+    networks:
+      - meat-api-network
+
+  # Supabase Kong (API Gateway)
+  supabase-kong:
+    image: kong:2.8.1
+    ports:
+      - "54321:8000"
+    environment:
+      - KONG_DATABASE=off
+      - KONG_DECLARATIVE_CONFIG=/var/lib/kong/kong.yml
+      - KONG_DNS_ORDER=LAST,A,CNAME
+      - KONG_PLUGINS=request-transformer,cors,key-auth,acl,basic-auth
+    volumes:
+      - ./supabase/kong.yml:/var/lib/kong/kong.yml:ro
+    depends_on:
+      - supabase-db
+    networks:
+      - meat-api-network
+
+volumes:
+  supabase-db-data:
+
+networks:
+  meat-api-network:
+    driver: bridge 
