@@ -17,6 +17,8 @@ This guide covers running the Clear-Meat API using Docker for development and pr
      -e ENABLE_AUTH_BYPASS=true \
      -e DATABASE_URL="postgresql://postgres:postgres@host.docker.internal:54322/postgres" \
      -e SECRET_KEY="super-secret-jwt-token-with-at-least-32-characters-long" \
+     -e ENVIRONMENT=development \
+     -e DEBUG=true \
      clear-meat-api
    ```
 
@@ -188,6 +190,18 @@ docker-compose up --build
    
    # Test endpoint
    curl http://localhost:8000/api/v1/products/test/health-assessment
+   ```
+
+4. **Docker build failures:**
+   ```bash
+   # If you see "tkinter" package errors, it's already fixed in the latest version
+   # If you see compilation errors, ensure you have enough disk space and memory
+   
+   # Clean Docker cache if needed
+   docker system prune -a
+   
+   # Rebuild from scratch
+   docker build --no-cache -t clear-meat-api .
    ```
 
 ## 📝 **Notes**
