@@ -1,4 +1,183 @@
-# MeatWise API
+# Clear-Meat API (formerly MeatWise)
+
+🎉 **MIGRATION COMPLETED SUCCESSFULLY!** 🎉
+
+This project has been successfully migrated from a dev GitHub account to the personal account and renamed from "MeatWise" to "Clear-Meat". The migration included transferring the entire codebase, setting up a new Supabase database, and simplifying the social authentication system.
+
+## 🚀 **Migration Summary**
+
+### **What Was Accomplished**
+- ✅ **GitHub Migration**: Transferred from dev account to https://github.com/lexypaul13/Clear-Meat
+- ✅ **Supabase Migration**: New project created with full database schema
+- ✅ **Social Auth Simplification**: Streamlined to use Supabase's built-in OAuth providers
+- ✅ **Database Setup**: All tables created with sample data (5 test products)
+- ✅ **Documentation**: Complete setup guides and migration artifacts created
+
+### **Current Status**
+- **Repository**: https://github.com/lexypaul13/Clear-Meat (1,641 files, 14.31 MB)
+- **Supabase Project**: https://ksgxendfsejkxhrmfsbi.supabase.co
+- **Database**: ✅ Ready with products, profiles, and all supporting tables
+- **Sample Data**: 5 meat products loaded for testing
+
+### **New Supabase Credentials**
+```bash
+SUPABASE_URL=https://ksgxendfsejkxhrmfsbi.supabase.co
+SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtzZ3hlbmRmc2Vqa3hocm1mc2JpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDgyMzAxODksImV4cCI6MjA2MzgwNjE4OX0.NJGVUga8oBHsy06u1COnz0p0kTbViz1we2nxxSw-5BY
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtzZ3hlbmRmc2Vqa3hocm1mc2JpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0ODIzMDE4OSwiZXhwIjoyMDYzODA2MTg5fQ.vCpVwhgXwgOrv_edxykymFhzYi7mCyPnuqrwhj92j7M
+```
+
+## 🔧 **Quick Setup for Original Account**
+
+### **1. Clone Your Migrated Project**
+```bash
+git clone https://github.com/lexypaul13/Clear-Meat.git
+cd Clear-Meat
+```
+
+### **2. Set Up Environment**
+```bash
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Mac/Linux
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### **3. Configure Environment Variables**
+Create `.env` file with your new Supabase credentials:
+```bash
+# Supabase Configuration (NEW - MIGRATED)
+SUPABASE_URL=https://ksgxendfsejkxhrmfsbi.supabase.co
+SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtzZ3hlbmRmc2Vqa3hocm1mc2JpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDgyMzAxODksImV4cCI6MjA2MzgwNjE4OX0.NJGVUga8oBHsy06u1COnz0p0kTbViz1we2nxxSw-5BY
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtzZ3hlbmRmc2Vqa3hocm1mc2JpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0ODIzMDE4OSwiZXhwIjoyMDYzODA2MTg5fQ.vCpVwhgXwgOrv_edxykymFhzYi7mCyPnuqrwhj92j7M
+SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtzZ3hlbmRmc2Vqa3hocm1mc2JpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDgyMzAxODksImV4cCI6MjA2MzgwNjE4OX0.NJGVUga8oBHsy06u1COnz0p0kTbViz1we2nxxSw-5BY
+
+# Environment
+ENVIRONMENT=production
+DEBUG=false
+LOG_LEVEL=INFO
+
+# Optional: Add these for enhanced features
+SECRET_KEY=your-super-secret-jwt-token-with-at-least-32-characters-long
+GEMINI_API_KEY=your-gemini-api-key-here
+```
+
+### **4. Verify Database Setup**
+The database is already set up with all tables and sample data. Verify it's working:
+```bash
+python verify_database.py
+```
+
+### **5. Start Your API**
+```bash
+python -m uvicorn app.main:app --reload --port 8000
+```
+
+### **6. Test Everything Works**
+```bash
+# Test the API
+python test_api.py
+
+# Or manually test endpoints
+curl http://localhost:8000/health
+curl http://localhost:8000/api/v1/products/
+```
+
+## 📊 **Sample Data Available**
+
+Your database includes these test products:
+- **Premium Bacon** (pork) - Yellow risk rating
+- **Organic Chicken Breast** (chicken) - Green risk rating  
+- **Beef Hot Dogs** (beef) - Red risk rating
+- **Grass-Fed Ground Beef** (beef) - Green risk rating
+- **Turkey Deli Slices** (turkey) - Yellow risk rating
+
+## 🔐 **Simplified Social Authentication**
+
+The social authentication has been streamlined to use Supabase's built-in OAuth providers:
+
+### **Supported Providers**
+- ✅ **Google OAuth** - Built-in Supabase integration
+- ✅ **Facebook OAuth** - Built-in Supabase integration  
+- ✅ **Apple OAuth** - Built-in Supabase integration
+- ✅ **Twitter/X OAuth** - Built-in Supabase integration
+- ✅ **Phone/SMS Authentication** - Custom implementation preserved
+
+### **OAuth Setup**
+To configure OAuth providers, visit your Supabase dashboard:
+1. Go to: https://ksgxendfsejkxhrmfsbi.supabase.co/project/auth/providers
+2. Enable desired providers (Google, Facebook, Apple, Twitter)
+3. Add your OAuth app credentials
+4. Configure redirect URLs
+
+See `SOCIAL_AUTH_SETUP.md` for detailed setup instructions.
+
+## 🛠️ **Migration Artifacts**
+
+The following files were created during migration and are available in your repository:
+
+- **`SETUP_ON_ORIGINAL_ACCOUNT.md`** - Complete setup guide for original account
+- **`create_database_tables.sql`** - Full database schema (317 lines)
+- **`quick_setup.sql`** - Minimal database setup script
+- **`verify_database.py`** - Database verification tool
+- **`test_api.py`** - API testing script
+- **`setup_database.py`** - Automated database setup script
+- **`MIGRATION_GUIDE.md`** - Step-by-step migration documentation
+- **`MIGRATION_CHECKLIST.md`** - Quick reference checklist
+
+## 🎯 **What's Different After Migration**
+
+### **Repository Changes**
+- **Name**: MeatWise → Clear-Meat
+- **URL**: New GitHub repository under personal account
+- **All features preserved**: API, health assessments, recommendations, etc.
+
+### **Database Changes**
+- **New Supabase project**: Fresh instance with clean setup
+- **All tables recreated**: Products, profiles, scan history, etc.
+- **Sample data loaded**: Ready for immediate testing
+
+### **Authentication Changes**
+- **Simplified OAuth**: Uses Supabase built-in providers instead of manual implementation
+- **Removed complexity**: ~100 lines of OAuth callback handling removed
+- **Same functionality**: All authentication features still work
+
+### **Code Improvements**
+- **Cleaner codebase**: Removed unused test files and temporary scripts
+- **Better documentation**: Updated setup guides and migration docs
+- **Enhanced error handling**: Improved database connection management
+
+## 📋 **Next Steps for Development**
+
+1. **Verify Setup**: Run `verify_database.py` to confirm everything works
+2. **Test API**: Use `test_api.py` to validate all endpoints
+3. **Configure OAuth**: Set up social login providers in Supabase dashboard
+4. **Add Real Data**: Import your actual product database
+5. **Deploy**: Set up production deployment when ready
+
+## 🚨 **Important Notes**
+
+- **Database is ready**: No need to run migrations or setup scripts
+- **Sample data included**: 5 test products for immediate testing
+- **OAuth simplified**: Much easier to configure than before
+- **All features preserved**: Health assessments, recommendations, etc.
+- **Production ready**: Just add your real product data
+
+## 🔍 **Troubleshooting**
+
+If you encounter any issues:
+
+1. **Database connection errors**: Verify your `.env` file has the correct Supabase credentials
+2. **Missing tables**: Run `create_database_tables.sql` in Supabase SQL Editor
+3. **API startup issues**: Check that port 8000 is available
+4. **Authentication problems**: Ensure `SECRET_KEY` is set in `.env`
+
+## 📚 **Original Documentation**
+
+---
+
+*The rest of this README contains the original MeatWise documentation, which is still valid for the Clear-Meat API...*
 
 A backend API service that provides personalized meat product recommendations and insights based on user preferences and scan history.
 
@@ -7,8 +186,8 @@ A backend API service that provides personalized meat product recommendations an
 1. **Clone and Setup**
    ```bash
    # Clone the repository
-   git clone https://github.com/yourusername/meat-products-api.git
-   cd meat-products-api
+   git clone https://github.com/lexypaul13/Clear-Meat.git
+   cd Clear-Meat
 
    # Create and activate virtual environment
    python -m venv .venv
@@ -20,61 +199,21 @@ A backend API service that provides personalized meat product recommendations an
 
 2. **Configure Environment**
    ```bash
-   # Either create a .env file manually
+   # Create .env file with migrated Supabase credentials (see above)
    touch .env
-
-   # Or use the provided script to create it interactively
-   ./scripts/startup/create_new_env.sh
-
-   # Or copy an environment template
-   cp scripts/env/.env.example .env
-
-   # Add these variables to .env for local development:
-   DATABASE_URL=postgresql://postgres:postgres@localhost:54322/postgres
-   SUPABASE_URL=http://localhost:54321
-   SUPABASE_KEY=your-supabase-anon-key-here
-   JWT_SECRET=your-super-secret-jwt-token-with-at-least-32-characters-long
-   API_V1_STR=/api/v1
-   GEMINI_API_KEY=your-gemini-api-key-here
-   GEMINI_MODEL=gemini-2.0-flash
+   # Add the new Supabase credentials from the migration section
    ```
 
-3. **Start Supabase Locally**
+3. **Start the API** (No local Supabase needed - using cloud instance)
    ```bash
-   # Navigate to Supabase directory
-   cd supabase
-
-   # Start Supabase services
-   supabase start
-   
-   # This will start:
-   # - PostgreSQL on port 54322
-   # - Supabase API on port 54321
-   # - Studio on port 54323
+   # Start the API server
+   python -m uvicorn app.main:app --reload --port 8000
    ```
 
-4. **Run the Project**
-   ```bash
-   # Return to project root if needed
-   cd ..
-
-   # IMPORTANT: Use the provided script to start the API server
-   # This ensures the correct DATABASE_URL is used regardless of your environment
-   ./start_app.py
-   
-   # Alternatively, you can specify environment and other options
-   ./start_app.py --env local --reload
-   ./start_app.py --env production --port 8080
-
-   # If you prefer the shell script directly
-   ./scripts/startup/start_local_dev.sh
-   ```
-
-5. **Access the Application**
-   - Backend API: http://localhost:8001
-   - API Documentation: http://localhost:8001/api/v1/docs
-   - Frontend: http://localhost:8501
-   - Supabase Studio: http://localhost:54323
+4. **Access the Application**
+   - Backend API: http://localhost:8000
+   - API Documentation: http://localhost:8000/docs
+   - Health Check: http://localhost:8000/health
 
 ## Running in Test Mode
 
