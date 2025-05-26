@@ -316,4 +316,28 @@ class HealthAssessment(BaseModel):
     ingredients_assessment: IngredientAssessment
     ingredient_reports: Dict[str, IngredientReport] = Field(default_factory=dict)
     works_cited: List[WorksCited] = Field(default_factory=list)
-    recommendations: List[ProductRecommendation] = Field(default_factory=list) 
+    recommendations: List[ProductRecommendation] = Field(default_factory=list)
+
+
+# Social Authentication Models
+class SocialAuthRequest(BaseModel):
+    """Social authentication request model."""
+    provider: str = Field(..., description="OAuth provider (google, facebook, apple, twitter)")
+    redirect_url: Optional[str] = Field(None, description="URL to redirect to after authentication")
+
+
+class PhoneAuthRequest(BaseModel):
+    """Phone authentication request model."""
+    phone: str = Field(..., description="Phone number in international format (+1234567890)")
+
+
+class PhoneVerifyRequest(BaseModel):
+    """Phone verification request model."""
+    phone: str = Field(..., description="Phone number in international format")
+    token: str = Field(..., description="OTP token received via SMS")
+
+
+class SocialAuthResponse(BaseModel):
+    """Social authentication response model."""
+    auth_url: str = Field(..., description="URL to redirect user for OAuth authentication")
+    provider: str = Field(..., description="OAuth provider name") 
