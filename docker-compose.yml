@@ -10,6 +10,7 @@ services:
       - ENABLE_AUTH_BYPASS=true
       - DATABASE_URL=postgresql://postgres:postgres@supabase-db:5432/postgres
       - SUPABASE_URL=http://supabase-kong:8000
+      - SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtzZ3hlbmRmc2Vqa3hocm1mc2JpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDgyMzAxODksImV4cCI6MjA2MzgwNjE4OX0.NJGVUga8oBHsy06u1COnz0p0kTbViz1we2nxxSw-5BY
       - SECRET_KEY=super-secret-jwt-token-with-at-least-32-characters-long
       - ENVIRONMENT=development
       - DEBUG=true

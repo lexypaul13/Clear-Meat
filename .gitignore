@@ -4,6 +4,9 @@
 !.env.example
 .env.local
 .env.remote
+.env.development.local
+.env.test.local
+.env.production.local
 
 # Python
 __pycache__/
@@ -126,3 +129,16 @@ update_env.py
 
 # BFG Report files
 ..bfg-report/
+
+# Security - Never commit these
+*.log
+*.key
+*.pem
+*.p12
+*.p8
+test_responses/
+auth_tokens.txt
+secrets/
+
+# Testing scripts with embedded keys (use environment variables instead)
+test_auth.sh
