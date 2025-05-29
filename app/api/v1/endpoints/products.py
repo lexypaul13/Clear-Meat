@@ -3,6 +3,7 @@
 from typing import Any, List, Optional, Dict, Tuple, Union
 import logging
 import os
+import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
@@ -18,6 +19,7 @@ from app.services.recommendation_service import (
     get_personalized_recommendations, analyze_product_match
 )
 from app.services.health_assessment_service import generate_health_assessment
+from app.services.search_service import search_products
 from app.utils.personalization import apply_user_preferences
 
 # Configure logging for this module
@@ -26,56 +28,71 @@ logger.setLevel(logging.INFO)
 
 router = APIRouter()
 
-@router.get("/count", response_model=Dict[str, int])
-def get_product_count(
+# NEW: Dedicated natural language search endpoint - placed at the top to avoid conflicts
+@router.get("/nlp-search", response_model=Dict[str, Any])
+def natural_language_search(
+    q: str = Query(..., description="Natural language search query"),
+    limit: int = Query(20, ge=1, le=100, description="Maximum number of results to return"),
+    skip: int = Query(0, ge=0, description="Number of results to skip for pagination"),
     db: Session = Depends(get_db),
-) -> Any:
+) -> Dict[str, Any]:
     """
-    Get the total count of products in the database.
+    Search for products using natural language queries.
+    
+    Examples:
+    - "Low sodium chicken snacks"
+    - "High protein beef jerky with no sugar"  
+    - "Healthy turkey-based alternatives"
+    - "Organic grass-fed beef"
+    - "Antibiotic-free chicken breast"
     
     Args:
+        q: Natural language search query
+        limit: Maximum number of results to return (1-100, default 20)
+        skip: Number of results to skip for pagination
         db: Database session
         
     Returns:
-        Dict[str, int]: Total count of products
+        Dict containing search results and metadata
     """
     try:
-        logger.info(f"Getting product count (using local DB: {is_using_local_db()})")
+        logger.info(f"Natural language search query: '{q}'")
         
-        try:
-            # Try an optimized SQL count that's more efficient than ORM
-            from sqlalchemy import text
-            result = db.execute(text("SELECT COUNT(*) FROM products")).scalar()
-            return {"count": result or 0}
-        except Exception as sql_err:
-            logger.warning(f"Optimized count failed, falling back to ORM: {str(sql_err)}")
-            
-            # Fallback to ORM method if direct SQL fails
-            try:
-                # Count products using a SQL COUNT query through ORM
-                total_count = db.query(func.count(db_models.Product.code)).scalar()
-                return {"count": total_count or 0}
-            except Exception as orm_err:
-                logger.warning(f"ORM count failed, trying Supabase direct: {str(orm_err)}")
-                
-                # Try with Supabase directly as last resort
-                if not is_using_local_db():
-                    try:
-                        with get_supabase_client() as supabase:
-                            # Use a more efficient query that doesn't try to count exact records
-                            # but instead gets the first 1000 and returns that count
-                            response = supabase.table("products").select("code").limit(1000).execute()
-                            return {"count": len(response.data), "note": "Approximate count"}
-                    except Exception as sb_err:
-                        logger.error(f"All count methods failed: {str(sb_err)}")
-                        
-                # If everything fails, raise the original error
-                raise
+        # Perform the search using our search service
+        results = search_products(q, db, limit=limit, skip=skip)
+        
+        logger.info(f"Found {len(results)} products for query: '{q}'")
+        
+        return {
+            "query": q,
+            "total_results": len(results),
+            "limit": limit,
+            "skip": skip,
+            "products": results
+        }
+        
+    except Exception as e:
+        logger.error(f"Error searching products: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error searching products: {str(e)}"
+        )
+
+@router.get("/count", response_model=Dict[str, int])
+def get_product_count(
+    db: Session = Depends(get_db),
+    current_user: db_models.User = Depends(get_current_active_user)
+) -> Dict[str, int]:
+    """Get total count of products in database."""
+    try:
+        total = db.query(db_models.Product).count()
+        logger.info(f"Product count request: {total} products (user: {current_user.id})")
+        return {"total": total}
     except Exception as e:
         logger.error(f"Error getting product count: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"Error getting product count: {str(e)}"
+            detail=f"Database error: {str(e)}"
         )
 
 @router.get("/", response_model=List[models.Product])
@@ -371,128 +388,54 @@ def get_product_recommendations(
 @router.get("/{code}/health-assessment", response_model=models.HealthAssessment)
 def get_product_health_assessment(
     code: str,
+    user_preferences: Optional[str] = Query(
+        None, 
+        description="JSON string of user health preferences"
+    ),
     db: Session = Depends(get_db),
-    current_user: db_models.User = Depends(get_current_active_user),
-) -> Any:
+    current_user: db_models.User = Depends(get_current_active_user)
+) -> Dict[str, Any]:
     """
-    Generate a detailed health assessment for a specific product using AI.
-    
-    The assessment includes:
-    - Risk summary (grade A-F and color)
-    - Nutrition analysis in plain language
-    - Classification of ingredients by risk level
-    - Detailed reports on concerning ingredients with citations
+    Get a comprehensive health assessment for a product with AI insights.
     
     Args:
-        code: Product barcode
+        code: Product barcode/code
+        user_preferences: Optional JSON string of user health preferences
         db: Database session
+        current_user: Current authenticated user
         
     Returns:
-        models.HealthAssessment: AI-generated health assessment
-        
-    Raises:
-        HTTPException: If product not found, if Gemini API is not configured,
-                     or if there's an error generating the assessment
+        Dict containing detailed health assessment
     """
     try:
-        logger.info(f"Generating health assessment for product with code {code}")
-        
-        # Query the product from database
-        product = db.query(db_models.Product).filter(db_models.Product.code == code).first()
+        # Get the product
+        product = db.query(db_models.Product).filter(
+            db_models.Product.code == code
+        ).first()
         
         if not product:
-            logger.warning(f"Product with code {code} not found")
-            raise HTTPException(status_code=404, detail="Product not found")
-            
-        # Extract additives from ingredients text
-        additives = helpers.extract_additives_from_text(product.ingredients_text or "")
-        
-        # Assess health concerns based on data
-        health_concerns = []
-        if product.protein and product.protein < 10:
-            health_concerns.append("Low protein content")
-        if product.fat and product.fat > 25:
-            health_concerns.append("High fat content")
-        if product.salt and product.salt > 1.5:
-            health_concerns.append("High salt content")
-            
-        # Create basic environmental impact assessment
-        env_impact = {
-            "impact": "Moderate",
-            "details": "Based on default meat product environmental impact assessment",
-            "sustainability_practices": ["Unknown"]
-        }
-        
-        if product.meat_type == "beef":
-            env_impact["impact"] = "High"
-            env_impact["details"] = "Beef production typically has higher environmental impact"
-        elif product.meat_type in ["chicken", "turkey"]:
-            env_impact["impact"] = "Lower"
-            env_impact["details"] = "Poultry typically has lower environmental impact compared to red meat"
-        
-        # Build structured response for the health assessment service
-        structured_product = models.ProductStructured(
-            product=models.ProductInfo(
-                code=product.code,
-                name=product.name,
-                brand=product.brand,
-                description=product.description,
-                ingredients_text=product.ingredients_text,
-                image_url=product.image_url,
-                image_data=product.image_data,
-                meat_type=product.meat_type
-            ),
-            criteria=models.ProductCriteria(
-                risk_rating=product.risk_rating,
-                additives=additives
-            ),
-            health=models.ProductHealth(
-                nutrition=models.ProductNutrition(
-                    calories=product.calories,
-                    protein=product.protein,
-                    fat=product.fat,
-                    carbohydrates=product.carbohydrates,
-                    salt=product.salt
-                ),
-                health_concerns=health_concerns
-            ),
-            environment=models.ProductEnvironment(
-                impact=env_impact["impact"],
-                details=env_impact["details"],
-                sustainability_practices=env_impact["sustainability_practices"]
-            ),
-            metadata=models.ProductMetadata(
-                last_updated=product.last_updated,
-                created_at=product.created_at
-            )
-        )
-        
-        # Generate health assessment with database access for recommendations
-        health_assessment = generate_health_assessment(structured_product, db)
-        
-        if not health_assessment:
-            logger.error(f"Failed to generate health assessment for product {code}")
             raise HTTPException(
-                status_code=503,
-                detail="Unable to generate health assessment. Please try again later."
+                status_code=404,
+                detail=f"Product with code {code} not found"
             )
-            
-        logger.info(f"Successfully generated health assessment for product {code}")
         
-        # Apply user preferences to flag matching ingredients
-        user_preferences = getattr(current_user, "preferences", {}) or {}
+        # Parse user preferences if provided
+        parsed_preferences = None
         if user_preferences:
-            # Convert HealthAssessment to dict, apply preferences, then convert back
-            assessment_dict = health_assessment.model_dump()
-            assessment_dict = apply_user_preferences(assessment_dict, user_preferences)
-            
-            # Convert back to HealthAssessment model
-            health_assessment = models.HealthAssessment(**assessment_dict)
-            
-        return health_assessment
+            try:
+                parsed_preferences = json.loads(user_preferences)
+            except json.JSONDecodeError:
+                logger.warning(f"Invalid user preferences JSON: {user_preferences}")
+        
+        # Generate health assessment using the service
+        assessment = generate_health_assessment(product, parsed_preferences)
+        
+        # Log successful assessment generation
+        logger.info(f"Generated health assessment for product {code} (user: {current_user.id})")
+        
+        return assessment
         
     except HTTPException:
-        # Re-raise HTTP exceptions
         raise
     except Exception as e:
         logger.error(f"Error generating health assessment for product {code}: {str(e)}")
