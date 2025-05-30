@@ -19,6 +19,15 @@ logger = logging.getLogger(__name__)
 # Structure: {query_hash: {"intent": parsed_intent, "expires_at": timestamp}}
 _query_cache = {}
 
+# Common brand names for product name search detection
+COMMON_BRANDS = [
+    "kroger", "tyson", "oscar mayer", "hillshire", "applegate", "hormel", 
+    "jennie-o", "butterball", "foster farms", "perdue", "smithfield",
+    "johnsonville", "hebrew national", "boar's head", "armour", "spam",
+    "simple truth", "organic prairie", "trader joe's", "whole foods",
+    "great value", "kirkland", "member's mark", "umeya"
+]
+
 # Configure Gemini if API key is available
 if settings.GEMINI_API_KEY:
     genai.configure(api_key=settings.GEMINI_API_KEY)
@@ -355,133 +364,407 @@ def build_search_filters(intent: SearchIntent, db: Session) -> Tuple[List, Dict[
     
     return filters, ranking_factors
 
-def calculate_match_score(product: db_models.Product, intent: SearchIntent, ranking_factors: Dict[str, Any]) -> Tuple[int, List[str]]:
-    """Calculate match score and identify matched terms."""
+def calculate_name_match_score(query: str, product) -> int:
+    """Simple scoring for name matches."""
+    query_lower = query.lower()
+    name_lower = (product.name or "").lower()
+    brand_lower = (product.brand or "").lower()
+    description_lower = (product.description or "").lower()
+    
+    score = 0
+    
+    # Exact name match = high score
+    if query_lower in name_lower:
+        score += 50
+    
+    # Brand match = medium score  
+    if any(word in brand_lower for word in query_lower.split()):
+        score += 30
+        
+    # Count matching keywords
+    query_words = set(word for word in query_lower.split() if len(word) > 2)  # Ignore short words
+    name_words = set(word for word in name_lower.split() if len(word) > 2)
+    brand_words = set(word for word in brand_lower.split() if len(word) > 2)
+    desc_words = set(word for word in description_lower.split() if len(word) > 2)
+    
+    # Score based on matching words
+    name_matches = query_words.intersection(name_words)
+    brand_matches = query_words.intersection(brand_words)
+    desc_matches = query_words.intersection(desc_words)
+    
+    score += len(name_matches) * 10     # Name matches worth more
+    score += len(brand_matches) * 8     # Brand matches worth medium
+    score += len(desc_matches) * 3      # Description matches worth less
+    
+    # Bonus for consecutive word matches
+    if len(name_matches) > 1:
+        score += 15
+    
+    return score
+
+def search_by_product_name(query: str, db: Session, limit: int = 20, skip: int = 0) -> List[Dict[str, Any]]:
+    """Simple text search across product name, brand, and description."""
+    
+    logger.info(f"Performing direct product name search for: '{query}'")
+    
+    # Split query into keywords (ignore very short words)
+    keywords = [word.strip() for word in query.lower().split() if len(word.strip()) > 2]
+    
+    if not keywords:
+        return []
+    
+    # Build ILIKE filters for each keyword
+    filters = []
+    for keyword in keywords:
+        keyword_filter = or_(
+            func.lower(db_models.Product.name).like(f'%{keyword}%'),
+            func.lower(db_models.Product.brand).like(f'%{keyword}%'),
+            func.lower(db_models.Product.description).like(f'%{keyword}%')
+        )
+        filters.append(keyword_filter)
+    
+    # Execute query with all keywords (AND logic)
+    products = (
+        db.query(db_models.Product)
+        .filter(and_(*filters))
+        .limit(limit * 3)  # Get more results to score and filter
+        .all()
+    )
+    
+    logger.info(f"Found {len(products)} products before scoring")
+    
+    # Score and format results
+    results = []
+    for product in products:
+        score = calculate_name_match_score(query, product)
+        
+        # Only include results with reasonable scores
+        if score > 5:
+            # Convert product to dict safely
+            product_dict = {
+                'code': product.code,
+                'name': product.name,
+                'brand': product.brand,
+                'description': product.description,
+                'ingredients_text': product.ingredients_text,
+                'calories': product.calories,
+                'protein': product.protein,
+                'fat': product.fat,
+                'carbohydrates': product.carbohydrates,
+                'salt': product.salt,
+                'meat_type': product.meat_type,
+                'risk_rating': product.risk_rating,
+                'image_url': product.image_url,
+                'last_updated': product.last_updated.isoformat() if product.last_updated else None,
+                'created_at': product.created_at.isoformat() if product.created_at else None,
+                'antibiotic_free': getattr(product, 'antibiotic_free', None),
+                'hormone_free': getattr(product, 'hormone_free', None),
+                'pasture_raised': getattr(product, 'pasture_raised', None),
+                'contains_preservatives': getattr(product, 'contains_preservatives', None),
+                'match_score': score,
+                'matched_terms': ["direct_name_search"]
+            }
+            results.append(product_dict)
+    
+    # Sort by score descending and apply pagination
+    results.sort(key=lambda x: x["match_score"], reverse=True)
+    
+    # Apply pagination
+    paginated_results = results[skip:skip + limit]
+    
+    logger.info(f"Returning {len(paginated_results)} products after scoring and pagination")
+    
+    return paginated_results
+
+def search_by_intent(query: str, db: Session, limit: int = 20, skip: int = 0) -> List[Dict[str, Any]]:
+    """AI-enhanced intent search (existing functionality)."""
+    
+    logger.info(f"Performing AI-enhanced intent search for: '{query}'")
+    
+    # Use existing search logic
+    intent = parse_natural_language_query(query)
+    
+    # Build base query
+    query_obj = db.query(db_models.Product)
+    
+    # Apply filters based on intent
+    query_obj = build_database_filters(intent, query_obj)
+    
+    # Execute query with pagination
+    products = query_obj.offset(skip).limit(limit * 2).all()  # Get extra for scoring
+    
+    # Score and format results
+    results = []
+    for product in products:
+        score, matched_terms = calculate_match_score(product, intent)
+        
+        if score > 0:  # Only include products with some relevance
+            # Convert product to dict safely
+            product_dict = {
+                'code': product.code,
+                'name': product.name,
+                'brand': product.brand,
+                'description': product.description,
+                'ingredients_text': product.ingredients_text,
+                'calories': product.calories,
+                'protein': product.protein,
+                'fat': product.fat,
+                'carbohydrates': product.carbohydrates,
+                'salt': product.salt,
+                'meat_type': product.meat_type,
+                'risk_rating': product.risk_rating,
+                'image_url': product.image_url,
+                'last_updated': product.last_updated.isoformat() if product.last_updated else None,
+                'created_at': product.created_at.isoformat() if product.created_at else None,
+                'antibiotic_free': getattr(product, 'antibiotic_free', None),
+                'hormone_free': getattr(product, 'hormone_free', None),
+                'pasture_raised': getattr(product, 'pasture_raised', None),
+                'contains_preservatives': getattr(product, 'contains_preservatives', None),
+                'match_score': score,
+                'matched_terms': matched_terms
+            }
+            results.append(product_dict)
+    
+    # Sort by score and apply final limit
+    results.sort(key=lambda x: x["match_score"], reverse=True)
+    return results[:limit]
+
+def search_products(query: str, db: Session, limit: int = 20, skip: int = 0) -> List[Dict[str, Any]]:
+    """Route to appropriate search method based on query type."""
+    
+    if is_product_name_search(query):
+        logger.info(f"Using direct product name search for: '{query}'")
+        return search_by_product_name(query, db, limit, skip)
+    else:
+        logger.info(f"Using AI-enhanced intent search for: '{query}'")
+        return search_by_intent(query, db, limit, skip)
+
+def build_database_filters(intent: SearchIntent, query_obj):
+    """Apply search filters to the database query based on intent."""
+    
+    # Meat type filter
+    if intent.meat_types:
+        meat_filters = [db_models.Product.meat_type == meat_type for meat_type in intent.meat_types]
+        query_obj = query_obj.filter(or_(*meat_filters))
+    
+    # Nutritional constraints
+    for constraint, value in intent.nutritional_constraints.items():
+        if constraint == "max_salt" and hasattr(db_models.Product, 'salt'):
+            query_obj = query_obj.filter(and_(
+                db_models.Product.salt.isnot(None),
+                db_models.Product.salt <= value
+            ))
+        elif constraint == "min_protein" and hasattr(db_models.Product, 'protein'):
+            query_obj = query_obj.filter(and_(
+                db_models.Product.protein.isnot(None),
+                db_models.Product.protein >= value
+            ))
+        elif constraint == "max_fat" and hasattr(db_models.Product, 'fat'):
+            query_obj = query_obj.filter(and_(
+                db_models.Product.fat.isnot(None),
+                db_models.Product.fat <= value
+            ))
+        elif constraint == "max_carbohydrates" and hasattr(db_models.Product, 'carbohydrates'):
+            query_obj = query_obj.filter(and_(
+                db_models.Product.carbohydrates.isnot(None),
+                db_models.Product.carbohydrates <= value
+            ))
+    
+    # Health preferences
+    if intent.health_preferences:
+        health_conditions = []
+        for pref in intent.health_preferences:
+            if pref == "organic":
+                health_conditions.extend([
+                    func.lower(db_models.Product.name).like('%organic%'),
+                    func.lower(db_models.Product.description).like('%organic%'),
+                    func.lower(db_models.Product.brand).like('%organic%')
+                ])
+            elif pref == "grass_fed":
+                health_conditions.extend([
+                    func.lower(db_models.Product.name).like('%grass-fed%'),
+                    func.lower(db_models.Product.description).like('%grass-fed%'),
+                    func.lower(db_models.Product.ingredients_text).like('%grass-fed%')
+                ])
+            elif pref == "antibiotic_free":
+                health_conditions.extend([
+                    func.lower(db_models.Product.name).like('%antibiotic%'),
+                    func.lower(db_models.Product.description).like('%antibiotic%')
+                ])
+            elif pref == "hormone_free":
+                health_conditions.extend([
+                    func.lower(db_models.Product.name).like('%hormone%'),
+                    func.lower(db_models.Product.description).like('%hormone%')
+                ])
+            elif pref == "preservative_free":
+                health_conditions.extend([
+                    func.lower(db_models.Product.name).like('%preservative-free%'),
+                    func.lower(db_models.Product.description).like('%no preservative%')
+                ])
+            elif pref == "nitrite_free":
+                health_conditions.extend([
+                    func.lower(db_models.Product.name).like('%nitrite-free%'),
+                    func.lower(db_models.Product.description).like('%no nitrite%')
+                ])
+        
+        if health_conditions:
+            query_obj = query_obj.filter(or_(*health_conditions))
+    
+    # Exclude ingredients
+    if intent.exclude_ingredients:
+        for ingredient in intent.exclude_ingredients:
+            if ingredient.lower() == "preservatives":
+                query_obj = query_obj.filter(
+                    ~func.lower(db_models.Product.ingredients_text).like('%preservative%')
+                )
+            elif ingredient.lower() == "nitrites":
+                query_obj = query_obj.filter(
+                    ~func.lower(db_models.Product.ingredients_text).like('%nitrite%')
+                )
+            elif ingredient.lower() == "msg":
+                query_obj = query_obj.filter(and_(
+                    ~func.lower(db_models.Product.ingredients_text).like('%msg%'),
+                    ~func.lower(db_models.Product.ingredients_text).like('%monosodium glutamate%')
+                ))
+            elif ingredient.lower() == "sugar":
+                query_obj = query_obj.filter(and_(
+                    ~func.lower(db_models.Product.ingredients_text).like('%sugar%'),
+                    ~func.lower(db_models.Product.ingredients_text).like('%corn syrup%')
+                ))
+            elif ingredient.lower() == "phosphates":
+                query_obj = query_obj.filter(
+                    ~func.lower(db_models.Product.ingredients_text).like('%phosphate%')
+                )
+    
+    # Risk preference
+    if intent.risk_preference:
+        query_obj = query_obj.filter(db_models.Product.risk_rating == intent.risk_preference)
+    
+    # Product type filters
+    if intent.product_types:
+        product_conditions = []
+        for product_type in intent.product_types:
+            product_conditions.extend([
+                func.lower(db_models.Product.name).like(f'%{product_type}%'),
+                func.lower(db_models.Product.description).like(f'%{product_type}%')
+            ])
+        
+        if product_conditions:
+            query_obj = query_obj.filter(or_(*product_conditions))
+    
+    # Keywords search
+    if intent.keywords:
+        keyword_conditions = []
+        for keyword in intent.keywords:
+            if len(keyword) > 2:
+                keyword_conditions.extend([
+                    func.lower(db_models.Product.name).like(f'%{keyword}%'),
+                    func.lower(db_models.Product.description).like(f'%{keyword}%'),
+                    func.lower(db_models.Product.ingredients_text).like(f'%{keyword}%')
+                ])
+        
+        if keyword_conditions:
+            query_obj = query_obj.filter(or_(*keyword_conditions))
+    
+    return query_obj 
+
+def is_product_name_search(query: str) -> bool:
+    """Simple detection: is this a direct product name search?"""
+    
+    query_lower = query.lower()
+    
+    # Indicators of product name search
+    product_name_indicators = [
+        "," in query,                    # "Kroger, smokehouse jerky"
+        len(query.split()) >= 4,         # Multi-word product names
+        any(brand in query_lower for brand in COMMON_BRANDS)  # Known brands
+    ]
+    
+    # Indicators of intent search  
+    intent_indicators = [
+        any(word in query_lower for word in ["low", "high", "no", "free", "organic", "healthy", "without", "lean"])
+    ]
+    
+    has_product_indicators = any(product_name_indicators)
+    has_intent_indicators = any(intent_indicators)
+    
+    logger.debug(f"Query '{query}': product_indicators={has_product_indicators}, intent_indicators={has_intent_indicators}")
+    
+    return has_product_indicators and not has_intent_indicators 
+
+def calculate_match_score(product: db_models.Product, intent: SearchIntent) -> Tuple[int, List[str]]:
+    """Calculate match score and identify matched terms for intent-based search."""
     
     score = 0
     matched_terms = []
     
     # Meat type match (high priority)
-    if intent.meat_types and product.meat_type in intent.meat_types:
-        score += 20
-        matched_terms.append(f"meat_type:{product.meat_type}")
+    if intent.meat_types and hasattr(product, 'meat_type') and product.meat_type:
+        if product.meat_type in intent.meat_types:
+            score += 30
+            matched_terms.append(f"meat_type:{product.meat_type}")
     
-    # Nutritional constraints
-    if intent.nutritional_constraints:
-        for constraint, value in intent.nutritional_constraints.items():
-            if constraint == "max_salt" and product.salt and product.salt <= value:
-                score += 15
+    # Nutritional constraints (high priority)
+    for constraint, value in intent.nutritional_constraints.items():
+        if constraint == "max_salt" and hasattr(product, 'salt') and product.salt:
+            if product.salt <= value:
+                score += 25
                 matched_terms.append("nutrition:low_sodium")
-            elif constraint == "min_protein" and product.protein and product.protein >= value:
-                score += 15
+        elif constraint == "min_protein" and hasattr(product, 'protein') and product.protein:
+            if product.protein >= value:
+                score += 25
                 matched_terms.append("nutrition:high_protein")
-            elif constraint == "max_fat" and product.fat and product.fat <= value:
-                score += 10
+        elif constraint == "max_fat" and hasattr(product, 'fat') and product.fat:
+            if product.fat <= value:
+                score += 20
                 matched_terms.append("nutrition:low_fat")
-            elif constraint == "max_carbohydrates" and product.carbohydrates and product.carbohydrates <= value:
-                score += 10
+        elif constraint == "max_carbohydrates" and hasattr(product, 'carbohydrates') and product.carbohydrates:
+            if product.carbohydrates <= value:
+                score += 20
                 matched_terms.append("nutrition:low_carbs")
     
-    # Product name keywords
-    if intent.keywords:
-        product_name_lower = (product.name or "").lower()
-        for keyword in intent.keywords:
-            if len(keyword) > 2 and keyword in product_name_lower:
-                score += 10
-                matched_terms.append(f"name:{keyword}")
-    
-    # Health preferences in description
-    if intent.health_preferences:
-        description_lower = (product.description or "").lower()
-        for pref in intent.health_preferences:
-            if pref == "organic" and "organic" in description_lower:
+    # Health preferences (medium priority)
+    for preference in intent.health_preferences:
+        if preference == "organic":
+            if any(field and "organic" in field.lower() 
+                   for field in [product.name, product.description, product.brand] if field):
                 score += 15
                 matched_terms.append("health:organic")
-            elif pref == "grass_fed" and "grass-fed" in description_lower:
+        elif preference == "grass_fed":
+            if any(field and "grass" in field.lower() and "fed" in field.lower()
+                   for field in [product.name, product.description, product.ingredients_text] if field):
                 score += 15
                 matched_terms.append("health:grass_fed")
+        elif preference == "antibiotic_free":
+            if any(field and "antibiotic" in field.lower()
+                   for field in [product.name, product.description] if field):
+                score += 12
+                matched_terms.append("health:antibiotic_free")
+        elif preference == "hormone_free":
+            if any(field and "hormone" in field.lower()
+                   for field in [product.name, product.description] if field):
+                score += 12
+                matched_terms.append("health:hormone_free")
     
-    # Risk rating bonus (Green is better)
-    if product.risk_rating == "Green":
-        score += 5
-        matched_terms.append("risk:green")
-    elif product.risk_rating == "Yellow":
-        score += 2
+    # Risk rating preference (medium priority)
+    if intent.risk_preference and hasattr(product, 'risk_rating') and product.risk_rating:
+        if product.risk_rating == intent.risk_preference:
+            score += 15
+            matched_terms.append(f"risk:{product.risk_rating}")
     
-    return score, matched_terms
-
-def search_products(query: str, db: Session, limit: int = 20, skip: int = 0) -> List[Dict[str, Any]]:
-    """
-    Main search function that combines natural language processing with database queries.
+    # Product type matches (medium priority)
+    for product_type in intent.product_types:
+        if any(field and product_type.lower() in field.lower()
+               for field in [product.name, product.description] if field):
+            score += 10
+            matched_terms.append(f"type:{product_type}")
     
-    Args:
-        query: Natural language search query
-        db: Database session
-        limit: Maximum number of results to return
-        skip: Number of results to skip for pagination
-        
-    Returns:
-        List of products with match scores and matched terms
-    """
+    # Keyword matches (lower priority)
+    for keyword in intent.keywords:
+        if len(keyword) > 2:
+            if any(field and keyword.lower() in field.lower()
+                   for field in [product.name, product.description, product.ingredients_text] if field):
+                score += 5
+                matched_terms.append(f"keyword:{keyword}")
     
-    logger.info(f"Searching for: '{query}' (limit: {limit}, skip: {skip})")
-    
-    try:
-        # Parse the natural language query
-        intent = parse_natural_language_query(query)
-        
-        # Build database filters
-        filters, ranking_factors = build_search_filters(intent, db)
-        
-        # Execute search query
-        query_builder = db.query(db_models.Product)
-        
-        if filters:
-            query_builder = query_builder.filter(and_(*filters))
-        
-        # Get results
-        products = query_builder.offset(skip).limit(limit * 2).all()  # Get more than needed for ranking
-        
-        # Calculate match scores and rank results
-        scored_products = []
-        for product in products:
-            score, matched_terms = calculate_match_score(product, intent, ranking_factors)
-            
-            # Convert to dict and add score info
-            product_dict = {
-                "code": product.code,
-                "name": product.name,
-                "brand": product.brand,
-                "description": product.description,
-                "ingredients_text": product.ingredients_text,
-                "calories": product.calories,
-                "protein": product.protein,
-                "fat": product.fat,
-                "carbohydrates": product.carbohydrates,
-                "salt": product.salt,
-                "meat_type": product.meat_type,
-                "risk_rating": product.risk_rating,
-                "image_url": product.image_url,
-                "last_updated": product.last_updated,
-                "created_at": product.created_at,
-                # Note: Only include fields that exist in the SQLAlchemy model
-                "antibiotic_free": getattr(product, 'antibiotic_free', None),
-                "hormone_free": getattr(product, 'hormone_free', None),
-                "pasture_raised": getattr(product, 'pasture_raised', None),
-                "contains_preservatives": getattr(product, 'contains_preservatives', None),
-                "match_score": score,
-                "matched_terms": matched_terms
-            }
-            
-            scored_products.append(product_dict)
-        
-        # Sort by score (highest first) and return top results
-        scored_products.sort(key=lambda x: x["match_score"], reverse=True)
-        final_results = scored_products[:limit]
-        
-        logger.info(f"Found {len(final_results)} products for query: '{query}'")
-        return final_results
-        
-    except Exception as e:
-        logger.error(f"Error in search_products: {str(e)}")
-        raise 
+    return score, matched_terms 
