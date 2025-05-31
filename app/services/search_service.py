@@ -413,20 +413,19 @@ def search_by_product_name(query: str, db: Session, limit: int = 20, skip: int =
     if not keywords:
         return []
     
-    # Build ILIKE filters for each keyword
-    filters = []
+    # Build ILIKE filters for each keyword - use OR logic for more results
+    keyword_conditions = []
     for keyword in keywords:
-        keyword_filter = or_(
+        keyword_conditions.extend([
             func.lower(db_models.Product.name).like(f'%{keyword}%'),
             func.lower(db_models.Product.brand).like(f'%{keyword}%'),
             func.lower(db_models.Product.description).like(f'%{keyword}%')
-        )
-        filters.append(keyword_filter)
+        ])
     
-    # Execute query with all keywords (AND logic)
+    # Execute query with OR logic for keywords
     products = (
         db.query(db_models.Product)
-        .filter(and_(*filters))
+        .filter(or_(*keyword_conditions))  # Changed from AND to OR
         .limit(limit * 3)  # Get more results to score and filter
         .all()
     )
@@ -483,20 +482,90 @@ def search_by_intent(query: str, db: Session, limit: int = 20, skip: int = 0) ->
     
     # Use existing search logic
     intent = parse_natural_language_query(query)
+    logger.info(f"Parsed intent: {intent.to_dict()}")
     
     # Build base query
     query_obj = db.query(db_models.Product)
+    initial_query = query_obj
     
     # Apply filters based on intent
     query_obj = build_database_filters(intent, query_obj)
     
-    # Execute query with pagination
-    products = query_obj.offset(skip).limit(limit * 2).all()  # Get extra for scoring
+    # First attempt with all filters
+    products = query_obj.offset(skip).limit(limit * 2).all()
+    logger.info(f"Found {len(products)} products with all filters")
+    
+    # If no results with all filters, progressively relax them
+    if len(products) == 0 and (intent.meat_types or intent.risk_preference):
+        logger.info("No results with all filters, trying relaxed search...")
+        
+        # Try without risk preference first
+        if intent.risk_preference:
+            original_risk_pref = intent.risk_preference
+            intent.risk_preference = None
+            query_obj = initial_query
+            query_obj = build_database_filters(intent, query_obj)
+            products = query_obj.offset(skip).limit(limit * 2).all()
+            logger.info(f"Found {len(products)} products without risk preference filter")
+            intent.risk_preference = original_risk_pref  # Restore for scoring
+        
+        # If still no results and we have meat type, try keyword search
+        if len(products) == 0:
+            logger.info("Still no results, falling back to simple keyword search")
+            keyword_conditions = []
+            
+            # Add meat type as keyword if specified
+            if intent.meat_types:
+                for meat_type in intent.meat_types:
+                    keyword_conditions.extend([
+                        func.lower(db_models.Product.name).like(f'%{meat_type}%'),
+                        func.lower(db_models.Product.description).like(f'%{meat_type}%'),
+                        func.lower(db_models.Product.meat_type).like(f'%{meat_type}%')
+                    ])
+            
+            # Add other keywords
+            for keyword in query.lower().split():
+                if len(keyword) > 2:
+                    keyword_conditions.extend([
+                        func.lower(db_models.Product.name).like(f'%{keyword}%'),
+                        func.lower(db_models.Product.description).like(f'%{keyword}%')
+                    ])
+            
+            if keyword_conditions:
+                query_obj = initial_query.filter(or_(*keyword_conditions))
+                products = query_obj.offset(skip).limit(limit * 2).all()
+                logger.info(f"Found {len(products)} products with keyword fallback")
+    
+    # If no filters were applied originally, use keyword search
+    elif not any([intent.meat_types, intent.nutritional_constraints, intent.health_preferences, 
+                intent.risk_preference, intent.product_types, intent.exclude_ingredients]):
+        # Use simple keyword search as fallback
+        keyword_conditions = []
+        for keyword in query.lower().split():
+            if len(keyword) > 2:
+                keyword_conditions.extend([
+                    func.lower(db_models.Product.name).like(f'%{keyword}%'),
+                    func.lower(db_models.Product.description).like(f'%{keyword}%'),
+                    func.lower(db_models.Product.meat_type).like(f'%{keyword}%')
+                ])
+        
+        if keyword_conditions:
+            query_obj = query_obj.filter(or_(*keyword_conditions))
+            products = query_obj.offset(skip).limit(limit * 2).all()
+    
+    logger.info(f"Final result: Found {len(products)} products from database query")
     
     # Score and format results
     results = []
     for product in products:
         score, matched_terms = calculate_match_score(product, intent)
+        
+        # If no specific match score, but keywords match, give base score
+        if score == 0 and any(keyword.lower() in (product.name or "").lower() or 
+                             keyword.lower() in (product.description or "").lower() 
+                             for keyword in query.lower().split() if len(keyword) > 2):
+            score = 10
+            matched_terms.append("keyword_match")
         
         if score > 0:  # Only include products with some relevance
             # Convert product to dict safely

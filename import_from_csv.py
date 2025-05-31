@@ -26,7 +26,7 @@ conn = psycopg2.connect(
 cur = conn.cursor()
 
 # Path to the CSV file
-csv_file_path = "/Users/peter/Downloads/products_rows.csv"
+csv_file_path = "/Users/alexpaul/Downloads/Clear Meat Products.csv"
 
 # Check if file exists
 if not os.path.exists(csv_file_path):
