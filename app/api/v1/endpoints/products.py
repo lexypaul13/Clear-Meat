@@ -98,53 +98,248 @@ def get_product_count(
 @router.get("/", response_model=List[models.Product])
 def get_products(
     db: Session = Depends(get_db),
-    skip: int = 0,
-    limit: int = 100,
-    risk_rating: Optional[int] = None,
+    skip: int = Query(0, ge=0, description="Number of products to skip"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of products to return"),
+    risk_rating: Optional[str] = Query(None, description="Filter by risk rating (Green, Yellow, Red)"),
     current_user: db_models.User = Depends(get_current_active_user)
-) -> Any:
+) -> List[models.Product]:
     """
-    Retrieve products with optional filtering and preference-based sorting.
+    Retrieve products with optional filtering and pagination.
     
     Args:
         db: Database session
-        skip: Number of records to skip
-        limit: Maximum number of records to return
-        risk_rating: Filter by risk rating
+        skip: Number of records to skip (default: 0)
+        limit: Maximum number of records to return (default: 100, max: 1000)
+        risk_rating: Filter by risk rating (Green, Yellow, Red)
         current_user: Current active user
         
     Returns:
         List[models.Product]: List of products
     """
     try:
-        logger.info(f"Getting products (using local DB: {is_using_local_db()})")
+        logger.info(f"Getting products - skip={skip}, limit={limit}, risk_rating={risk_rating}")
         
-        # Using SQLAlchemy ORM for either local or production database
-        # Build query
+        # Build the base query
         query = db.query(db_models.Product)
         
+        # Apply risk rating filter if provided
         if risk_rating is not None:
-            query = query.filter(db_models.Product.risk_rating == risk_rating)
-            logger.debug("Added risk rating filter")
+            risk_rating = risk_rating.strip()
+            if risk_rating in ["Green", "Yellow", "Red"]:
+                query = query.filter(db_models.Product.risk_rating == risk_rating)
+                logger.info(f"Applied risk rating filter: {risk_rating}")
+            else:
+                logger.warning(f"Invalid risk rating: {risk_rating}. Ignoring filter.")
         
-        # Add pagination
-        query = query.offset(skip).limit(limit)
-        logger.debug("Added pagination")
+        # Add ordering for consistent results
+        query = query.order_by(db_models.Product.created_at.desc())
         
-        # Execute query
+        # Apply pagination
+        if skip > 0:
+            query = query.offset(skip)
+        if limit > 0:
+            query = query.limit(limit)
+            
+        logger.info(f"Executing query with skip={skip}, limit={limit}")
+        
+        # Execute the query
         products = query.all()
-        
-        if not products:
-            logger.warning("No products found")
-            return []
+        logger.info(f"Found {len(products)} products")
             
         # Convert to Pydantic models
-        return [models.Product.from_orm(product) for product in products]
+        result = []
+        for product in products:
+            try:
+                # Use model_validate for Pydantic v2 or parse_obj for v1
+                product_model = models.Product.model_validate({
+                    "code": product.code,
+                    "name": product.name,
+                    "brand": product.brand,
+                    "description": product.description,
+                    "ingredients_text": product.ingredients_text,
+                    "calories": product.calories,
+                    "protein": product.protein,
+                    "fat": product.fat,
+                    "carbohydrates": product.carbohydrates,
+                    "salt": product.salt,
+                    "meat_type": product.meat_type,
+                    "risk_rating": product.risk_rating,
+                    "image_url": product.image_url,
+                    "image_data": product.image_data,
+                    "last_updated": product.last_updated,
+                    "created_at": product.created_at
+                })
+                result.append(product_model)
+            except AttributeError:
+                # Fallback for Pydantic v1
+                try:
+                    product_model = models.Product.parse_obj({
+                        "code": product.code,
+                        "name": product.name,
+                        "brand": product.brand,
+                        "description": product.description,
+                        "ingredients_text": product.ingredients_text,
+                        "calories": product.calories,
+                        "protein": product.protein,
+                        "fat": product.fat,
+                        "carbohydrates": product.carbohydrates,
+                        "salt": product.salt,
+                        "meat_type": product.meat_type,
+                        "risk_rating": product.risk_rating,
+                        "image_url": product.image_url,
+                        "image_data": product.image_data,
+                        "last_updated": product.last_updated,
+                        "created_at": product.created_at
+                    })
+                    result.append(product_model)
+                except Exception:
+                    # Final fallback: direct construction
+                    product_model = models.Product(
+                        code=product.code,
+                        name=product.name,
+                        brand=product.brand,
+                        description=product.description,
+                        ingredients_text=product.ingredients_text,
+                        calories=product.calories,
+                        protein=product.protein,
+                        fat=product.fat,
+                        carbohydrates=product.carbohydrates,
+                        salt=product.salt,
+                        meat_type=product.meat_type,
+                        risk_rating=product.risk_rating,
+                        image_url=product.image_url,
+                        image_data=product.image_data,
+                        last_updated=product.last_updated,
+                        created_at=product.created_at
+                    )
+                    result.append(product_model)
+            except Exception as e:
+                logger.error(f"Error converting product {product.code}: {str(e)}")
+                continue
+                
+        logger.info(f"Successfully converted {len(result)} products to Pydantic models")
+        return result
             
     except Exception as e:
         logger.error(f"Error retrieving products: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to retrieve products: {str(e)}"
+        )
 
+@router.get("/recommendations", response_model=models.RecommendationResponse)
+def get_product_recommendations(
+    db: Session = Depends(get_db),
+    current_user: db_models.User = Depends(get_current_active_user),
+    limit: int = Query(30, ge=1, le=100, description="Maximum number of recommendations to return"),
+) -> models.RecommendationResponse:
+    """
+    Get personalized product recommendations based on user preferences.
+    
+    Recommendations are tailored based on the preferences set during the user onboarding process,
+    including nutrition focus, additives, ethical concerns, and preferred meat types.
+    
+    Args:
+        db: Database session
+        current_user: Current active user
+        limit: Maximum number of recommendations to return (1-100, default 30)
+        
+    Returns:
+        RecommendationResponse: List of recommended products with match details
+    """
+    try:
+        logger.info(f"Generating personalized recommendations for user {current_user.id}")
+        
+        # Get user preferences
+        preferences = getattr(current_user, "preferences", {}) or {}
+        if not preferences:
+            logger.warning(f"User {current_user.id} has no preferences set. Using defaults.")
+            preferences = {
+                # Default preferences if none are set
+                "nutrition_focus": "protein",
+                "avoid_preservatives": True,
+                "meat_preferences": ["chicken", "beef", "pork"]
+            }
+        
+        # If preferences is a string (JSON), parse it
+        if isinstance(preferences, str):
+            try:
+                preferences = json.loads(preferences)
+            except json.JSONDecodeError:
+                logger.warning(f"Could not parse user preferences JSON: {preferences}")
+                preferences = {
+                    "nutrition_focus": "protein",
+                    "avoid_preservatives": True,
+                    "meat_preferences": ["chicken", "beef", "pork"]
+                }
+        
+        logger.info(f"Using preferences: {preferences}")
+        
+        # Get personalized recommendations
+        recommended_products = get_personalized_recommendations(db, preferences, limit)
+        
+        if not recommended_products:
+            logger.warning("No recommendations found")
+            return models.RecommendationResponse(
+                recommendations=[],
+                total_matches=0
+            )
+        
+        # Build response with match details
+        result = []
+        for product in recommended_products:
+            try:
+                # Analyze why this product matches preferences
+                matches, concerns = analyze_product_match(product, preferences)
+                
+                # Create Product model using our proven method
+                product_model = models.Product(
+                    code=product.code,
+                    name=product.name,
+                    brand=product.brand,
+                    description=product.description,
+                    ingredients_text=product.ingredients_text,
+                    calories=product.calories,
+                    protein=product.protein,
+                    fat=product.fat,
+                    carbohydrates=product.carbohydrates,
+                    salt=product.salt,
+                    meat_type=product.meat_type,
+                    risk_rating=product.risk_rating,
+                    image_url=product.image_url,
+                    image_data=product.image_data,
+                    last_updated=product.last_updated,
+                    created_at=product.created_at
+                )
+                
+                # Create RecommendedProduct object
+                recommended_product = models.RecommendedProduct(
+                    product=product_model,
+                    match_details=models.ProductMatch(
+                        matches=matches,
+                        concerns=concerns
+                    ),
+                    match_score=None  # We don't expose raw scores to clients
+                )
+                
+                result.append(recommended_product)
+                
+            except Exception as prod_err:
+                logger.error(f"Error processing recommendation for product {product.code}: {str(prod_err)}")
+                continue
+        
+        logger.info(f"Returning {len(result)} personalized recommendations")
+        
+        return models.RecommendationResponse(
+            recommendations=result,
+            total_matches=len(result)
+        )
+    except Exception as e:
+        logger.error(f"Error generating recommendations: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate recommendations: {str(e)}"
+        )
 
 @router.get("/{code}")
 def get_product(
@@ -254,9 +449,11 @@ def get_product(
 def get_product_alternatives(
     code: str,
     db: Session = Depends(get_db),
-) -> Any:
+) -> List[models.ProductAlternative]:
     """
     Get alternative products for a specific product.
+    
+    Finds healthier alternatives with lower risk ratings and similar characteristics.
     
     Args:
         code: Product barcode
@@ -269,7 +466,7 @@ def get_product_alternatives(
         HTTPException: If product not found
     """
     try:
-        logger.debug(f"Checking if product {code} exists in database (using local DB: {is_using_local_db()})")
+        logger.info(f"Finding alternatives for product {code}")
         
         # Check if product exists
         product = db.query(db_models.Product).filter(db_models.Product.code == code).first()
@@ -278,27 +475,97 @@ def get_product_alternatives(
             logger.warning(f"Product with code {code} not found")
             raise HTTPException(status_code=404, detail="Product not found")
         
-        # Find alternative products with similar characteristics
-        alternatives = (
+        logger.info(f"Found product: {product.name} (Risk: {product.risk_rating}, Type: {product.meat_type})")
+        
+        # Define risk rating hierarchy (lower is better)
+        risk_hierarchy = {"Green": 1, "Yellow": 2, "Red": 3}
+        current_risk_level = risk_hierarchy.get(product.risk_rating, 3)
+        
+        # Build query for alternatives
+        alternatives_query = (
             db.query(db_models.Product)
-            .filter(db_models.Product.meat_type == product.meat_type)
-            .filter(db_models.Product.code != code)
-            .filter(db_models.Product.risk_rating < product.risk_rating)
-            .limit(5)
-            .all()
+            .filter(db_models.Product.code != code)  # Exclude the original product
         )
         
-        # Convert to alternative product models
-        return [
-            models.ProductAlternative(
+        # Add filters for better alternatives
+        if product.meat_type:
+            alternatives_query = alternatives_query.filter(
+                db_models.Product.meat_type == product.meat_type
+            )
+        
+        # Find products with better (lower) risk ratings
+        better_risk_ratings = [rating for rating, level in risk_hierarchy.items() 
+                              if level < current_risk_level]
+        
+        if better_risk_ratings:
+            alternatives_query = alternatives_query.filter(
+                db_models.Product.risk_rating.in_(better_risk_ratings)
+            )
+        else:
+            # If already Green, find similar Green products
+            alternatives_query = alternatives_query.filter(
+                db_models.Product.risk_rating == product.risk_rating
+            )
+        
+        # Order by risk rating (Green first) and limit results
+        alternatives_query = alternatives_query.order_by(
+            db_models.Product.risk_rating.asc(),
+            db_models.Product.protein.desc()  # Higher protein is better
+        ).limit(5)
+        
+        alternatives = alternatives_query.all()
+        logger.info(f"Found {len(alternatives)} alternative products")
+        
+        # Convert to ProductAlternative models
+        result = []
+        for alt in alternatives:
+            try:
+                # Calculate similarity score based on nutritional similarity
+                similarity_score = 0.8  # Base score
+                
+                # Adjust score based on risk improvement
+                alt_risk_level = risk_hierarchy.get(alt.risk_rating, 3)
+                if alt_risk_level < current_risk_level:
+                    similarity_score += 0.2  # Bonus for better risk rating
+                
+                # Determine reason for recommendation
+                if alt.risk_rating != product.risk_rating:
+                    reason = f"Better risk rating ({alt.risk_rating} vs {product.risk_rating})"
+                else:
+                    reason = "Similar nutritional profile with same risk rating"
+                
+                alternative = models.ProductAlternative(
+                    product_code=code,
+                    alternative_code=alt.code,
+                    similarity_score=similarity_score,
+                    reason=reason,
+                    alternative=models.Product(
                 code=alt.code,
                 name=alt.name,
                 brand=alt.brand,
+                        description=alt.description,
+                        ingredients_text=alt.ingredients_text,
+                        calories=alt.calories,
+                        protein=alt.protein,
+                        fat=alt.fat,
+                        carbohydrates=alt.carbohydrates,
+                        salt=alt.salt,
+                        meat_type=alt.meat_type,
                 risk_rating=alt.risk_rating,
-                reason="Lower risk alternative"
-            )
-            for alt in alternatives
-        ]
+                        image_url=alt.image_url,
+                        image_data=alt.image_data,
+                        last_updated=alt.last_updated,
+                        created_at=alt.created_at
+                    )
+                )
+                result.append(alternative)
+                
+            except Exception as conv_err:
+                logger.error(f"Error converting alternative {alt.code}: {str(conv_err)}")
+                continue
+        
+        logger.info(f"Successfully created {len(result)} alternative recommendations")
+        return result
                 
     except HTTPException:
         # Re-raise HTTP exceptions
@@ -307,82 +574,7 @@ def get_product_alternatives(
         logger.error(f"Error processing product alternatives: {str(e)}")
         raise HTTPException(
             status_code=500, 
-            detail=f"Error processing product alternatives: {str(e)}"
-        )
-
-@router.get("/recommendations", response_model=models.RecommendationResponse)
-def get_product_recommendations(
-    db: Session = Depends(get_db),
-    current_user: db_models.User = Depends(get_current_active_user),
-    limit: int = Query(30, ge=1, le=100, description="Maximum number of recommendations to return"),
-) -> Any:
-    """
-    Get personalized product recommendations based on user preferences.
-    
-    Recommendations are tailored based on the preferences set during the user onboarding process,
-    including nutrition focus, additives, ethical concerns, and preferred meat types.
-    
-    Args:
-        db: Database session
-        current_user: Current active user
-        limit: Maximum number of recommendations to return (1-100, default 30)
-        
-    Returns:
-        RecommendationResponse: List of recommended products with match details
-    """
-    try:
-        logger.info(f"Generating personalized recommendations for user {current_user.id}")
-        
-        # Get user preferences
-        preferences = getattr(current_user, "preferences", {}) or {}
-        if not preferences:
-            logger.warning(f"User {current_user.id} has no preferences set. Using defaults.")
-            preferences = {
-                # Default preferences if none are set
-                "nutrition_focus": "protein",
-                "avoid_preservatives": True,
-                "meat_preferences": ["chicken", "beef", "pork"]
-            }
-        
-        # Get personalized recommendations
-        recommended_products = get_personalized_recommendations(db, preferences, limit)
-        
-        if not recommended_products:
-            logger.warning("No recommendations found")
-            return models.RecommendationResponse(
-                recommendations=[],
-                total_matches=0
-            )
-        
-        # Build response with match details
-        result = []
-        for product in recommended_products:
-            # Analyze why this product matches preferences
-            matches, concerns = analyze_product_match(product, preferences)
-            
-            # Create RecommendedProduct object
-            recommended_product = models.RecommendedProduct(
-                product=models.Product.from_orm(product),
-                match_details=models.ProductMatch(
-                    matches=matches,
-                    concerns=concerns
-                ),
-                match_score=None  # We don't expose raw scores to clients
-            )
-            
-            result.append(recommended_product)
-        
-        logger.info(f"Returning {len(result)} personalized recommendations")
-        
-        return models.RecommendationResponse(
-            recommendations=result,
-            total_matches=len(result)
-        )
-    except Exception as e:
-        logger.error(f"Error generating recommendations: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to generate recommendations: {str(e)}"
+            detail=f"Failed to find product alternatives: {str(e)}"
         )
 
 @router.get("/{code}/health-assessment", response_model=models.HealthAssessment)
@@ -394,7 +586,7 @@ def get_product_health_assessment(
     ),
     db: Session = Depends(get_db),
     current_user: db_models.User = Depends(get_current_active_user)
-) -> Dict[str, Any]:
+) -> models.HealthAssessment:
     """
     Get a comprehensive health assessment for a product with AI insights.
     
@@ -405,9 +597,11 @@ def get_product_health_assessment(
         current_user: Current authenticated user
         
     Returns:
-        Dict containing detailed health assessment
+        HealthAssessment: Detailed health assessment
     """
     try:
+        logger.info(f"Generating health assessment for product {code}")
+        
         # Get the product
         product = db.query(db_models.Product).filter(
             db_models.Product.code == code
@@ -427,8 +621,78 @@ def get_product_health_assessment(
             except json.JSONDecodeError:
                 logger.warning(f"Invalid user preferences JSON: {user_preferences}")
         
+        # Create ProductStructured object as expected by the health assessment service
+        # Extract additives from ingredients text
+        additives = helpers.extract_additives_from_text(product.ingredients_text or "")
+        
+        # Assess health concerns based on data
+        health_concerns = []
+        if product.protein and product.protein < 10:
+            health_concerns.append("Low protein content")
+        if product.fat and product.fat > 25:
+            health_concerns.append("High fat content")
+        if product.salt and product.salt > 1.5:
+            health_concerns.append("High salt content")
+            
+        # Create basic environmental impact assessment
+        env_impact = {
+            "impact": "Moderate",
+            "details": "Based on default meat product environmental impact assessment",
+            "sustainability_practices": ["Unknown"]
+        }
+        
+        if product.meat_type == "beef":
+            env_impact["impact"] = "High"
+            env_impact["details"] = "Beef production typically has higher environmental impact"
+        elif product.meat_type in ["chicken", "turkey"]:
+            env_impact["impact"] = "Lower"
+            env_impact["details"] = "Poultry typically has lower environmental impact compared to red meat"
+        
+        # Build structured response for the health assessment service
+        structured_product = models.ProductStructured(
+            product=models.ProductInfo(
+                code=product.code,
+                name=product.name,
+                brand=product.brand,
+                description=product.description,
+                ingredients_text=product.ingredients_text,
+                image_url=product.image_url,
+                image_data=product.image_data,
+                meat_type=product.meat_type
+            ),
+            criteria=models.ProductCriteria(
+                risk_rating=product.risk_rating,
+                additives=additives
+            ),
+            health=models.ProductHealth(
+                nutrition=models.ProductNutrition(
+                    calories=product.calories,
+                    protein=product.protein,
+                    fat=product.fat,
+                    carbohydrates=product.carbohydrates,
+                    salt=product.salt
+                ),
+                health_concerns=health_concerns
+            ),
+            environment=models.ProductEnvironment(
+                impact=env_impact["impact"],
+                details=env_impact["details"],
+                sustainability_practices=env_impact["sustainability_practices"]
+            ),
+            metadata=models.ProductMetadata(
+                last_updated=product.last_updated,
+                created_at=product.created_at
+            )
+        )
+        
         # Generate health assessment using the service
-        assessment = generate_health_assessment(product, parsed_preferences)
+        assessment = generate_health_assessment(structured_product, db)
+        
+        if not assessment:
+            raise HTTPException(
+                status_code=500,
+                detail="Health assessment service unavailable"
+            )
         
         # Log successful assessment generation
         logger.info(f"Generated health assessment for product {code} (user: {current_user.id})")
