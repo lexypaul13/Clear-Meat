@@ -11,6 +11,7 @@ from starlette.datastructures import Headers
 from starlette.types import ASGIApp
 from app.core.config import settings
 from fastapi.responses import JSONResponse
+from jose import jwt
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -120,7 +121,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 "Cache-Control": "no-store",
                 "Pragma": "no-cache",
                 "Referrer-Policy": "strict-origin-when-cross-origin",
-                "Permissions-Policy": "camera=(), microphone=(), geolocation=()"
+                "Permissions-Policy": "geolocation=(), microphone=(), camera=()"
             })
         
         if content_security_policy:
@@ -133,6 +134,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         for header_key, header_value in self.headers.items():
             response.headers[header_key] = header_value
             
+        # Add HSTS header for HTTPS
+        if request.url.scheme == "https":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+        # Add basic CSP header
+        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self';"
+        
         return response
 
 
@@ -333,33 +341,202 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
 
 class JWTErrorHandlerMiddleware(BaseHTTPMiddleware):
-    """Middleware to handle JWT token errors gracefully."""
+    """Middleware to validate and handle JWT tokens."""
+    
+    def __init__(self, app: ASGIApp):
+        """Initialize the middleware."""
+        super().__init__(app)
+        self.public_paths = {
+            "/docs", 
+            "/redoc", 
+            "/openapi.json", 
+            "/health", 
+            "/api/v1/auth/login", 
+            "/api/v1/auth/register",
+            "/api/v1/auth/refresh"
+        }
+    
+    def _is_public_path(self, path: str) -> bool:
+        """Check if the path is public (no auth required)."""
+        return any(path.startswith(public_path) for public_path in self.public_paths)
+    
+    def _extract_token(self, authorization: str) -> Optional[str]:
+        """Extract token from Authorization header."""
+        if not authorization or not isinstance(authorization, str):
+            return None
+            
+        # Split and normalize the header
+        parts = authorization.strip().split(None, 1)
+        
+        # Must have exactly 2 parts: scheme and token
+        if len(parts) != 2:
+            return None
+            
+        scheme, token = parts
+        
+        # Scheme must be "Bearer" (case insensitive)
+        if scheme.lower() != "bearer":
+            return None
+            
+        # Token must not be empty
+        if not token or not token.strip():
+            return None
+            
+        token = token.strip()
+        
+        # JWT must have exactly 3 parts separated by dots
+        token_parts = token.split('.')
+        if len(token_parts) != 3:
+            return None
+            
+        header_part, payload_part, signature_part = token_parts
+        
+        # All parts must be non-empty
+        if not all([header_part, payload_part, signature_part]):
+            return None
+            
+        # Validate each part is valid base64url
+        try:
+            import base64
+            import json
+            
+            def validate_base64url(s: str) -> bool:
+                """Validate that string is valid base64url."""
+                try:
+                    # Add padding if needed
+                    pad = len(s) % 4
+                    if pad:
+                        s += '=' * (4 - pad)
+                    base64.urlsafe_b64decode(s)
+                    return True
+                except:
+                    return False
+            
+            def decode_base64url_json(s: str) -> dict:
+                """Decode base64url string to JSON dict."""
+                try:
+                    pad = len(s) % 4
+                    if pad:
+                        s += '=' * (4 - pad)
+                    decoded = base64.urlsafe_b64decode(s)
+                    return json.loads(decoded)
+                except:
+                    return None
+            
+            # Validate header part
+            if not validate_base64url(header_part):
+                return None
+                
+            header_data = decode_base64url_json(header_part)
+            if not header_data or not isinstance(header_data, dict):
+                return None
+                
+            # Header must have required JWT fields
+            if header_data.get('typ') != 'JWT' or not header_data.get('alg'):
+                return None
+                
+            # Validate payload part
+            if not validate_base64url(payload_part):
+                return None
+                
+            payload_data = decode_base64url_json(payload_part)
+            if not payload_data or not isinstance(payload_data, dict):
+                return None
+                
+            # Payload must have required claims
+            required_claims = ['sub', 'exp', 'iat']
+            if not all(claim in payload_data for claim in required_claims):
+                return None
+                
+            # Validate signature part
+            if not validate_base64url(signature_part):
+                return None
+                
+        except Exception:
+            return None
+            
+        return token
     
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        """Handle JWT token errors."""
+        """Validate JWT tokens and handle errors."""
+        # Skip validation for public paths
+        if self._is_public_path(request.url.path):
+            return await call_next(request)
+
         try:
-            response = await call_next(request)
-            return response
-        except Exception as exc:
-            error_detail = str(exc)
-            status_code = 500
+            # Get authorization header
+            authorization = request.headers.get("Authorization", "")
             
-            # Check for common JWT errors
-            if "expired" in error_detail.lower() and "token" in error_detail.lower():
-                status_code = 401
+            # First check if the header format is valid
+            if not authorization:
                 return JSONResponse(
-                    status_code=status_code,
-                    content={"detail": "Authentication token has expired. Please log in again."}
+                    status_code=401,
+                    content={"detail": "Missing authorization header"}
                 )
-            elif "invalid" in error_detail.lower() and "token" in error_detail.lower():
-                status_code = 401
+                
+            # Extract and validate token format
+            token = self._extract_token(authorization)
+            if not token:
                 return JSONResponse(
-                    status_code=status_code,
-                    content={"detail": "Invalid authentication token. Please log in again."}
+                    status_code=401,
+                    content={"detail": "Invalid authorization header format"}
                 )
-            
-            # Re-raise other exceptions to be handled by FastAPI
-            raise
+
+            try:
+                # Verify token with full validation
+                payload = jwt.decode(
+                    token,
+                    settings.SECRET_KEY,
+                    algorithms=[settings.ALGORITHM],
+                    options={
+                        "verify_signature": True,
+                        "verify_exp": True,
+                        "verify_iat": True,
+                        "require_exp": True,
+                        "require_iat": True,
+                        "require_sub": True,
+                        "verify_aud": True,
+                        "verify_iss": True,
+                        "require": ["exp", "iat", "sub", "type", "iss", "aud"]
+                    }
+                )
+                
+                # Additional validation
+                if not payload.get("sub") or not isinstance(payload.get("sub"), str):
+                    raise jwt.JWTError("Invalid subject claim")
+                    
+                if payload.get("type") != "access":
+                    raise jwt.JWTError("Invalid token type")
+                
+                # Add decoded token to request state
+                request.state.user = payload.get("sub")
+                request.state.token_payload = payload
+                
+                response = await call_next(request)
+                return response
+                
+            except jwt.ExpiredSignatureError:
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Token has expired"}
+                )
+            except jwt.JWTClaimsError:
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Invalid token claims"}
+                )
+            except jwt.JWTError:
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Invalid token"}
+                )
+                
+        except Exception as e:
+            logger.error(f"JWT validation error: {str(e)}")
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Invalid authentication token"}
+            )
 
 
 def add_security_middleware(app: FastAPI) -> None:
@@ -367,16 +544,13 @@ def add_security_middleware(app: FastAPI) -> None:
     # Define the CSP string allowing the Swagger UI CDN - simplified to single line
     csp_policy = "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';"
 
-    # Add security headers middleware
+    # Add security headers middleware first
     app.add_middleware(
         SecurityHeadersMiddleware,
         content_security_policy=csp_policy
     )
     
-    # Add JWT error handler middleware
-    app.add_middleware(JWTErrorHandlerMiddleware)
-    
-    # Add rate limiting middleware - IMPORTANT: Add this BEFORE other middleware to ensure it's applied first
+    # Add rate limiting middleware FIRST (so it's applied LAST in the chain)
     redis_url = getattr(settings, "REDIS_URL", None)
     rate_limit = getattr(settings, "RATE_LIMIT_PER_MINUTE", 10)
     rate_limit_by_ip = getattr(settings, "RATE_LIMIT_BY_IP", True)
@@ -394,4 +568,7 @@ def add_security_middleware(app: FastAPI) -> None:
         exempt_ips=[],  # No exempt IPs for testing
         include_headers=True,
         debug_mode=getattr(settings, "DEBUG", False)  # Default to False if DEBUG not set
-    ) 
+    )
+    
+    # Add JWT error handler middleware LAST (so it's applied FIRST in the chain)
+    app.add_middleware(JWTErrorHandlerMiddleware) 

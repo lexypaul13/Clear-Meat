@@ -159,4 +159,20 @@ class UserFavorite(UserFavoriteBase):
 # Update forward references
 from app.models.product import Product
 ScanHistory.model_rebuild()
-UserFavorite.model_rebuild() 
+UserFavorite.model_rebuild()
+
+class UserResponse(BaseModel):
+    """User response model for API endpoints."""
+    id: str
+    email: EmailStr
+    full_name: Optional[str] = None
+    is_active: bool = True
+    preferences: Optional[UserPreferences] = None
+
+    model_config = {
+        "from_attributes": True,
+        "json_encoders": {
+            # Handle SQLAlchemy UUID objects
+            "UUID": lambda v: str(v),
+        }
+    } 

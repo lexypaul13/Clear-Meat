@@ -55,7 +55,6 @@ def get_supabase() -> Client:
     
     try:
         # Log connection attempt with more detailed info
-        key_info = f"{SUPABASE_KEY[:8]}..." if SUPABASE_KEY else 'None' # Store key info temporarily
         logger.info(f"Initializing Supabase public client with URL: {SUPABASE_URL}")
         logger.debug(f"Settings object contains SUPABASE_URL: {bool(settings.SUPABASE_URL)}")
         logger.debug(f"Environment contains SUPABASE_URL: {bool(os.environ.get('SUPABASE_URL'))}")
@@ -73,7 +72,7 @@ def get_supabase() -> Client:
             with httpx.Client(timeout=30.0) as client:
                 response = client.get(test_url, headers={"apikey": SUPABASE_KEY})
                 logger.debug(f"Connection test response status: {response.status_code}")
-                logger.debug(f"Connection test response headers: {dict(response.headers)}")
+                # Note: Not logging response headers as they may contain sensitive info
         except Exception as e:
             logger.error(f"Failed to connect to Supabase host: {str(e)}")
             # Continue with client creation despite connection test failure

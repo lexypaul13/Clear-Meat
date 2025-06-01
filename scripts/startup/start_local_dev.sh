@@ -55,7 +55,7 @@ echo "Setting PGSTATEMENT_TIMEOUT to ${PGSTATEMENT_TIMEOUT}ms"
 # Verify the environment is correctly set
 echo "===== Environment Check (Loaded from .env) ====="
 echo "SUPABASE_URL: ${SUPABASE_URL:-Not Set}"
-echo "SUPABASE_KEY: ${SUPABASE_KEY:0:10}..." # Only show first 10 chars for security
+echo "SUPABASE_KEY: ****HIDDEN****" # Hide for security
 echo "DATABASE_URL: ${DATABASE_URL:-Not Set}"
 echo "DEBUG: ${DEBUG}"
 echo "PGSTATEMENT_TIMEOUT: ${PGSTATEMENT_TIMEOUT}ms"

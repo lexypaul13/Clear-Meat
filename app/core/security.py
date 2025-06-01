@@ -30,8 +30,22 @@ def create_access_token(
         expire = datetime.utcnow() + timedelta(
             minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
         )
-    to_encode = {"exp": expire, "sub": str(subject)}
-    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+        
+    # Create token with standard claims
+    to_encode = {
+        "exp": int(expire.timestamp()),  # Expiration time
+        "iat": int(datetime.utcnow().timestamp()),  # Issued at
+        "sub": str(subject),  # Subject (user ID)
+        "type": "access",  # Token type
+        "iss": "clear-meat-api",  # Issuer
+        "aud": ["clear-meat-api"]  # Audience
+    }
+    
+    encoded_jwt = jwt.encode(
+        to_encode,
+        settings.SECRET_KEY,
+        algorithm=settings.ALGORITHM
+    )
     return encoded_jwt
 
 

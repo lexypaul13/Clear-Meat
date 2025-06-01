@@ -4,6 +4,8 @@ from typing import Any, List, Optional, Dict, Tuple, Union
 import logging
 import os
 import json
+import html
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
@@ -27,6 +29,42 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 router = APIRouter()
+
+# Input validation patterns  
+SAFE_QUERY_PATTERN = re.compile(r'^[a-zA-Z0-9\s\-_,.\'"()]+$')
+MAX_QUERY_LENGTH = 200
+
+def sanitize_search_query(query: str) -> str:
+    """Sanitize user input to prevent XSS and injection attacks"""
+    if not query:
+        return ""
+    
+    # Limit query length
+    if len(query) > MAX_QUERY_LENGTH:
+        query = query[:MAX_QUERY_LENGTH]
+    
+    # HTML escape to prevent XSS
+    query = html.escape(query)
+    
+    # Remove any remaining HTML tags
+    query = re.sub(r'<[^>]*>', '', query)
+    
+    # Remove script-related keywords
+    dangerous_patterns = [
+        r'javascript:',
+        r'data:',
+        r'vbscript:',
+        r'on\w+\s*=',
+        r'<script',
+        r'</script>',
+        r'eval\s*\(',
+        r'expression\s*\('
+    ]
+    
+    for pattern in dangerous_patterns:
+        query = re.sub(pattern, '', query, flags=re.IGNORECASE)
+    
+    return query.strip()
 
 # NEW: Dedicated natural language search endpoint - placed at the top to avoid conflicts
 @router.get("/nlp-search", response_model=Dict[str, Any])
@@ -56,26 +94,45 @@ def natural_language_search(
         Dict containing search results and metadata
     """
     try:
-        logger.info(f"Natural language search query: '{q}'")
+        # Sanitize the search query to prevent XSS and injection attacks
+        sanitized_query = sanitize_search_query(q)
+        
+        # Validate query format
+        if not sanitized_query:
+            raise HTTPException(
+                status_code=400,
+                detail="Search query cannot be empty after sanitization"
+            )
+        
+        if not SAFE_QUERY_PATTERN.match(sanitized_query):
+            raise HTTPException(
+                status_code=400,
+                detail="Search query contains invalid characters"
+            )
+        
+        logger.info(f"Natural language search query: '{sanitized_query}'")
         
         # Perform the search using our search service
-        results = search_products(q, db, limit=limit, skip=skip)
+        results = search_products(sanitized_query, db, limit=limit, skip=skip)
         
-        logger.info(f"Found {len(results)} products for query: '{q}'")
+        logger.info(f"Found {len(results)} products for query: '{sanitized_query}'")
         
         return {
-            "query": q,
+            "query": sanitized_query,  # Return sanitized query
             "total_results": len(results),
             "limit": limit,
             "skip": skip,
             "products": results
         }
         
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
     except Exception as e:
         logger.error(f"Error searching products: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"Error searching products: {str(e)}"
+            detail="An error occurred while searching products"  # Generic error message
         )
 
 @router.get("/count", response_model=Dict[str, int])

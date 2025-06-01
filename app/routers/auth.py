@@ -3,6 +3,7 @@
 from datetime import timedelta
 from typing import Any, Dict
 import os
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -92,6 +93,47 @@ def login_access_token(
         )
 
 
+def validate_password_strength(password: str) -> None:
+    """Validate password strength and raise HTTPException if weak"""
+    if len(password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 8 characters long"
+        )
+    
+    if len(password) > 128:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password is too long (maximum 128 characters)"
+        )
+    
+    # Check for basic complexity requirements
+    has_upper = bool(re.search(r'[A-Z]', password))
+    has_lower = bool(re.search(r'[a-z]', password))
+    has_digit = bool(re.search(r'\d', password))
+    has_special = bool(re.search(r'[!@#$%^&*(),.?":{}|<>]', password))
+    
+    requirements_met = sum([has_upper, has_lower, has_digit, has_special])
+    
+    if requirements_met < 3:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must contain at least 3 of: uppercase letter, lowercase letter, number, special character"
+        )
+    
+    # Check for common weak passwords
+    weak_passwords = {
+        "123456789", "password", "admin", "test", "guest", "user", 
+        "qwerty", "letmein", "welcome", "monkey", "dragon"
+    }
+    
+    if password.lower() in weak_passwords:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password is too common. Please choose a more secure password"
+        )
+
+
 @router.post("/register", response_model=Token)
 def register_user(
     user_in: UserCreate,
@@ -108,13 +150,23 @@ def register_user(
     Raises:
         HTTPException: If registration fails
     """
+    # Log registration attempt
+    logger.info(f"Registration attempt for email: {user_in.email}")
+    
+    # Validate password strength before proceeding
+    validate_password_strength(user_in.password)
+    logger.debug("Password validation passed")
+    
     # Check if we're in testing mode
     is_testing = os.getenv("TESTING", "false").lower() == "true"
+    logger.debug(f"Testing mode: {is_testing}")
             
     try:
         # Use the admin API to create a user directly
         if not admin_supabase:
             logger.error("Admin Supabase client not available for user creation")
+            logger.debug(f"admin_supabase object: {type(admin_supabase)}")
+            logger.debug(f"SUPABASE_SERVICE_KEY set: {'Yes' if settings.SUPABASE_SERVICE_KEY else 'No'}")
             
             # In testing mode, return error immediately instead of trying alternatives
             if is_testing:
@@ -128,6 +180,7 @@ def register_user(
                 detail="Could not create user. Server configuration error."
             )
             
+        logger.info("Using admin API to create user")
         admin_response = admin_supabase.auth.admin.create_user({
             "email": user_in.email,
             "password": user_in.password,
@@ -147,6 +200,7 @@ def register_user(
                 detail=f"Registration failed: {error_message}",
             )
         
+        logger.info("User created successfully, attempting login")
         # Now login the user to get a session using the public client
         login_response = supabase.auth.sign_in_with_password({
             "email": user_in.email,
@@ -154,12 +208,14 @@ def register_user(
         })
         
         if hasattr(login_response, 'session') and login_response.session:
+            logger.info("Login successful, returning token")
             return {
                 "access_token": login_response.session.access_token,
                 "token_type": "bearer",
                 "message": "User registered successfully"
             }
         else:
+            logger.warning("Login after registration failed, user should login manually")
             return {
                 "access_token": "",
                 "token_type": "bearer",

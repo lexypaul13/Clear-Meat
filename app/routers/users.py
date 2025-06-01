@@ -12,7 +12,8 @@ import os
 from app.models import (
     User, UserUpdate, 
     ScanHistory, ScanHistoryCreate, 
-    UserFavorite, UserFavoriteCreate
+    UserFavorite, UserFavoriteCreate,
+    UserResponse
 )
 from app.models.product import Product
 from app.core import security
@@ -34,33 +35,23 @@ def _convert_uuid_to_str(obj_id):
     return obj_id
 
 
-@router.get("/me", response_model=User)
-def get_current_user(
-    current_user: db_models.User = Depends(get_current_active_user),
+@router.get("/me", response_model=UserResponse)
+def get_current_user_profile(
+    current_user: db_models.User = Depends(get_current_active_user)
 ) -> Any:
     """
-    Get current user.
-    
-    Args:
-        current_user: Current user from auth dependency
-        
-    Returns:
-        User: Current user details
+    Get current user profile.
     """
-    # Convert UUID fields to strings to ensure compatibility
-    user_dict = {
-        "id": _convert_uuid_to_str(current_user.id),
-        "email": current_user.email,
-        "full_name": current_user.full_name,
-        "created_at": current_user.created_at,
-        "updated_at": current_user.updated_at,
-        "preferences": current_user.preferences
-    }
-    
-    return user_dict
+    return UserResponse(
+        id=current_user.id,
+        email=current_user.email,
+        full_name=current_user.full_name,
+        is_active=current_user.is_active,
+        preferences=current_user.preferences
+    )
 
 
-@router.put("/me", response_model=User)
+@router.put("/me", response_model=UserResponse)
 def update_current_user(
     user_in: UserUpdate,
     db: Session = Depends(get_db),
@@ -75,7 +66,7 @@ def update_current_user(
         current_user: Current user from auth dependency
         
     Returns:
-        User: Updated user details
+        UserResponse: Updated user details
     """
     # Check if we're in testing mode
     is_testing = os.getenv("TESTING", "false").lower() == "true"
@@ -154,7 +145,13 @@ def update_current_user(
         "preferences": current_user.preferences
     }
     
-    return user_dict
+    return UserResponse(
+        id=current_user.id,
+        email=current_user.email,
+        full_name=current_user.full_name,
+        is_active=current_user.is_active,
+        preferences=current_user.preferences
+    )
 
 
 @router.get("/history", response_model=List[ScanHistory])

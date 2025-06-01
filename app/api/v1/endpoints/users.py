@@ -27,34 +27,26 @@ router = APIRouter()
 @router.get("/me", response_model=models.User)
 def get_current_user(
     db: Session = Depends(get_db),
-    # TODO: Implement proper authentication dependency
-    current_user_id: str = "current_user_id",
+    current_user: db_models.User = Depends(get_current_active_user)
 ) -> Any:
     """
     Get current user.
     
     Args:
         db: Database session
-        current_user_id: Current user ID from auth dependency
+        current_user: Current user from auth dependency
         
     Returns:
         models.User: Current user details
-        
-    Raises:
-        HTTPException: If user not found
     """
-    user = db.query(db_models.User).filter(db_models.User.id == current_user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return user
+    return current_user
 
 
 @router.put("/me", response_model=models.User)
 def update_current_user(
     user_in: models.UserUpdate,
     db: Session = Depends(get_db),
-    # TODO: Implement proper authentication dependency
-    current_user_id: str = "current_user_id",
+    current_user: db_models.User = Depends(get_current_active_user)
 ) -> Any:
     """
     Update current user.
@@ -62,18 +54,11 @@ def update_current_user(
     Args:
         user_in: Updated user data
         db: Database session
-        current_user_id: Current user ID from auth dependency
+        current_user: Current user from auth dependency
         
     Returns:
         models.User: Updated user details
-        
-    Raises:
-        HTTPException: If user not found
     """
-    user = db.query(db_models.User).filter(db_models.User.id == current_user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
     update_data = user_in.model_dump(exclude_unset=True)
     
     # Hash password if provided
@@ -82,19 +67,18 @@ def update_current_user(
         del update_data["password"]
     
     for key, value in update_data.items():
-        setattr(user, key, value)
+        setattr(current_user, key, value)
     
-    db.add(user)
+    db.add(current_user)
     db.commit()
-    db.refresh(user)
-    return user
+    db.refresh(current_user)
+    return current_user
 
 
 @router.get("/history", response_model=List[models.ScanHistory])
 def get_user_scan_history(
     db: Session = Depends(get_db),
-    # TODO: Implement proper authentication dependency
-    current_user_id: str = "current_user_id",
+    current_user: db_models.User = Depends(get_current_active_user),
     skip: int = 0,
     limit: int = 100,
 ) -> Any:
@@ -103,7 +87,7 @@ def get_user_scan_history(
     
     Args:
         db: Database session
-        current_user_id: Current user ID from auth dependency
+        current_user: Current user from auth dependency
         skip: Number of records to skip
         limit: Maximum number of records to return
         
@@ -112,7 +96,7 @@ def get_user_scan_history(
     """
     return (
         db.query(db_models.ScanHistory)
-        .filter(db_models.ScanHistory.user_id == current_user_id)
+        .filter(db_models.ScanHistory.user_id == current_user.id)
         .order_by(db_models.ScanHistory.scanned_at.desc())
         .offset(skip)
         .limit(limit)
@@ -159,22 +143,21 @@ def add_scan_history(
 @router.get("/favorites", response_model=List[models.UserFavorite])
 def get_user_favorites(
     db: Session = Depends(get_db),
-    # TODO: Implement proper authentication dependency
-    current_user_id: str = "current_user_id",
+    current_user: db_models.User = Depends(get_current_active_user)
 ) -> Any:
     """
     Get current user's favorite products.
     
     Args:
         db: Database session
-        current_user_id: Current user ID from auth dependency
+        current_user: Current user from auth dependency
         
     Returns:
         List[models.UserFavorite]: User's favorite products
     """
     return (
         db.query(db_models.UserFavorite)
-        .filter(db_models.UserFavorite.user_id == current_user_id)
+        .filter(db_models.UserFavorite.user_id == current_user.id)
         .all()
     )
 

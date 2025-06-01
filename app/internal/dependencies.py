@@ -88,33 +88,44 @@ def get_current_user(
                     token, 
                     jwt_secret, 
                     algorithms=[settings.ALGORITHM, "HS256"],
-                    options={"verify_signature": True, "verify_aud": False}  # Enable signature verification but disable audience verification for local dev
+                    options={
+                        "verify_signature": True,
+                        "verify_exp": True,
+                        "verify_iat": True,
+                        "require_exp": True,
+                        "require_iat": True,
+                        "require_sub": True,
+                        "verify_aud": True,
+                        "verify_iss": True,
+                        "require": ["exp", "iat", "sub", "type", "iss", "aud"]
+                    }
                 )
-                user_id = payload.get("sub")
-                if user_id is None:
-                    logger.warning("JWT missing 'sub' claim")
+                
+                # Additional validation
+                if not payload.get("sub") or not isinstance(payload.get("sub"), str):
+                    logger.warning("Invalid subject claim in token")
+                    raise credentials_exception
+                    
+                if payload.get("type") != "access":
+                    logger.warning("Invalid token type")
+                    raise credentials_exception
+                    
+                if payload.get("iss") != "clear-meat-api":
+                    logger.warning("Invalid token issuer")
+                    raise credentials_exception
+                    
+                if "clear-meat-api" not in payload.get("aud", []):
+                    logger.warning("Invalid token audience")
+                    raise credentials_exception
+                    
+                # Get user from database
+                user = db.query(db_models.User).filter(db_models.User.id == payload["sub"]).first()
+                if not user:
+                    logger.warning(f"User not found in database: {payload['sub']}")
                     raise credentials_exception
                 
-                logger.debug(f"JWT payload: {payload}")
-                
-                # Get user from database
-                user = db.query(db_models.User).filter(db_models.User.id == user_id).first()
-                if not user:
-                    # Fallback - try to extract userID from the token payload
-                    try:
-                        # For Supabase tokens, the subject might be in a different format
-                        if "user" in payload and isinstance(payload["user"], dict):
-                            user_id_alt = payload["user"].get("id")
-                            if user_id_alt:
-                                user = db.query(db_models.User).filter(db_models.User.id == user_id_alt).first()
-                    except Exception as e:
-                        logger.warning(f"Error during fallback user extraction: {e}")
-                            
-                    if not user:
-                        logger.warning(f"User not found in database: {user_id}")
-                        raise credentials_exception
-                
                 return user
+                
             except JWTError as e:
                 logger.error(f"JWT decode error: {e}")
                 raise credentials_exception

@@ -33,6 +33,7 @@ from app.models.user import (
     UserFavoriteBase,
     UserFavoriteCreate,
     UserUpdate,
+    UserResponse,
 )
 
 # Update forward references after all models are imported
