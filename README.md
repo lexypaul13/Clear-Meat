@@ -45,23 +45,32 @@ pip install -r requirements.txt
 ```
 
 ### **3. Configure Environment Variables**
-Create `.env` file with your new Supabase credentials:
+Create `.env` file with your Supabase credentials:
 ```bash
-# Supabase Configuration (NEW - MIGRATED)
-SUPABASE_URL=https://ksgxendfsejkxhrmfsbi.supabase.co
-SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtzZ3hlbmRmc2Vqa3hocm1mc2JpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDgyMzAxODksImV4cCI6MjA2MzgwNjE4OX0.NJGVUga8oBHsy06u1COnz0p0kTbViz1we2nxxSw-5BY
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtzZ3hlbmRmc2Vqa3hocm1mc2JpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0ODIzMDE4OSwiZXhwIjoyMDYzODA2MTg5fQ.vCpVwhgXwgOrv_edxykymFhzYi7mCyPnuqrwhj92j7M
-SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtzZ3hlbmRmc2Vqa3hocm1mc2JpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDgyMzAxODksImV4cCI6MjA2MzgwNjE4OX0.NJGVUga8oBHsy06u1COnz0p0kTbViz1we2nxxSw-5BY
+# Supabase Configuration (Replace with your actual values)
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-anon-key-here
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
+SUPABASE_KEY=your-supabase-key-here
 
 # Environment
 ENVIRONMENT=production
 DEBUG=false
 LOG_LEVEL=INFO
 
-# Optional: Add these for enhanced features
-SECRET_KEY=your-super-secret-jwt-token-with-at-least-32-characters-long
+# Security - Generate a secure key!
+SECRET_KEY=generate-a-secure-secret-key-at-least-32-chars
 GEMINI_API_KEY=your-gemini-api-key-here
+
+# Optional: Redis for caching
+REDIS_URL=redis://localhost:6379
 ```
+
+**Important Security Notes:**
+- Never commit real API keys or secrets to version control
+- Use environment variables or secure secret management
+- Generate a secure SECRET_KEY using: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`
+- For production, use proper secret management (e.g., AWS Secrets Manager, HashiCorp Vault)
 
 ### **4. Verify Database Setup**
 The database is already set up with all tables and sample data. Verify it's working:

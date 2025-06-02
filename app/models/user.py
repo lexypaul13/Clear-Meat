@@ -159,7 +159,7 @@ class UserFavorite(UserFavoriteBase):
 # Update forward references
 from app.models.product import Product
 ScanHistory.model_rebuild()
-UserFavorite.model_rebuild()
+UserFavorite.model_rebuild() 
 
 class UserResponse(BaseModel):
     """User response model for API endpoints."""

@@ -5,15 +5,16 @@ services:
   api:
     build: .
     ports:
-      - "8000:8000"
+      - "${API_PORT:-8000}:8000"
     environment:
-      - ENABLE_AUTH_BYPASS=true
-      - DATABASE_URL=postgresql://postgres:postgres@supabase-db:5432/postgres
-      - SUPABASE_URL=http://supabase-kong:8000
-      - SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtzZ3hlbmRmc2Vqa3hocm1mc2JpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDgyMzAxODksImV4cCI6MjA2MzgwNjE4OX0.NJGVUga8oBHsy06u1COnz0p0kTbViz1we2nxxSw-5BY
-      - SECRET_KEY=super-secret-jwt-token-with-at-least-32-characters-long
-      - ENVIRONMENT=development
-      - DEBUG=true
+      - ENABLE_AUTH_BYPASS=${ENABLE_AUTH_BYPASS:-false}
+      - DATABASE_URL=${DATABASE_URL}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - SECRET_KEY=${SECRET_KEY}
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - DEBUG=${DEBUG:-false}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
     depends_on:
       - supabase-db
       - supabase-kong
@@ -24,11 +25,11 @@ services:
   supabase-db:
     image: supabase/postgres:15.1.0.117
     ports:
-      - "54322:5432"
+      - "${DB_PORT:-54322}:5432"
     environment:
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_USER=postgres
-      - POSTGRES_DB=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-postgres}
     volumes:
       - supabase-db-data:/var/lib/postgresql/data
     networks:
@@ -38,7 +39,7 @@ services:
   supabase-kong:
     image: kong:2.8.1
     ports:
-      - "54321:8000"
+      - "${KONG_PORT:-54321}:8000"
     environment:
       - KONG_DATABASE=off
       - KONG_DECLARATIVE_CONFIG=/var/lib/kong/kong.yml

@@ -18,19 +18,34 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "MeatWise API"
     PROJECT_VERSION: str = "0.1.0"
     
-    # Debug mode
+    # Debug mode - default to False for production safety
     DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
     
     # Security
     SECRET_KEY: str = os.getenv("SECRET_KEY", "")
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours (reduced from 7 days)
     ALGORITHM: str = "HS256"  # Algorithm for JWT encoding
+    
+    # Auth bypass - MUST be False in production
+    ENABLE_AUTH_BYPASS: bool = os.getenv("ENABLE_AUTH_BYPASS", "false").lower() == "true"
+    
+    @field_validator("ENABLE_AUTH_BYPASS", mode="before")
+    def validate_auth_bypass(cls, v: bool, info: FieldValidationInfo) -> bool:
+        """Ensure auth bypass is not enabled in production."""
+        is_production = os.getenv("ENVIRONMENT", "").lower() == "production"
+        if v and is_production:
+            print("ERROR: ENABLE_AUTH_BYPASS cannot be true in production!", file=sys.stderr)
+            raise ValueError("Auth bypass is not allowed in production")
+        return v
     
     @field_validator("SECRET_KEY", mode="before")
     def validate_secret_key(cls, v: Optional[str]) -> str:
         """Validate the secret key."""
         if not v or len(v) < 32:
-            if not os.environ.get("SECRET_KEY"):
+            if os.environ.get("ENVIRONMENT", "").lower() == "production":
+                print("ERROR: SECRET_KEY must be set in production with at least 32 characters!", file=sys.stderr)
+                raise ValueError("SECRET_KEY is required in production")
+            else:
                 # Warn that we're using a generated key
                 print("WARNING: No SECRET_KEY environment variable set! Using a randomly generated key.", file=sys.stderr)
                 print("This is insecure for production environments - set a SECRET_KEY environment variable.", file=sys.stderr)
@@ -97,6 +112,7 @@ class Settings(BaseSettings):
     
     # Get DATABASE_URL from env - use the one from .env file
     DATABASE_URL: Optional[str] = os.getenv("DATABASE_URL")
+    DATABASE_SSL_MODE: str = os.getenv("DATABASE_SSL_MODE", "prefer")  # disable, allow, prefer, require, verify-ca, verify-full
 
     @field_validator("DATABASE_URL", mode="before")
     def validate_database_url(cls, v: Optional[str]) -> Optional[str]:
@@ -114,6 +130,14 @@ class Settings(BaseSettings):
                 db_url = self.DATABASE_URL
                 if db_url.startswith("postgres://"):
                     db_url = db_url.replace("postgres://", "postgresql://", 1)
+                
+                # Add SSL mode for production databases
+                if self.DATABASE_SSL_MODE != "disable" and "localhost" not in db_url and "127.0.0.1" not in db_url:
+                    # Add SSL mode parameter if not already present
+                    if "sslmode=" not in db_url:
+                        separator = "&" if "?" in db_url else "?"
+                        db_url = f"{db_url}{separator}sslmode={self.DATABASE_SSL_MODE}"
+                
                 self.SQLALCHEMY_DATABASE_URI = db_url
             else:
                 self.SQLALCHEMY_DATABASE_URI = (

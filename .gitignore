@@ -8,6 +8,10 @@
 .env.test.local
 .env.production.local
 
+# Docker override with potential secrets
+docker-compose.override.yml
+!docker-compose.override.yml.example
+
 # Python
 __pycache__/
 *.py[cod]

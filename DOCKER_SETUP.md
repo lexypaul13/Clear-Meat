@@ -15,8 +15,8 @@ This guide covers running the Clear-Meat API using Docker for development and pr
    ```bash
    docker run -p 8000:8000 \
      -e ENABLE_AUTH_BYPASS=true \
-     -e DATABASE_URL="postgresql://postgres:postgres@host.docker.internal:54322/postgres" \
-     -e SECRET_KEY="super-secret-jwt-token-with-at-least-32-characters-long" \
+     -e DATABASE_URL="postgresql://postgres:your-password@host.docker.internal:54322/postgres" \
+     -e SECRET_KEY="your-secure-secret-key-at-least-32-chars" \
      -e ENVIRONMENT=development \
      -e DEBUG=true \
      clear-meat-api
@@ -121,15 +121,15 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--worker
 docker build -f Dockerfile.prod -t clear-meat-api:prod .
 
 # Run production container
-docker run -p 8000:8000 \
+docker run -d \
+  --name clear-meat-api \
+  -p 8000:8000 \
+  -e SECRET_KEY="your-production-secret-key" \
+  -e DATABASE_URL="your-production-database-url" \
+  -e SUPABASE_URL="your-supabase-url" \
+  -e SUPABASE_KEY="your-supabase-key" \
   -e ENVIRONMENT=production \
-  -e DEBUG=false \
-  -e ENABLE_AUTH_BYPASS=false \
-  -e DATABASE_URL="your-production-db-url" \
-  -e SUPABASE_URL="your-production-supabase-url" \
-  -e SUPABASE_KEY="your-production-key" \
-  -e SECRET_KEY="your-production-secret" \
-  clear-meat-api:prod
+  clear-meat-api-prod
 ```
 
 ## 🛠️ **Development Workflow**

@@ -3,7 +3,6 @@ import json
 import logging
 import time
 import random
-import hashlib
 from typing import Dict, Any, Optional, List
 
 import google.generativeai as genai
@@ -11,14 +10,11 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.cache import cache  # Use unified cache
 from app.models.product import HealthAssessment, ProductStructured
 from app.db import models as db_models
 
 logger = logging.getLogger(__name__)
-
-# Simple in-memory cache for health assessments
-# Structure: {product_code: {"data": assessment_data, "expires_at": timestamp}}
-_health_assessment_cache = {}
 
 def generate_health_assessment(product: ProductStructured, db: Optional[Session] = None) -> Optional[HealthAssessment]:
     """
@@ -35,14 +31,18 @@ def generate_health_assessment(product: ProductStructured, db: Optional[Session]
         logger.error("Gemini API key not configured")
         return None
     
-    # Generate cache key based on product code and data
-    cache_key = product.product.code
+    # Generate cache key based on product code
+    cache_key = cache.generate_key(product.product.code, prefix="health_assessment")
     
     # Check cache first
-    cached_result = _get_from_cache(cache_key)
+    cached_result = cache.get(cache_key)
     if cached_result:
-        logger.info(f"Returning cached health assessment for product {cache_key}")
-        return cached_result
+        logger.info(f"Returning cached health assessment for product {product.product.code}")
+        try:
+            return HealthAssessment(**cached_result)
+        except ValidationError as e:
+            logger.warning(f"Failed to parse cached health assessment: {e}")
+            cache.delete(cache_key)  # Remove invalid cache entry
     
     # Get similar products for recommendations if database is available
     similar_products = []
@@ -54,7 +54,7 @@ def generate_health_assessment(product: ProductStructured, db: Optional[Session]
     
     # Use exponential backoff for rate limit handling
     max_retries = 3
-    base_delay = 2  # seconds
+    base_delay = 2
     
     for attempt in range(max_retries):
         try:
@@ -67,7 +67,7 @@ def generate_health_assessment(product: ProductStructured, db: Optional[Session]
             
             if assessment:
                 # Store in cache (24 hour expiration)
-                _store_in_cache(cache_key, assessment, 86400)  # 24 hours in seconds
+                cache.set(cache_key, assessment.dict(), ttl=86400)  # 24 hours
                 
             return assessment
         
@@ -87,44 +87,6 @@ def generate_health_assessment(product: ProductStructured, db: Optional[Session]
     
     # If we reach here, all attempts failed
     return None
-
-def _store_in_cache(key: str, data: HealthAssessment, ttl: int) -> None:
-    """Store health assessment in cache with expiration."""
-    _health_assessment_cache[key] = {
-        "data": data,
-        "expires_at": time.time() + ttl
-    }
-    logger.debug(f"Stored health assessment in cache with key {key}, expires in {ttl}s")
-    
-    # Clean up expired entries occasionally
-    if random.random() < 0.1:  # ~10% chance on each call
-        _clean_expired_cache()
-
-def _get_from_cache(key: str) -> Optional[HealthAssessment]:
-    """Get health assessment from cache if not expired."""
-    if key not in _health_assessment_cache:
-        return None
-        
-    cache_entry = _health_assessment_cache[key]
-    if time.time() > cache_entry["expires_at"]:
-        # Expired
-        del _health_assessment_cache[key]
-        return None
-        
-    return cache_entry["data"]
-
-def _clean_expired_cache() -> None:
-    """Remove expired entries from cache."""
-    now = time.time()
-    expired_keys = [
-        k for k, v in _health_assessment_cache.items() 
-        if now > v["expires_at"]
-    ]
-    for k in expired_keys:
-        del _health_assessment_cache[k]
-    
-    if expired_keys:
-        logger.debug(f"Cleaned {len(expired_keys)} expired health assessment cache entries")
 
 def _get_similar_products(db: Session, target_product: ProductStructured) -> List[Dict[str, Any]]:
     """Get similar products from database for recommendations."""

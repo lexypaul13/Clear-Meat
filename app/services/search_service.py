@@ -2,8 +2,6 @@
 
 import json
 import logging
-import time
-import hashlib
 from typing import Dict, List, Any, Optional, Tuple
 
 import google.generativeai as genai
@@ -11,13 +9,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func
 
 from app.core.config import settings
+from app.core.cache import cache  # Use unified cache
 from app.db import models as db_models
 
 logger = logging.getLogger(__name__)
-
-# Simple in-memory cache for parsed queries
-# Structure: {query_hash: {"intent": parsed_intent, "expires_at": timestamp}}
-_query_cache = {}
 
 # Common brand names for product name search detection
 COMMON_BRANDS = [
@@ -128,28 +123,23 @@ Respond with JSON only in this exact format:
 def parse_natural_language_query(query: str) -> SearchIntent:
     """Parse natural language query into structured search intent."""
     
-    # Create cache key
-    cache_key = hashlib.md5(query.lower().encode()).hexdigest()
-    current_time = time.time()
+    # Create cache key for this query
+    cache_key = cache.generate_key(query.lower(), prefix="search_intent")
     
     # Check cache first
-    if cache_key in _query_cache:
-        cached_entry = _query_cache[cache_key]
-        if cached_entry["expires_at"] > current_time:
-            logger.debug(f"Using cached intent for query: {query}")
-            intent = SearchIntent()
-            for key, value in cached_entry["intent"].items():
-                setattr(intent, key, value)
-            return intent
+    cached_intent = cache.get(cache_key)
+    if cached_intent:
+        logger.debug(f"Using cached intent for query: {query}")
+        intent = SearchIntent()
+        for key, value in cached_intent.items():
+            setattr(intent, key, value)
+        return intent
     
     # Try Gemini AI first for complex queries
     gemini_intent = parse_with_gemini(query)
     if gemini_intent:
-        # Cache the result (expires in 1 hour)
-        _query_cache[cache_key] = {
-            "intent": gemini_intent.to_dict(),
-            "expires_at": current_time + 3600
-        }
+        # Cache the result with longer TTL for AI results (2 hours)
+        cache.set(cache_key, gemini_intent.to_dict(), ttl=7200)
         return gemini_intent
     
     # Fallback to rule-based parsing
@@ -245,11 +235,8 @@ def parse_natural_language_query(query: str) -> SearchIntent:
     keywords = query_lower.split()
     intent.keywords = [k for k in keywords if len(k) > 2]
     
-    # Cache the result (expires in 1 hour)
-    _query_cache[cache_key] = {
-        "intent": intent.to_dict(),
-        "expires_at": current_time + 3600
-    }
+    # Cache the result (1 hour for rule-based)
+    cache.set(cache_key, intent.to_dict(), ttl=3600)
     
     logger.info(f"Rule-based parsed query '{query}' -> Intent: {intent.to_dict()}")
     return intent

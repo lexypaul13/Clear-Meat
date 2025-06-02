@@ -1,0 +1,22 @@
+# Docker Compose Override for Local Development
+# Copy this file to docker-compose.override.yml and update with your values
+
+version: '3.8'
+
+services:
+  api:
+    environment:
+      # Development settings (change these for production!)
+      - ENABLE_AUTH_BYPASS=true  # Only for local development
+      - DATABASE_URL=postgresql://postgres:your-secure-password@supabase-db:5432/postgres
+      - SUPABASE_URL=http://supabase-kong:8000
+      - SUPABASE_KEY=your-supabase-anon-key-here
+      - SECRET_KEY=your-super-secret-jwt-token-with-at-least-32-characters-long
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - GEMINI_API_KEY=your-gemini-api-key-here
+
+  supabase-db:
+    environment:
+      # Use a secure password in production!
+      - POSTGRES_PASSWORD=your-secure-password 

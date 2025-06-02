@@ -6,6 +6,7 @@ import logging
 import time
 import random
 from app.core.config import settings
+from app.core.cache import cache  # Use unified cache
 
 logger = logging.getLogger(__name__)
 
@@ -14,10 +15,6 @@ try:
     genai.configure(api_key=settings.GEMINI_API_KEY)
 except Exception as e:
     logger.error(f"Failed to initialize Gemini client: {e}")
-
-# Simple in-memory cache to reduce API calls
-# Structure: {cache_key: {"data": response_data, "expires_at": timestamp}}
-_recommendations_cache = {}
 
 def get_personalized_recommendations(user_preferences, available_products, recent_scans=None):
     """Generate personalized product recommendations using Gemini."""
@@ -29,7 +26,7 @@ def get_personalized_recommendations(user_preferences, available_products, recen
     cache_key = _generate_cache_key(user_preferences, available_products, recent_scans)
     
     # Check cache first
-    cached_result = _get_from_cache(cache_key)
+    cached_result = cache.get(cache_key)
     if cached_result:
         logger.info("Returning cached recommendations")
         return cached_result
@@ -39,7 +36,7 @@ def get_personalized_recommendations(user_preferences, available_products, recen
     
     # Use exponential backoff for rate limit handling
     max_retries = 3
-    base_delay = 2  # seconds
+    base_delay = 2
     
     for attempt in range(max_retries):
         try:
@@ -50,8 +47,8 @@ def get_personalized_recommendations(user_preferences, available_products, recen
             # Parse and validate response
             recommendations = _parse_gemini_response(response.text)
             
-            # Store in cache (1 hour expiration)
-            _store_in_cache(cache_key, recommendations, 3600)
+            # Store in cache (2 hours expiration for recommendations)
+            cache.set(cache_key, recommendations, ttl=7200)
             
             return recommendations
         
@@ -73,57 +70,17 @@ def get_personalized_recommendations(user_preferences, available_products, recen
     return {"sections": []}
 
 def _generate_cache_key(user_preferences, available_products, recent_scans) -> str:
-    """Generate a cache key based on input parameters."""
-    # Use only fields that affect recommendations
+    """Generate a unique cache key from input parameters."""
+    # Create a stable hash of the input data
     key_data = {
-        "preferences": user_preferences,
-        # Use only relevant product fields, not full objects
-        "product_codes": [p.get("code") for p in available_products[:10]] if available_products else []
+        "user_prefs": user_preferences,
+        "products_count": len(available_products),
+        "products_ids": [p.get("code", "") for p in available_products[:5]],  # Sample of products
+        "recent_scans": [scan.product.code for scan in (recent_scans or [])[:5]]
     }
-    # Add a hash of the first few recent scans if available
-    if recent_scans:
-        key_data["recent_scans"] = [s.get("product_code") for s in recent_scans[:3]] if recent_scans else []
     
-    # Create a string hash
-    return str(hash(json.dumps(key_data, sort_keys=True)))
-
-def _store_in_cache(key: str, data: Dict, ttl: int) -> None:
-    """Store data in cache with expiration."""
-    _recommendations_cache[key] = {
-        "data": data,
-        "expires_at": time.time() + ttl
-    }
-    logger.debug(f"Stored in cache with key {key}, expires in {ttl}s")
-    
-    # Clean up expired entries occasionally
-    if random.random() < 0.1:  # ~10% chance on each call
-        _clean_expired_cache()
-
-def _get_from_cache(key: str) -> Optional[Dict]:
-    """Get data from cache if not expired."""
-    if key not in _recommendations_cache:
-        return None
-        
-    cache_entry = _recommendations_cache[key]
-    if time.time() > cache_entry["expires_at"]:
-        # Expired
-        del _recommendations_cache[key]
-        return None
-        
-    return cache_entry["data"]
-
-def _clean_expired_cache() -> None:
-    """Remove expired entries from cache."""
-    now = time.time()
-    expired_keys = [
-        k for k, v in _recommendations_cache.items() 
-        if now > v["expires_at"]
-    ]
-    for k in expired_keys:
-        del _recommendations_cache[k]
-    
-    if expired_keys:
-        logger.debug(f"Cleaned {len(expired_keys)} expired cache entries")
+    key_string = json.dumps(key_data, sort_keys=True)
+    return cache.generate_key(key_string, prefix="recommendations")
 
 def _build_recommendation_prompt(user_preferences, available_products, recent_scans=None):
     """Build prompt for Gemini with user context and products."""

@@ -113,16 +113,16 @@ def get_current_user(
                 if payload.get("iss") != "clear-meat-api":
                     logger.warning("Invalid token issuer")
                     raise credentials_exception
-                    
+                
                 if "clear-meat-api" not in payload.get("aud", []):
                     logger.warning("Invalid token audience")
                     raise credentials_exception
-                    
+                
                 # Get user from database
                 user = db.query(db_models.User).filter(db_models.User.id == payload["sub"]).first()
                 if not user:
                     logger.warning(f"User not found in database: {payload['sub']}")
-                    raise credentials_exception
+                        raise credentials_exception
                 
                 return user
                 
