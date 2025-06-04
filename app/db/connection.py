@@ -59,6 +59,7 @@ def get_database_url() -> str:
         logger.info(f"No DATABASE_URL found for development, using default: {DEFAULT_LOCAL_DB_URL}")
         return DEFAULT_LOCAL_DB_URL
     
+    logger.info(f"Using DATABASE_URL from environment: {DATABASE_URL[:20]}...")
     return DATABASE_URL
 
 # Get the actual database URL to use
