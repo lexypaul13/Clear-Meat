@@ -122,7 +122,7 @@ def get_current_user(
                 user = db.query(db_models.User).filter(db_models.User.id == payload["sub"]).first()
                 if not user:
                     logger.warning(f"User not found in database: {payload['sub']}")
-                        raise credentials_exception
+                    raise credentials_exception
                 
                 return user
                 

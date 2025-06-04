@@ -1,8 +1,8 @@
 """
 Comprehensive image fixing script for the MeatWise API.
 Handles both individual and bulk image fixes, with retry logic and progress tracking.
-Now includes multiple image sources: OpenFoodFacts, Google Images, and Bing Images.
-Will run for 8 hours to process all OpenFoodFacts images.
+Now uses Google Custom Search API and Bing Image Search API instead of scraping.
+Will run for 8 hours to process all images.
 """
 
 import asyncio
@@ -55,10 +55,8 @@ class ImageFixer:
         self.domain_delays = {
             'google.com': (5.0, 10.0),
             'bing.com': (4.0, 8.0),
-            'yahoo.com': (4.0, 8.0),
             'images.google.com': (5.0, 10.0),
-            'images.bing.com': (4.0, 8.0),
-            'images.search.yahoo.com': (4.0, 8.0)
+            'images.bing.com': (4.0, 8.0)
         }
         
         # Default rate limiting
@@ -68,6 +66,15 @@ class ImageFixer:
         self.failed_domains = {}  # Track failed domains to avoid retrying too soon
         self.domain_failure_count = {}  # Track number of failures per domain
         self.max_domain_failures = 3  # Maximum number of failures before longer cooldown
+        
+        # API Configuration
+        self.google_api_key = os.getenv('GOOGLE_API_KEY')
+        self.google_search_engine_id = os.getenv('GOOGLE_SEARCH_ENGINE_ID')
+        self.bing_api_key = os.getenv('BING_API_KEY')
+        
+        # Request tracking
+        self.api_request_counts = {'google': 0, 'bing': 0}
+        self.api_daily_limits = {'google': 100, 'bing': 1000}  # Free tier limits
 
     def should_continue(self) -> bool:
         """Check if we should continue processing based on time limit"""
@@ -138,99 +145,130 @@ class ImageFixer:
             self.domain_failure_count[domain] = self.domain_failure_count.get(domain, 0) + 1
             return None
 
-    async def scrape_openfoodfacts_web(self, session: aiohttp.ClientSession, product_code: str, product_name: str) -> Optional[str]:
-        """Scrape image from OpenFoodFacts website"""
-        url = f"https://world.openfoodfacts.org/product/{product_code}"
+    async def search_google_images_api(self, session: aiohttp.ClientSession, product_code: str, product_name: str) -> Optional[str]:
+        """Search for images using Google Custom Search API"""
+        if not self.google_api_key or not self.google_search_engine_id:
+            logger.warning("Google API key or Search Engine ID not configured")
+            return None
+            
+        if self.api_request_counts['google'] >= self.api_daily_limits['google']:
+            logger.warning("Google API daily limit reached")
+            return None
         
-        try:
-            html = await self.make_request(session, url)
-            if not html:
-                return None
-            
-            soup = BeautifulSoup(html, 'html.parser')
-            
-            # Try to find the product image
-            img_container = soup.select_one('#og_image')
-            if img_container and img_container.get('src'):
-                image_url = img_container.get('src')
-                if await self.verify_image_url(session, image_url):
-                    return image_url
-            
-            # Check product images section
-            product_images = soup.select('.product-images img')
-            for img in product_images:
-                if img.get('src'):
-                    image_url = img.get('src')
-                    # Often thumbnails, try to get larger version
-                    image_url = image_url.replace('.100.', '.400.')
-                    image_url = image_url.replace('.200.', '.400.')
-                    if await self.verify_image_url(session, image_url):
-                        return image_url
-            
-            return None
-        except Exception as e:
-            logger.error(f"Error scraping OpenFoodFacts for {product_code}: {str(e)}")
-            return None
-
-    async def scrape_google_images(self, session: aiohttp.ClientSession, product_code: str, product_name: str) -> Optional[str]:
-        """Scrape image from Google Images"""
         query = f"{product_name} {product_code} product package"
-        url = f"https://www.google.com/search?q={quote(query)}&tbm=isch"
+        url = "https://www.googleapis.com/customsearch/v1"
+        params = {
+            'key': self.google_api_key,
+            'cx': self.google_search_engine_id,
+            'q': query,
+            'searchType': 'image',
+            'num': 5,
+            'imgSize': 'medium',
+            'imgType': 'photo',
+            'safe': 'active'
+        }
         
         try:
-            html = await self.make_request(session, url)
-            if not html:
-                return None
-            
-            soup = BeautifulSoup(html, 'html.parser')
-            
-            # Try data-src attributes first
-            for img in soup.select('img[data-src]'):
-                image_url = img.get('data-src')
-                if await self.verify_image_url(session, image_url):
-                    return image_url
-            
-            # Try src attributes
-            for img in soup.select('img.Q4LuWd'):
-                image_url = img.get('src')
-                if image_url and 'http' in image_url:
-                    if await self.verify_image_url(session, image_url):
-                        return image_url
-            
+            async with session.get(url, params=params) as response:
+                if response.status == 200:
+                    self.api_request_counts['google'] += 1
+                    data = await response.json()
+                    
+                    if 'items' in data:
+                        for item in data['items']:
+                            image_url = item.get('link')
+                            if image_url and await self.verify_image_url(session, image_url):
+                                return image_url
+                elif response.status == 403:
+                    logger.error("Google API quota exceeded or invalid key")
+                    return None
+                else:
+                    logger.warning(f"Google API error: HTTP {response.status}")
+                    
             return None
         except Exception as e:
-            logger.error(f"Error scraping Google Images for {product_name}: {str(e)}")
+            logger.error(f"Error with Google Custom Search API for {product_name}: {str(e)}")
             return None
 
-    async def scrape_bing_images(self, session: aiohttp.ClientSession, product_code: str, product_name: str) -> Optional[str]:
-        """Scrape image from Bing Images"""
+    async def search_bing_images_api(self, session: aiohttp.ClientSession, product_code: str, product_name: str) -> Optional[str]:
+        """Search for images using Bing Image Search API"""
+        if not self.bing_api_key:
+            logger.warning("Bing API key not configured")
+            return None
+            
+        if self.api_request_counts['bing'] >= self.api_daily_limits['bing']:
+            logger.warning("Bing API daily limit reached")
+            return None
+        
         query = f"{product_name} {product_code} food package"
-        url = f"https://www.bing.com/images/search?q={quote(query)}&form=HDRSC2&first=1"
+        url = "https://api.bing.microsoft.com/v7.0/images/search"
+        headers = {
+            'Ocp-Apim-Subscription-Key': self.bing_api_key
+        }
+        params = {
+            'q': query,
+            'count': 5,
+            'size': 'Medium',
+            'imageType': 'Photo',
+            'safeSearch': 'Moderate'
+        }
         
         try:
-            html = await self.make_request(session, url)
-            if not html:
-                return None
-            
-            soup = BeautifulSoup(html, 'html.parser')
-            
-            # Extract image URLs - find murl attributes which contain original images
-            for link in soup.find_all('a', {'class': 'iusc', 'm': True}):
-                try:
-                    m_val = link.get('m')
-                    if m_val:
-                        data = json.loads(m_val)
-                        if 'murl' in data:
-                            image_url = data['murl']
-                            if await self.verify_image_url(session, image_url):
+            async with session.get(url, headers=headers, params=params) as response:
+                if response.status == 200:
+                    self.api_request_counts['bing'] += 1
+                    data = await response.json()
+                    
+                    if 'value' in data:
+                        for item in data['value']:
+                            image_url = item.get('contentUrl')
+                            if image_url and await self.verify_image_url(session, image_url):
                                 return image_url
-                except Exception:
-                    continue
-            
+                elif response.status == 401:
+                    logger.error("Bing API key invalid")
+                    return None
+                elif response.status == 403:
+                    logger.error("Bing API quota exceeded")
+                    return None
+                else:
+                    logger.warning(f"Bing API error: HTTP {response.status}")
+                    
             return None
         except Exception as e:
-            logger.error(f"Error scraping Bing Images for {product_name}: {str(e)}")
+            logger.error(f"Error with Bing Image Search API for {product_name}: {str(e)}")
             return None
+
+    async def search_fallback_generic(self, session: aiohttp.ClientSession, product_code: str, product_name: str) -> Optional[str]:
+        """Fallback to generic food images based on meat type"""
+        # Extract meat type from product name
+        meat_type = "meat"
+        if any(word in product_name.lower() for word in ['beef', 'steak', 'burger']):
+            meat_type = "beef"
+        elif any(word in product_name.lower() for word in ['chicken', 'poultry']):
+            meat_type = "chicken"
+        elif any(word in product_name.lower() for word in ['pork', 'ham', 'bacon']):
+            meat_type = "pork"
+        elif any(word in product_name.lower() for word in ['turkey']):
+            meat_type = "turkey"
+        elif any(word in product_name.lower() for word in ['lamb']):
+            meat_type = "lamb"
+        
+        # Use a curated list of high-quality generic food images
+        generic_images = {
+            'beef': 'https://images.unsplash.com/photo-1551782450-17144efb9c50?w=400',
+            'chicken': 'https://images.unsplash.com/photo-1604503468506-a8da13d82791?w=400',
+            'pork': 'https://images.unsplash.com/photo-1544025162-d76694265947?w=400',
+            'turkey': 'https://images.unsplash.com/photo-1574672280600-4accfa5b6f98?w=400',
+            'lamb': 'https://images.unsplash.com/photo-1529692236671-f1f6cf9683ba?w=400',
+            'meat': 'https://images.unsplash.com/photo-1529692236671-f1f6cf9683ba?w=400'
+        }
+        
+        fallback_url = generic_images.get(meat_type, generic_images['meat'])
+        if await self.verify_image_url(session, fallback_url):
+            logger.info(f"Using generic {meat_type} image for {product_name}")
+            return fallback_url
+            
+        return None
 
     async def verify_image_url(self, session: aiohttp.ClientSession, image_url: str) -> bool:
         """Verify that image URL is valid and accessible"""
@@ -297,70 +335,14 @@ class ImageFixer:
             logger.error(f"Error processing image: {str(e)}")
             return None
 
-    async def scrape_yahoo_images(self, session: aiohttp.ClientSession, product_code: str, product_name: str) -> Optional[str]:
-        """Scrape image from Yahoo Images"""
-        query = f"{product_name} {product_code} food package"
-        url = f"https://images.search.yahoo.com/search/images?p={quote(query)}&fr=yfp-t"
-        
-        try:
-            html = await self.make_request(session, url)
-            if not html:
-                return None
-            
-            soup = BeautifulSoup(html, 'html.parser')
-            
-            # Try to find image URLs
-            for img in soup.select('img'):
-                if img.get('src') and 'http' in img.get('src'):
-                    image_url = img.get('src')
-                    if await self.verify_image_url(session, image_url):
-                        return image_url
-            
-            # Try data-src attributes
-            for img in soup.select('img[data-src]'):
-                image_url = img.get('data-src')
-                if image_url and 'http' in image_url:
-                    if await self.verify_image_url(session, image_url):
-                        return image_url
-            
-            return None
-        except Exception as e:
-            logger.error(f"Error scraping Yahoo Images for {product_name}: {str(e)}")
-            return None
-
-    async def scrape_duckduckgo_images(self, session: aiohttp.ClientSession, product_code: str, product_name: str) -> Optional[str]:
-        """Scrape image from DuckDuckGo Images"""
-        query = f"{product_name} {product_code} food package"
-        url = f"https://duckduckgo.com/?q={quote(query)}&iax=images&ia=images"
-        
-        try:
-            html = await self.make_request(session, url)
-            if not html:
-                return None
-            
-            soup = BeautifulSoup(html, 'html.parser')
-            
-            # Try to find image URLs
-            for img in soup.select('img.tile--img__img'):
-                if img.get('src') and 'http' in img.get('src'):
-                    image_url = img.get('src')
-                    if await self.verify_image_url(session, image_url):
-                        return image_url
-            
-            return None
-        except Exception as e:
-            logger.error(f"Error scraping DuckDuckGo Images for {product_name}: {str(e)}")
-            return None
-
     async def fix_product_image(self, product: Dict, session: aiohttp.ClientSession) -> bool:
         """Fix a single product's image."""
         try:
-            # Try scraping from multiple sources
+            # Try API-based image search
             sources = [
-                self.scrape_google_images,
-                self.scrape_bing_images,
-                self.scrape_yahoo_images,
-                self.scrape_duckduckgo_images
+                self.search_google_images_api,
+                self.search_bing_images_api,
+                self.search_fallback_generic
             ]
             
             for source in sources:
@@ -431,7 +413,7 @@ class ImageFixer:
         conn = await asyncpg.connect(self.database_url, ssl=self.ssl_context)
         
         try:
-            # Get products needing fixes
+            # Get products needing fixes - now looking for any products without image data
             products = await conn.fetch("""
                 SELECT 
                     code,
@@ -439,8 +421,7 @@ class ImageFixer:
                     image_url
                 FROM products 
                 WHERE 
-                    image_url LIKE '%images.openfoodfacts.org/images/products/%'
-                    AND (image_data IS NULL OR octet_length(image_data) = 0)
+                    (image_data IS NULL OR octet_length(image_data) = 0)
                 ORDER BY code
             """)
             
@@ -448,7 +429,10 @@ class ImageFixer:
             logger.info(f"Found {stats['total']} products needing image fixes")
             
             # Process in batches
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(
+                connector=aiohttp.TCPConnector(ssl=self.ssl_context),
+                timeout=aiohttp.ClientTimeout(total=60)
+            ) as session:
                 for i in range(0, len(products), self.batch_size):
                     if not self.should_continue():
                         stats['remaining'] = len(products) - i
