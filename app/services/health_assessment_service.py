@@ -192,9 +192,8 @@ Your Tasks:
 6. For every ingredient in high_risk and moderate_risk, return an entry in the ingredient_reports section that includes:
    - title: ingredient name + category
    - summary: short explanation of what it is and why it matters in meat processing
-   - health_concerns: bulleted list of concerns with in-text citation markers (e.g., "[1]")
+   - health_concerns: bulleted list of concerns (NO citation markers needed)
    - common_uses: where it's commonly used in meat products
-   - citations: citation dictionary with keys matching in-text markers
 
 7. **RECOMMENDATIONS**: Analyze the provided similar products database and recommend up to 5 healthier alternatives that:
    - Are the same meat type (e.g., beef, chicken)
@@ -204,7 +203,7 @@ Your Tasks:
    - Include a summary of why it's a better choice
    If no valid alternatives exist, return an empty array.
 
-8. Append a works_cited array listing all references used, formatted in APA style and linked where possible.
+8. Add a source disclaimer explaining assessments are based on regulatory guidelines and scientific consensus.
 
 MAIN PRODUCT TO ANALYZE:
 {json.dumps(product_data, indent=2)}
@@ -255,14 +254,10 @@ Expected Output (as machine-readable JSON only):
       "title": "Sodium Nitrite – Meat Preservative",
       "summary": "Sodium nitrite is a preservative commonly used in cured meats...",
       "health_concerns": [
-        "May form nitrosamines (potential carcinogens) when heated [1]",
-        "Associated with increased risk of colorectal cancer in high consumption [2]"
+        "May form nitrosamines (potential carcinogens) when heated",
+        "Associated with increased risk of colorectal cancer in high consumption"
       ],
-      "common_uses": "Found in bacon, ham, hot dogs, and other cured meats",
-      "citations": {{
-        "1": "World Health Organization, IARC Monographs",
-        "2": "American Journal of Clinical Nutrition, 2009"
-      }}
+      "common_uses": "Found in bacon, ham, hot dogs, and other cured meats"
     }}
   }},
   "recommendations": [
@@ -280,12 +275,7 @@ Expected Output (as machine-readable JSON only):
       "risk_rating": "Green"
     }}
   ],
-  "works_cited": [
-    {{
-      "id": 1,
-      "citation": "U.S. Food and Drug Administration. (2022). Food Additive Safety. Retrieved from https://fda.gov/..."
-    }}
-  ]
+  "source_disclaimer": "Health assessments are based on regulatory guidelines from FDA, WHO, CDC, and established scientific consensus. Individual health effects may vary."
 }}
 
 CRITICAL GUIDELINES FOR RECOMMENDATIONS:
@@ -297,17 +287,7 @@ CRITICAL GUIDELINES FOR RECOMMENDATIONS:
 - If no suitable alternatives exist, return "recommendations": []
 - Maximum 5 recommendations
 
-Approved Sources:
-- U.S. Food and Drug Administration (FDA) – fda.gov
-- World Health Organization (WHO) – who.int
-- Centers for Disease Control and Prevention (CDC) – cdc.gov
-- USDA FoodData Central – fdc.nal.usda.gov
-- Harvard T.H. Chan School of Public Health – nutritionsource.hsph.harvard.edu
-- National Institutes of Health (NIH) – nih.gov
-- Academy of Nutrition and Dietetics – eatright.org
-- Environmental Working Group (EWG) – ewg.org
-
-You must ignore information from any other source.
+IMPORTANT: Base all health assessments on general scientific consensus from regulatory bodies (FDA, WHO, CDC) and established research. Do not generate specific citations, studies, or URLs. Focus on providing accurate health information based on established knowledge.
 
 Respond with valid JSON only."""
     
