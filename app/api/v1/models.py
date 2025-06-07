@@ -317,6 +317,8 @@ class HealthAssessment(BaseModel):
     ingredient_reports: Dict[str, IngredientReport] = Field(default_factory=dict)
     works_cited: List[WorksCited] = Field(default_factory=list)
     recommendations: List[ProductRecommendation] = Field(default_factory=list)
+    source_disclaimer: Optional[str] = None
+    real_citations: Optional[Dict[str, str]] = Field(default_factory=dict)
 
 
 # Social Authentication Models

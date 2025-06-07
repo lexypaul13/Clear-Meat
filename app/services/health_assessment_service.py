@@ -13,8 +13,18 @@ from app.core.config import settings
 from app.core.cache import cache  # Use unified cache
 from app.models.product import HealthAssessment, ProductStructured
 from app.db import models as db_models
+from app.services.health_assessment_with_citations import HealthAssessmentWithCitations
 
 logger = logging.getLogger(__name__)
+
+class HealthAssessmentService:
+    def __init__(self):
+        if not settings.GEMINI_API_KEY:
+            raise ValueError("Gemini API key not configured")
+        
+        # Configure Gemini API key
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        self.citation_service = HealthAssessmentWithCitations()  # Add citation service
 
 def generate_health_assessment(product: ProductStructured, db: Optional[Session] = None) -> Optional[HealthAssessment]:
     """
@@ -315,4 +325,28 @@ def _parse_gemini_response(response_text: str) -> Optional[HealthAssessment]:
         return None
     except ValidationError as e:
         logger.error(f"Failed to validate Gemini response against HealthAssessment model: {e}")
-        return None 
+        return None
+
+def generate_health_assessment_with_citations_option(
+    product: ProductStructured, 
+    db: Optional[Session] = None, 
+    include_citations: bool = False
+) -> Optional[HealthAssessment]:
+    """
+    Generate health assessment with optional real citations.
+    
+    Args:
+        product: The structured product data to analyze
+        db: Database session for finding similar products  
+        include_citations: Whether to include real scientific citations
+        
+    Returns:
+        HealthAssessment with or without real citations
+    """
+    if include_citations:
+        logger.info(f"Generating citation-enhanced health assessment for {product.product.code}")
+        service = HealthAssessmentService()
+        return service.citation_service.generate_health_assessment_with_real_citations(product, db)
+    else:
+        logger.info(f"Generating standard health assessment for {product.product.code}")
+        return generate_health_assessment(product, db) 

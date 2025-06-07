@@ -20,7 +20,7 @@ from app.internal.dependencies import get_current_active_user
 from app.services.recommendation_service import (
     get_personalized_recommendations, analyze_product_match
 )
-from app.services.health_assessment_service import generate_health_assessment
+from app.services.health_assessment_service import generate_health_assessment, generate_health_assessment_with_citations_option
 from app.services.search_service import search_products
 from app.utils.personalization import apply_user_preferences
 
@@ -763,5 +763,84 @@ def get_product_health_assessment(
         raise HTTPException(
             status_code=500,
             detail=f"Error generating health assessment: {str(e)}"
+        )
+
+@router.get("/{code}/health-assessment-with-citations", response_model=models.HealthAssessment)
+def get_product_health_assessment_with_citations(
+    code: str,
+    include_citations: bool = Query(default=True, description="Include real scientific citations"),
+    user_preferences: Optional[str] = Query(
+        None, 
+        description="JSON string of user health preferences"
+    ),
+    db: Session = Depends(get_db),
+    current_user: db_models.User = Depends(get_current_active_user)
+) -> models.HealthAssessment:
+    """
+    Get health assessment for a product with real scientific citations.
+    
+    This endpoint provides enhanced health assessments backed by real scientific
+    citations from PubMed and CrossRef databases, eliminating fake citation hallucination.
+    
+    Args:
+        code: Product barcode/identifier
+        include_citations: Whether to include real scientific citations (default: True)
+        user_preferences: JSON string of user health preferences
+        db: Database session
+        current_user: Current active user
+        
+    Returns:
+        models.HealthAssessment: Enhanced health assessment with real citations
+    """
+    try:
+        logger.info(f"Getting citation-enhanced health assessment for product {code} (user: {current_user.id})")
+        
+        # Get product from database
+        product = db.query(db_models.Product).filter(db_models.Product.code == code).first()
+        if not product:
+            logger.warning(f"Product not found: {code}")
+            raise HTTPException(status_code=404, detail="Product not found")
+        
+        # Convert to structured format
+        structured_product = helpers.convert_to_structured_product(product)
+        
+        # Parse user preferences if provided
+        parsed_preferences = None
+        if user_preferences:
+            try:
+                parsed_preferences = json.loads(user_preferences)
+                logger.info(f"Parsed user preferences: {parsed_preferences}")
+            except json.JSONDecodeError:
+                logger.warning(f"Invalid JSON in user preferences: {user_preferences}")
+                # Continue without preferences rather than failing
+        
+        # Generate assessment with citation option
+        assessment = generate_health_assessment_with_citations_option(
+            structured_product, 
+            db=db, 
+            include_citations=include_citations
+        )
+        
+        if not assessment:
+            logger.error(f"Failed to generate health assessment for product {code}")
+            raise HTTPException(
+                status_code=500, 
+                detail="Failed to generate health assessment"
+            )
+        
+        # Apply user preferences if provided
+        if parsed_preferences:
+            assessment = apply_user_preferences(assessment, parsed_preferences)
+        
+        logger.info(f"Successfully generated citation-enhanced health assessment for product {code}")
+        return assessment
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in citation-enhanced health assessment for {code}: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail="Internal server error generating health assessment"
         )
 

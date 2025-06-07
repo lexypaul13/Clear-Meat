@@ -246,4 +246,61 @@ def assess_environmental_impact(product: Union[models.ProductBase, Dict[str, Any
         "impact": impact,
         "details": details,
         "sustainability_practices": practices
-    } 
+    }
+
+
+def convert_to_structured_product(product: db_models.Product) -> models.ProductStructured:
+    """
+    Convert a database Product model to a ProductStructured model.
+    
+    Args:
+        product: Database product model
+        
+    Returns:
+        ProductStructured: Structured product model for API responses
+    """
+    # Extract additives from ingredients text
+    additives = extract_additives_from_text(product.ingredients_text or "")
+    
+    # Assess health concerns based on data
+    health_concerns = assess_health_concerns(product)
+    
+    # Create environmental impact assessment
+    env_impact = assess_environmental_impact(product)
+    
+    # Build structured response
+    return models.ProductStructured(
+        product=models.ProductInfo(
+            code=product.code,
+            name=product.name,
+            brand=product.brand,
+            description=product.description,
+            ingredients_text=product.ingredients_text,
+            image_url=product.image_url,
+            image_data=product.image_data,
+            meat_type=product.meat_type
+        ),
+        criteria=models.ProductCriteria(
+            risk_rating=product.risk_rating,
+            additives=additives
+        ),
+        health=models.ProductHealth(
+            nutrition=models.ProductNutrition(
+                calories=product.calories,
+                protein=product.protein,
+                fat=product.fat,
+                carbohydrates=product.carbohydrates,
+                salt=product.salt
+            ),
+            health_concerns=health_concerns
+        ),
+        environment=models.ProductEnvironment(
+            impact=env_impact["impact"],
+            details=env_impact["details"],
+            sustainability_practices=env_impact["sustainability_practices"]
+        ),
+        metadata=models.ProductMetadata(
+            last_updated=product.last_updated,
+            created_at=product.created_at
+        )
+    ) 

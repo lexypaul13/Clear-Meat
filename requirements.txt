@@ -40,3 +40,11 @@ passlib[bcrypt]>=1.7.4
 python-multipart>=0.0.6
 backoff>=2.2.0 
 google-generativeai>=0.3.0 
+
+# Citation and research tools
+crossref-commons>=0.0.7  # CrossRef API for DOI lookup
+pymed>=0.8.9  # PubMed client for medical research
+newspaper3k>=0.2.8  # Web article parsing
+
+# MCP (Model Context Protocol) support
+fastmcp>=0.1.0  # FastMCP for creating MCP servers 
