@@ -15,8 +15,8 @@ sequenceDiagram
 
     Note over U,Cache: ❌ PROBLEM: API was generating fake citations with made-up URLs
     
-    U->>API: GET /products/{code}/health-assessment-with-citations?include_citations=true
-    Note over U,API: 📝 Caption: User requests health assessment with real citations
+    U->>API: GET /products/{code}/health-assessment?include_citations=true
+    Note over U,API: 📝 Caption: User requests health assessment with real citations (default behavior)
     
     API->>API: 🔐 Validate JWT Token
     Note over API: 📝 Caption: Secure authentication prevents API abuse

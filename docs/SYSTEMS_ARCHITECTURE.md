@@ -10,7 +10,7 @@
 graph TB
     %% User Request Layer
     User[👤 User] --> API[🌐 FastAPI Endpoint]
-    API --> |"/products/{code}/health-assessment-with-citations"| Auth[🔐 Authentication]
+    API --> |"/products/{code}/health-assessment?include_citations=true"| Auth[🔐 Authentication]
     
     %% Core Processing Layer
     Auth --> HealthService[⚡ Health Assessment Service]
@@ -63,12 +63,12 @@ graph TB
 ### **1. API Gateway Layer**
 ```
 🌐 FastAPI Endpoint
-├── Route: /api/v1/products/{code}/health-assessment-with-citations
+├── Route: /api/v1/products/{code}/health-assessment
 ├── Method: GET
-├── Query Params: include_citations=true/false
+├── Query Params: include_citations=true/false (default: true)
 └── Authentication: JWT Required
 ```
-**Caption**: *Entry point for citation-enhanced health assessments with secure authentication to prevent API abuse.*
+**Caption**: *Entry point for health assessments with real scientific citations enabled by default.*
 
 ### **2. Core Processing Engine**
 ```
