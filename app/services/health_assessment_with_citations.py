@@ -94,9 +94,30 @@ class HealthAssessmentWithCitations:
             return None
     
     def _generate_basic_assessment(self, product: ProductStructured) -> Optional[Dict[str, Any]]:
-        """Generate basic health assessment without citations."""
+        """Generate basic health assessment using full assessment service."""
         try:
-            # Use the existing prompt but modified to not request citations
+            # Import the main health assessment service
+            from app.services.health_assessment_service import generate_health_assessment
+            
+            # Generate full structured assessment
+            full_assessment = generate_health_assessment(product, db=None)
+            
+            if full_assessment:
+                # Convert HealthAssessment model to dict for processing
+                assessment_dict = full_assessment.model_dump()
+                print(f"[Citation Engine] Generated structured assessment with {len(assessment_dict.get('ingredients_assessment', {}).get('high_risk', []))} high-risk ingredients")
+                return assessment_dict
+            else:
+                # Fallback to simple assessment
+                return self._generate_simple_fallback_assessment(product)
+                
+        except Exception as e:
+            logger.error(f"Error generating structured assessment: {e}")
+            return self._generate_simple_fallback_assessment(product)
+    
+    def _generate_simple_fallback_assessment(self, product: ProductStructured) -> Dict[str, Any]:
+        """Generate simple assessment if structured assessment fails."""
+        try:
             prompt = self._build_basic_assessment_prompt(product)
             
             response = genai.GenerativeModel(settings.GEMINI_MODEL).generate_content(
@@ -104,8 +125,6 @@ class HealthAssessmentWithCitations:
                 generation_config=genai.GenerationConfig(temperature=0)
             )
             
-            # Parse the response (simplified for this example)
-            # In a real implementation, you'd parse this into structured data
             assessment_text = response.text
             
             return {
@@ -115,18 +134,49 @@ class HealthAssessmentWithCitations:
             }
             
         except Exception as e:
-            logger.error(f"Error generating basic assessment: {e}")
-            return None
+            logger.error(f"Error generating fallback assessment: {e}")
+            return {
+                "summary": "Assessment unavailable",
+                "assessment_text": "",
+                "risk_summary": {"grade": "C", "color": "Yellow"}
+            }
     
     def _extract_high_risk_ingredients(self, basic_assessment: Dict[str, Any]) -> List[str]:
-        """Extract high-risk ingredients from basic assessment."""
-        # This is a simplified extraction. In a real implementation,
-        # you'd parse the structured assessment to identify high-risk ingredients
+        """Extract high-risk ingredients from Gemini's risk categorization."""
+        try:
+            # Try to parse structured assessment if available
+            if "ingredients_assessment" in basic_assessment:
+                ingredients_assessment = basic_assessment["ingredients_assessment"]
+                high_risk_ingredients = []
+                
+                # Extract from high_risk category
+                for ingredient in ingredients_assessment.get("high_risk", []):
+                    if isinstance(ingredient, dict) and "name" in ingredient:
+                        high_risk_ingredients.append(ingredient["name"])
+                
+                # Optionally include moderate_risk ingredients for more comprehensive citations
+                # Uncomment the next 4 lines to also cite moderate-risk ingredients:
+                # for ingredient in ingredients_assessment.get("moderate_risk", []):
+                #     if isinstance(ingredient, dict) and "name" in ingredient:
+                #         high_risk_ingredients.append(ingredient["name"])
+                
+                print(f"[Citation Engine] Extracted from Gemini risk analysis: {high_risk_ingredients}")
+                return high_risk_ingredients
+                
+        except Exception as e:
+            logger.warning(f"Could not parse structured assessment: {e}")
         
-        # Common high-risk ingredients in meat products
+        # Fallback to text parsing if structured data unavailable
+        return self._fallback_text_extraction(basic_assessment)
+    
+    def _fallback_text_extraction(self, basic_assessment: Dict[str, Any]) -> List[str]:
+        """Fallback method using text parsing (original approach)."""
+        # Expanded list based on common meat product preservatives
         common_high_risk = [
             "BHA", "BHT", "Sodium Nitrite", "Sodium Nitrate", 
-            "Potassium Nitrite", "Potassium Nitrate", "TBHQ"
+            "Potassium Nitrite", "Potassium Nitrate", "TBHQ",
+            "Sodium Benzoate", "MSG", "Monosodium Glutamate",
+            "Sodium Phosphate", "Potassium Sorbate"
         ]
         
         assessment_text = basic_assessment.get("assessment_text", "").upper()
@@ -136,6 +186,7 @@ class HealthAssessmentWithCitations:
             if ingredient.upper() in assessment_text:
                 found_ingredients.append(ingredient)
         
+        print(f"[Citation Engine] Fallback text extraction found: {found_ingredients}")
         return found_ingredients
     
     def _search_citations_for_ingredient(self, ingredient: str) -> List:

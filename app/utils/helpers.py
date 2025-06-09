@@ -246,7 +246,7 @@ def assess_environmental_impact(product: Union[models.ProductBase, Dict[str, Any
         "impact": impact,
         "details": details,
         "sustainability_practices": practices
-    }
+    } 
 
 
 def convert_to_structured_product(product: db_models.Product) -> models.ProductStructured:

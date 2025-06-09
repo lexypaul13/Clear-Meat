@@ -184,7 +184,7 @@ def get_products(
             query = query.offset(skip)
         if limit > 0:
             query = query.limit(limit)
-            
+        
         # Execute the query
         products = query.all()
             
@@ -641,7 +641,7 @@ def get_product_health_assessment(
         
         # Convert to structured format using the helper function
         structured_product = helpers.convert_to_structured_product(product)
-        
+            
         # Generate health assessment with citation option
         assessment = generate_health_assessment_with_citations_option(
             structured_product, 
