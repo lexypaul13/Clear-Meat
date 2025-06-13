@@ -15,14 +15,14 @@ from sqlalchemy.orm import Session
 
 from app.models import Ingredient
 from app.db import models as db_models
-from app.db.session import get_db
+from app.db.supabase_client import get_supabase_service
 
 router = APIRouter()
 
 
 @router.get("/", response_model=List[Ingredient])
 def get_ingredients(
-    db: Session = Depends(get_db),
+    supabase_service = Depends(get_supabase_service),
     skip: int = 0,
     limit: int = 100,
     category: Optional[str] = None,
@@ -74,7 +74,7 @@ def get_ingredients(
 @router.get("/{ingredient_id}", response_model=Ingredient)
 def get_ingredient(
     ingredient_id: str,
-    db: Session = Depends(get_db),
+    supabase_service = Depends(get_supabase_service),
 ) -> Any:
     """
     Get a specific ingredient by ID.

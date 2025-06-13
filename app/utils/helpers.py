@@ -304,3 +304,60 @@ def convert_to_structured_product(product: db_models.Product) -> models.ProductS
             created_at=product.created_at
         )
     ) 
+
+
+def convert_dict_to_structured_product(product_data: Dict[str, Any]) -> models.ProductStructured:
+    """
+    Convert a dictionary (from Supabase) to a ProductStructured model.
+    
+    Args:
+        product_data: Dictionary containing product data from Supabase
+        
+    Returns:
+        ProductStructured: Structured product model for API responses
+    """
+    # Extract additives from ingredients text
+    additives = extract_additives_from_text(product_data.get('ingredients_text', '') or "")
+    
+    # Assess health concerns based on data
+    health_concerns = assess_health_concerns(product_data)
+    
+    # Create environmental impact assessment
+    env_impact = assess_environmental_impact(product_data)
+    
+    # Build structured response
+    return models.ProductStructured(
+        product=models.ProductInfo(
+            code=product_data.get('code', ''),
+            name=product_data.get('name', ''),
+            brand=product_data.get('brand', ''),
+            description=product_data.get('description', ''),
+            ingredients_text=product_data.get('ingredients_text', ''),
+            image_url=product_data.get('image_url', ''),
+            image_data=product_data.get('image_data', ''),
+            meat_type=product_data.get('meat_type', '')
+        ),
+        criteria=models.ProductCriteria(
+            risk_rating=product_data.get('risk_rating', ''),
+            additives=additives
+        ),
+        health=models.ProductHealth(
+            nutrition=models.ProductNutrition(
+                calories=product_data.get('calories'),
+                protein=product_data.get('protein'),
+                fat=product_data.get('fat'),
+                carbohydrates=product_data.get('carbohydrates'),
+                salt=product_data.get('salt')
+            ),
+            health_concerns=health_concerns
+        ),
+        environment=models.ProductEnvironment(
+            impact=env_impact["impact"],
+            details=env_impact["details"],
+            sustainability_practices=env_impact["sustainability_practices"]
+        ),
+        metadata=models.ProductMetadata(
+            last_updated=product_data.get('last_updated'),
+            created_at=product_data.get('created_at')
+        )
+    ) 

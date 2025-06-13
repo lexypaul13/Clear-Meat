@@ -3,6 +3,7 @@ import json
 import logging
 import time
 import random
+import re
 from typing import Dict, Any, Optional, List
 
 import google.generativeai as genai
@@ -12,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.cache import cache  # Use unified cache
 from app.models.product import HealthAssessment, ProductStructured
+from app.api.v1.models import EnhancedHealthAssessment, Citation
 from app.db import models as db_models
 from app.services.health_assessment_with_citations import HealthAssessmentWithCitations
 
@@ -349,4 +351,133 @@ def generate_health_assessment_with_citations_option(
         return service.citation_service.generate_health_assessment_with_real_citations(product, db)
     else:
         logger.info(f"Generating standard health assessment for {product.product.code}")
-        return generate_health_assessment(product, db) 
+        return generate_health_assessment(product, db)
+
+def convert_to_enhanced_assessment(assessment: HealthAssessment) -> EnhancedHealthAssessment:
+    """
+    Convert a standard HealthAssessment to an EnhancedHealthAssessment with richer citation metadata.
+    
+    Args:
+        assessment: Standard health assessment object
+        
+    Returns:
+        EnhancedHealthAssessment: Enhanced assessment with detailed citation metadata
+    """
+    # Extract citations from works_cited and real_citations
+    citations = []
+    cited_ingredients = []
+    citation_sources = []
+    
+    # Process works_cited entries
+    if assessment.works_cited:
+        for work in assessment.works_cited:
+            # Parse the citation text to extract metadata
+            citation_text = work.citation
+            
+            # Default citation with minimal information
+            citation = Citation(
+                title="Citation information",
+                authors=["Unknown"],
+                formatted=citation_text
+            )
+            
+            # Try to extract more metadata if available in real_citations
+            if assessment.real_citations and str(work.id) in assessment.real_citations:
+                real_citation = assessment.real_citations[str(work.id)]
+                
+                # Parse the real citation string - typically in APA format
+                # Example: "Author, A. (2020). Title. Journal, 10(2), 123-145. doi:10.1000/xyz123"
+                try:
+                    # Extract DOI if present
+                    doi_match = re.search(r'doi:([^\s]+)', real_citation)
+                    doi = doi_match.group(1) if doi_match else None
+                    
+                    # Extract PMID if present
+                    pmid_match = re.search(r'PMID:?\s*(\d+)', real_citation)
+                    pmid = pmid_match.group(1) if pmid_match else None
+                    
+                    # Extract year if present
+                    year_match = re.search(r'\((\d{4})\)', real_citation)
+                    year = int(year_match.group(1)) if year_match else None
+                    
+                    # Extract journal if present
+                    journal_match = re.search(r'\)\.\s*([^\.]+)\,', real_citation)
+                    journal = journal_match.group(1).strip() if journal_match else None
+                    
+                    # Extract title - text between author and journal
+                    title_match = re.search(r'\)\.\s*([^\.]+)\.', real_citation)
+                    title = title_match.group(1).strip() if title_match else "Unknown title"
+                    
+                    # Extract authors - text before year
+                    authors_text = real_citation.split('(')[0].strip()
+                    authors = [a.strip() for a in authors_text.split(',') if a.strip()]
+                    if not authors:
+                        authors = ["Unknown"]
+                    
+                    # Create enhanced citation
+                    citation = Citation(
+                        title=title,
+                        authors=authors,
+                        journal=journal,
+                        year=year,
+                        doi=doi,
+                        pmid=pmid,
+                        formatted=real_citation
+                    )
+                    
+                    # Add to citation sources
+                    if doi and "doi.org" not in citation_sources:
+                        citation_sources.append("doi.org")
+                    if pmid and "pubmed.gov" not in citation_sources:
+                        citation_sources.append("pubmed.gov")
+                        
+                except Exception as e:
+                    # If parsing fails, keep the default citation
+                    logger.warning(f"Error parsing citation: {e}")
+            
+            citations.append(citation)
+    
+    # Extract cited ingredients from ingredient reports
+    if assessment.ingredient_reports:
+        for ingredient_name in assessment.ingredient_reports:
+            # Check if the ingredient report has citations
+            report = assessment.ingredient_reports[ingredient_name]
+            if report.citations and len(report.citations) > 0:
+                cited_ingredients.append(ingredient_name)
+    
+    # Calculate citation grade based on number and quality of citations
+    citation_grade = "N/A"
+    citation_count = len(citations)
+    
+    if citation_count > 0:
+        # Count citations with DOIs or PMIDs (higher quality)
+        verified_citations = sum(1 for c in citations if c.doi or c.pmid)
+        
+        if citation_count >= 5 and verified_citations >= 3:
+            citation_grade = "A"
+        elif citation_count >= 3 and verified_citations >= 2:
+            citation_grade = "B"
+        elif citation_count >= 1 and verified_citations >= 1:
+            citation_grade = "C"
+        else:
+            citation_grade = "D"
+    
+    # Create the enhanced assessment
+    enhanced = EnhancedHealthAssessment(
+        summary=assessment.summary,
+        risk_summary=assessment.risk_summary,
+        nutrition_labels=assessment.nutrition_labels,
+        ingredients_assessment=assessment.ingredients_assessment,
+        ingredient_reports=assessment.ingredient_reports,
+        recommendations=assessment.recommendations,
+        source_disclaimer=assessment.source_disclaimer,
+        
+        # Enhanced citation fields
+        citation_count=citation_count,
+        citations=citations,
+        citation_grade=citation_grade,
+        citation_sources=citation_sources,
+        cited_ingredients=cited_ingredients
+    )
+    
+    return enhanced 

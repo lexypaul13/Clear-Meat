@@ -14,7 +14,7 @@ from app.core import security
 from app.core.config import settings
 from app.core.supabase import supabase, admin_supabase
 from app.db import models as db_models
-from app.db.session import get_db
+from app.db.supabase_client import get_supabase_service
 import logging
 
 router = APIRouter()

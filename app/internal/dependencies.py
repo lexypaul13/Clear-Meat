@@ -12,7 +12,7 @@ from typing import Optional
 
 from app.core.config import settings
 from app.core.supabase import supabase, admin_supabase
-from app.db.session import get_db
+from app.db.supabase_client import get_supabase_service
 from app.models import TokenPayload
 from app.db import models as db_models
 
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_current_user(
-    db: Session = Depends(get_db), 
+    supabase_service = Depends(get_supabase_service), 
     token: str = Depends(oauth2_scheme)
 ) -> db_models.User:
     """
@@ -30,7 +30,7 @@ def get_current_user(
     If Supabase verification fails, falls back to manual JWT verification.
     
     Args:
-        db: Database session
+        supabase_service: Supabase service instance
         token: OAuth2 token
         
     Returns:
@@ -149,7 +149,7 @@ def get_current_user(
                         
                         # Get user from database - for authenticated tokens
                         logger.debug(f"Looking up user in database: {payload['sub']}")
-                        user = db.query(db_models.User).filter(db_models.User.id == payload["sub"]).first()
+                        user = supabase_service.query(db_models.User).filter(db_models.User.id == payload["sub"]).first()
                         if not user:
                             logger.warning(f"User not found in database: {payload['sub']}")
                             raise credentials_exception
@@ -190,7 +190,7 @@ def get_current_user(
                 
                     # Legacy token handling
                     logger.debug(f"Legacy token - looking up user: {payload['sub']}")
-                    user = db.query(db_models.User).filter(db_models.User.id == payload["sub"]).first()
+                    user = supabase_service.query(db_models.User).filter(db_models.User.id == payload["sub"]).first()
                     if not user:
                         logger.warning(f"User not found in database: {payload['sub']}")
                         raise credentials_exception
@@ -228,7 +228,7 @@ def get_current_user(
             logger.debug(f"Successfully verified token for user {user_id}")
             
             # Try to fetch user from our database
-            user = db.query(db_models.User).filter(db_models.User.id == user_id).first()
+            user = supabase_service.query(db_models.User).filter(db_models.User.id == user_id).first()
             
             if user:
                 # User found in database - ensure ID is string
@@ -257,14 +257,14 @@ def get_current_user(
                 # Add the user to the database to avoid recreating it on every request
                 # This might fail if there are transaction/timing issues with auth.users
                 try:
-                    db.add(new_user)
-                    db.commit()
-                    db.refresh(new_user)
+                    supabase_service.add(new_user)
+                    supabase_service.commit()
+                    supabase_service.refresh(new_user)
                     logger.info(f"Created new user record for Supabase user {user_id}")
                     return new_user
                 except Exception as insert_exc:
                     logger.error(f"Failed to insert user {user_id} into local DB: {insert_exc}")
-                    db.rollback()
+                    supabase_service.rollback()
                     # If insert fails, fall back to manual verification for this request
                     logger.warning("Falling back to manual verification due to DB insert failure.")
                     return verify_manually()
@@ -285,7 +285,7 @@ def get_current_user(
             logger.warning(f"Supabase/DB error during user lookup/creation: {str(e)}. Falling back to manual verification.")
             # Rollback any potential transaction changes from failed insert attempt
             try:
-                db.rollback()
+                supabase_service.rollback()
             except Exception as rb_exc:
                  logger.error(f"Error during rollback: {rb_exc}")
             return verify_manually()
@@ -342,20 +342,20 @@ def get_current_superuser(
 
 
 def get_current_user_optional(
-    db: Session = Depends(get_db),
+    supabase_service = Depends(get_supabase_service),
     token: str = Depends(oauth2_scheme),
 ) -> Optional[db_models.User]:
     """
     Get the current user from the token, but return None if token is invalid or missing.
     
     Args:
-        db: Database session
+        supabase_service: Supabase service instance
         token: OAuth2 token
         
     Returns:
         User: User object or None
     """
     try:
-        return get_current_user(db=db, token=token)
+        return get_current_user(supabase_service=supabase_service, token=token)
     except HTTPException:
         return None 

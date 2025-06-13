@@ -10,8 +10,7 @@ from pydantic import EmailStr
 from app.api.v1 import models
 from app.core import security
 from app.db import models as db_models
-from app.db.session import get_db
-from app.db.connection import is_using_local_db
+from app.db.supabase_client import get_supabase_service
 from app.internal.dependencies import get_current_active_user
 from app.services.recommendation_service import (
     get_personalized_recommendations, analyze_product_match
@@ -26,7 +25,7 @@ router = APIRouter()
 
 @router.get("/me", response_model=models.User)
 def get_current_user(
-    db: Session = Depends(get_db),
+    supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user)
 ) -> Any:
     """
@@ -45,7 +44,7 @@ def get_current_user(
 @router.put("/me", response_model=models.User)
 def update_current_user(
     user_in: models.UserUpdate,
-    db: Session = Depends(get_db),
+    supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user)
 ) -> Any:
     """
@@ -66,12 +65,16 @@ def update_current_user(
         update_data["hashed_password"] = security.get_password_hash(update_data["password"])
         del update_data["password"]
     
+    # Update user profile via Supabase
+    updated_user = supabase_service.update_user_profile(current_user.id, update_data)
+    
+    if not updated_user:
+        raise HTTPException(status_code=500, detail="Failed to update user profile")
+    
+    # Update the current_user object for return
     for key, value in update_data.items():
         setattr(current_user, key, value)
     
-    db.add(current_user)
-    db.commit()
-    db.refresh(current_user)
     return current_user
 
 

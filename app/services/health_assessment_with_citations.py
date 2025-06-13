@@ -195,10 +195,16 @@ class HealthAssessmentWithCitations:
             search_params = CitationSearch(
                 ingredient=ingredient,
                 health_claim="health effects toxicity carcinogenic",
-                max_results=2,  # Limit to 2 citations per ingredient
+                max_results=2,
+                
+                # Enable all sources for a comprehensive search
                 search_pubmed=True,
                 search_crossref=True,
-                search_web=False
+                search_semantic_scholar=True,
+                search_fda=True,
+                search_who=True,
+                search_harvard_health=True,
+                search_web=False  # Keep general web search off
             )
             
             result = self.citation_service.search_citations(search_params)

@@ -14,13 +14,17 @@ import uuid
 
 from app.api.v1 import models
 from app.db import models as db_models
-from app.db.connection import get_db, get_supabase_client, is_using_local_db
+from app.db.supabase_client import get_supabase_service
 from app.utils import helpers
 from app.internal.dependencies import get_current_active_user
 from app.services.recommendation_service import (
     get_personalized_recommendations, analyze_product_match
 )
-from app.services.health_assessment_service import generate_health_assessment, generate_health_assessment_with_citations_option
+from app.services.health_assessment_service import (
+    generate_health_assessment, 
+    generate_health_assessment_with_citations_option,
+    convert_to_enhanced_assessment
+)
 from app.services.search_service import search_products
 from app.utils.personalization import apply_user_preferences
 
@@ -72,7 +76,7 @@ def natural_language_search(
     q: str = Query(..., description="Natural language search query"),
     limit: int = Query(20, ge=1, le=100, description="Maximum number of results to return"),
     skip: int = Query(0, ge=0, description="Number of results to skip for pagination"),
-    db: Session = Depends(get_db),
+    supabase_service = Depends(get_supabase_service),
 ) -> Dict[str, Any]:
     """
     Search for products using natural language queries.
@@ -110,8 +114,8 @@ def natural_language_search(
                 detail="Search query contains invalid characters"
             )
         
-        # Perform the search using our search service
-        results = search_products(sanitized_query, db, limit=limit, skip=skip)
+        # Perform the search using Supabase service
+        results = supabase_service.search_products(sanitized_query, limit=limit, offset=skip)
         
         return {
             "query": sanitized_query,  # Return sanitized query
@@ -132,12 +136,12 @@ def natural_language_search(
 
 @router.get("/count", response_model=Dict[str, int])
 def get_product_count(
-    db: Session = Depends(get_db),
+    supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user)
 ) -> Dict[str, int]:
     """Get total count of products in database."""
     try:
-        total = db.query(db_models.Product).count()
+        total = supabase_service.count_products()
         return {"total": total}
     except Exception as e:
         raise HTTPException(
@@ -147,7 +151,7 @@ def get_product_count(
 
 @router.get("/", response_model=List[models.Product])
 def get_products(
-    db: Session = Depends(get_db),
+    supabase_service = Depends(get_supabase_service),
     skip: int = Query(0, ge=0, description="Number of products to skip"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of products to return"),
     risk_rating: Optional[str] = Query(None, description="Filter by risk rating (Green, Yellow, Red)"),
@@ -167,94 +171,38 @@ def get_products(
         List[models.Product]: List of products
     """
     try:
-        # Build the base query
-        query = db.query(db_models.Product)
+        # Get products from Supabase
+        products_data = supabase_service.get_products(limit=limit, offset=skip)
         
         # Apply risk rating filter if provided
         if risk_rating is not None:
             risk_rating = risk_rating.strip()
             if risk_rating in ["Green", "Yellow", "Red"]:
-                query = query.filter(db_models.Product.risk_rating == risk_rating)
-        
-        # Add ordering for consistent results
-        query = query.order_by(db_models.Product.created_at.desc())
-        
-        # Apply pagination
-        if skip > 0:
-            query = query.offset(skip)
-        if limit > 0:
-            query = query.limit(limit)
-        
-        # Execute the query
-        products = query.all()
+                products_data = [p for p in products_data if p.get('risk_rating') == risk_rating]
             
         # Convert to Pydantic models
         result = []
-        for product in products:
+        for product_dict in products_data:
             try:
-                # Use model_validate for Pydantic v2 or parse_obj for v1
-                product_model = models.Product.model_validate({
-                    "code": product.code,
-                    "name": product.name,
-                    "brand": product.brand,
-                    "description": product.description,
-                    "ingredients_text": product.ingredients_text,
-                    "calories": product.calories,
-                    "protein": product.protein,
-                    "fat": product.fat,
-                    "carbohydrates": product.carbohydrates,
-                    "salt": product.salt,
-                    "meat_type": product.meat_type,
-                    "risk_rating": product.risk_rating,
-                    "image_url": product.image_url,
-                    "image_data": product.image_data,
-                    "last_updated": product.last_updated,
-                    "created_at": product.created_at
-                })
+                product_model = models.Product(
+                    code=product_dict.get('code', ''),
+                    name=product_dict.get('name', ''),
+                    brand=product_dict.get('brand', ''),
+                    description=product_dict.get('description', ''),
+                    ingredients_text=product_dict.get('ingredients_text', ''),
+                    calories=product_dict.get('calories'),
+                    protein=product_dict.get('protein'),
+                    fat=product_dict.get('fat'),
+                    carbohydrates=product_dict.get('carbohydrates'),
+                    salt=product_dict.get('salt'),
+                    meat_type=product_dict.get('meat_type', ''),
+                    risk_rating=product_dict.get('risk_rating', ''),
+                    image_url=product_dict.get('image_url', ''),
+                    image_data=product_dict.get('image_data', ''),
+                    last_updated=product_dict.get('last_updated'),
+                    created_at=product_dict.get('created_at')
+                )
                 result.append(product_model)
-            except AttributeError:
-                # Fallback for Pydantic v1
-                try:
-                    product_model = models.Product.parse_obj({
-                        "code": product.code,
-                        "name": product.name,
-                        "brand": product.brand,
-                        "description": product.description,
-                        "ingredients_text": product.ingredients_text,
-                        "calories": product.calories,
-                        "protein": product.protein,
-                        "fat": product.fat,
-                        "carbohydrates": product.carbohydrates,
-                        "salt": product.salt,
-                        "meat_type": product.meat_type,
-                        "risk_rating": product.risk_rating,
-                        "image_url": product.image_url,
-                        "image_data": product.image_data,
-                        "last_updated": product.last_updated,
-                        "created_at": product.created_at
-                    })
-                    result.append(product_model)
-                except Exception:
-                    # Final fallback: direct construction
-                    product_model = models.Product(
-                        code=product.code,
-                        name=product.name,
-                        brand=product.brand,
-                        description=product.description,
-                        ingredients_text=product.ingredients_text,
-                        calories=product.calories,
-                        protein=product.protein,
-                        fat=product.fat,
-                        carbohydrates=product.carbohydrates,
-                        salt=product.salt,
-                        meat_type=product.meat_type,
-                        risk_rating=product.risk_rating,
-                        image_url=product.image_url,
-                        image_data=product.image_data,
-                        last_updated=product.last_updated,
-                        created_at=product.created_at
-                    )
-                    result.append(product_model)
             except Exception as e:
                 continue
                 
@@ -268,7 +216,7 @@ def get_products(
 
 @router.get("/recommendations", response_model=models.RecommendationResponse)
 def get_product_recommendations(
-    db: Session = Depends(get_db),
+    supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user),
     limit: int = Query(30, ge=1, le=100, description="Maximum number of recommendations to return"),
 ) -> models.RecommendationResponse:
@@ -372,7 +320,7 @@ def get_product_recommendations(
 @router.get("/{code}")
 def get_product(
     code: str,
-    db: Session = Depends(get_db),
+    supabase_service = Depends(get_supabase_service),
 ) -> Any:
     """
     Get a specific product by barcode with a structured response format.
@@ -388,22 +336,26 @@ def get_product(
         HTTPException: If product not found or if there's an error processing the data
     """
     try:
-        # Query the product from database
-        product = db.query(db_models.Product).filter(db_models.Product.code == code).first()
+        # Query the product from Supabase
+        product_data = supabase_service.get_product_by_code(code)
         
-        if not product:
+        if not product_data:
             raise HTTPException(status_code=404, detail="Product not found")
             
         # Extract additives from ingredients text
-        additives = helpers.extract_additives_from_text(product.ingredients_text or "")
+        additives = helpers.extract_additives_from_text(product_data.get('ingredients_text', '') or "")
         
         # Assess health concerns based on data
         health_concerns = []
-        if product.protein and product.protein < 10:
+        protein = product_data.get('protein')
+        fat = product_data.get('fat')
+        salt = product_data.get('salt')
+        
+        if protein and protein < 10:
             health_concerns.append("Low protein content")
-        if product.fat and product.fat > 25:
+        if fat and fat > 25:
             health_concerns.append("High fat content")
-        if product.salt and product.salt > 1.5:
+        if salt and salt > 1.5:
             health_concerns.append("High salt content")
             
         # Create basic environmental impact assessment
@@ -413,36 +365,37 @@ def get_product(
             "sustainability_practices": ["Unknown"]
         }
         
-        if product.meat_type == "beef":
+        meat_type = product_data.get('meat_type')
+        if meat_type == "beef":
             env_impact["impact"] = "High"
             env_impact["details"] = "Beef production typically has higher environmental impact"
-        elif product.meat_type in ["chicken", "turkey"]:
+        elif meat_type in ["chicken", "turkey"]:
             env_impact["impact"] = "Lower"
             env_impact["details"] = "Poultry typically has lower environmental impact compared to red meat"
         
         # Build structured response
         structured_response = models.ProductStructured(
             product=models.ProductInfo(
-                code=product.code,
-                name=product.name,
-                brand=product.brand,
-                description=product.description,
-                ingredients_text=product.ingredients_text,
-                image_url=product.image_url,
-                image_data=product.image_data,
-                meat_type=product.meat_type
+                code=product_data.get('code', ''),
+                name=product_data.get('name', ''),
+                brand=product_data.get('brand', ''),
+                description=product_data.get('description', ''),
+                ingredients_text=product_data.get('ingredients_text', ''),
+                image_url=product_data.get('image_url', ''),
+                image_data=product_data.get('image_data', ''),
+                meat_type=product_data.get('meat_type', '')
             ),
             criteria=models.ProductCriteria(
-                risk_rating=product.risk_rating,
+                risk_rating=product_data.get('risk_rating', ''),
                 additives=additives
             ),
             health=models.ProductHealth(
                 nutrition=models.ProductNutrition(
-                    calories=product.calories,
-                    protein=product.protein,
-                    fat=product.fat,
-                    carbohydrates=product.carbohydrates,
-                    salt=product.salt
+                    calories=product_data.get('calories'),
+                    protein=product_data.get('protein'),
+                    fat=product_data.get('fat'),
+                    carbohydrates=product_data.get('carbohydrates'),
+                    salt=product_data.get('salt')
                 ),
                 health_concerns=health_concerns
             ),
@@ -452,8 +405,8 @@ def get_product(
                 sustainability_practices=env_impact["sustainability_practices"]
             ),
             metadata=models.ProductMetadata(
-                last_updated=product.last_updated,
-                created_at=product.created_at
+                last_updated=product_data.get('last_updated'),
+                created_at=product_data.get('created_at')
             )
         )
         
@@ -472,7 +425,7 @@ def get_product(
 @router.get("/{code}/alternatives", response_model=List[models.ProductAlternative])
 def get_product_alternatives(
     code: str,
-    db: Session = Depends(get_db),
+    supabase_service = Depends(get_supabase_service),
 ) -> List[models.ProductAlternative]:
     """
     Get alternative products for a specific product.
@@ -592,40 +545,44 @@ def get_product_alternatives(
             detail=f"Failed to find product alternatives: {str(e)}"
         )
 
-@router.get("/{code}/health-assessment", response_model=models.HealthAssessment)
+@router.get("/{code}/health-assessment", response_model=Union[models.HealthAssessment, models.EnhancedHealthAssessment])
 def get_product_health_assessment(
     code: str,
     include_citations: bool = Query(
         default=True, 
         description="Include real scientific citations from PubMed and CrossRef"
     ),
+    format: str = Query(
+        default="standard",
+        description="Response format: 'standard' for classic format or 'enhanced' for detailed citation metadata"
+    ),
     user_preferences: Optional[str] = Query(
         None, 
         description="JSON string of user health preferences"
     ),
-    db: Session = Depends(get_db),
+    supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user)
-) -> models.HealthAssessment:
+) -> Union[models.HealthAssessment, models.EnhancedHealthAssessment]:
     """
     Get a comprehensive health assessment for a product with AI insights and optional real citations.
     
     Args:
         code: Product barcode/code
         include_citations: Whether to include real scientific citations (default: True)
+        format: Response format - 'standard' or 'enhanced' for richer citation metadata
         user_preferences: Optional JSON string of user health preferences
         db: Database session
         current_user: Current authenticated user
         
     Returns:
-        HealthAssessment: Detailed health assessment with optional real citations
+        Union[HealthAssessment, EnhancedHealthAssessment]: Detailed health assessment with optional real citations
+        in either standard or enhanced format
     """
     try:
-        # Get the product
-        product = db.query(db_models.Product).filter(
-            db_models.Product.code == code
-        ).first()
+        # Get the product from Supabase
+        product_data = supabase_service.get_product_by_code(code)
         
-        if not product:
+        if not product_data:
             raise HTTPException(
                 status_code=404,
                 detail=f"Product with code {code} not found"
@@ -640,12 +597,12 @@ def get_product_health_assessment(
                 pass
         
         # Convert to structured format using the helper function
-        structured_product = helpers.convert_to_structured_product(product)
+        structured_product = helpers.convert_dict_to_structured_product(product_data)
             
         # Generate health assessment with citation option
         assessment = generate_health_assessment_with_citations_option(
             structured_product, 
-            db=db, 
+            db=None,  # No longer using SQLAlchemy session
             include_citations=include_citations
         )
         
@@ -658,6 +615,10 @@ def get_product_health_assessment(
         # Apply user preferences if provided
         if parsed_preferences:
             assessment = apply_user_preferences(assessment, parsed_preferences)
+        
+        # Convert to enhanced format if requested
+        if format.lower() == "enhanced" and hasattr(assessment, "real_citations") and assessment.real_citations:
+            return convert_to_enhanced_assessment(assessment)
         
         return assessment
         

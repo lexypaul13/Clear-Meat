@@ -102,12 +102,18 @@ async def db_health_check():
         
     try:
         # Import here to avoid circular imports
-        from app.db.session import get_db
+        from app.db.supabase_client import get_supabase_service
         
-        # Get database session and test connection
-        db = next(get_db())
-        db.execute("SELECT 1")
-        return {"status": "healthy", "database": "connected"}
+        # Get Supabase service and test connection
+        supabase_service = get_supabase_service()
+        # Check if service is available
+        if supabase_service:
+            return {"status": "healthy", "database": "connected"}
+        else:
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content={"status": "unhealthy", "database": "disconnected"}
+            )
     except Exception as e:
         logger.error(f"Database health check failed: {str(e)}")
         return JSONResponse(

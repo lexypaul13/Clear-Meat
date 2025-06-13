@@ -9,7 +9,7 @@ import os
 import json
 import httpx
 from functools import lru_cache
-from typing import Optional, Tuple, Dict, Any
+from typing import Optional, Tuple, Dict, Any, List
 
 from supabase import create_client, Client
 from supabase.lib.client_options import ClientOptions
@@ -202,4 +202,119 @@ def get_supabase_with_options(
         return create_client(final_url, final_key)
     except Exception as e:
         logger.error(f"Failed to create custom Supabase client: {str(e)}")
-        raise 
+        raise
+
+
+class SupabaseService:
+    """Centralized Supabase client service."""
+    
+    def __init__(self):
+        self.client: Optional[Client] = None
+        self._initialize_client()
+    
+    def _initialize_client(self):
+        """Initialize the Supabase client."""
+        try:
+            if not settings.SUPABASE_URL or not settings.SUPABASE_KEY:
+                raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set")
+            
+            self.client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+            
+            # Test connection
+            response = self.client.table('products').select('code').limit(1).execute()
+            logger.debug(f"Test query response: {response}")
+            logger.info("Supabase public client initialized successfully")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize Supabase client: {e}")
+            raise
+    
+    def get_client(self) -> Client:
+        """Get the Supabase client."""
+        if not self.client:
+            self._initialize_client()
+        return self.client
+    
+    # Product operations
+    def get_product_by_code(self, code: str) -> Optional[Dict[str, Any]]:
+        """Get a product by its code."""
+        try:
+            response = self.client.table('products').select('*').eq('code', code).execute()
+            return response.data[0] if response.data else None
+        except Exception as e:
+            logger.error(f"Error fetching product {code}: {e}")
+            return None
+    
+    def get_products(self, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+        """Get products with pagination."""
+        try:
+            response = (self.client.table('products')
+                       .select('*')
+                       .range(offset, offset + limit - 1)
+                       .execute())
+            return response.data or []
+        except Exception as e:
+            logger.error(f"Error fetching products: {e}")
+            return []
+    
+    def count_products(self) -> int:
+        """Get total product count."""
+        try:
+            response = (self.client.table('products')
+                       .select('code', count='exact')
+                       .execute())
+            return response.count or 0
+        except Exception as e:
+            logger.error(f"Error counting products: {e}")
+            return 0
+    
+    def search_products(self, query: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """Search products by name or ingredients."""
+        try:
+            response = (self.client.table('products')
+                       .select('*')
+                       .or_(f'name.ilike.%{query}%,ingredients_text.ilike.%{query}%')
+                       .limit(limit)
+                       .execute())
+            return response.data or []
+        except Exception as e:
+            logger.error(f"Error searching products: {e}")
+            return []
+    
+    # User operations
+    def get_user_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Get a user by ID."""
+        try:
+            response = self.client.table('profiles').select('*').eq('id', user_id).execute()
+            return response.data[0] if response.data else None
+        except Exception as e:
+            logger.error(f"Error fetching user {user_id}: {e}")
+            return None
+    
+    def create_user_profile(self, user_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Create a user profile."""
+        try:
+            response = self.client.table('profiles').insert(user_data).execute()
+            return response.data[0] if response.data else None
+        except Exception as e:
+            logger.error(f"Error creating user profile: {e}")
+            return None
+    
+    def update_user_profile(self, user_id: str, user_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Update a user profile."""
+        try:
+            response = (self.client.table('profiles')
+                       .update(user_data)
+                       .eq('id', user_id)
+                       .execute())
+            return response.data[0] if response.data else None
+        except Exception as e:
+            logger.error(f"Error updating user profile {user_id}: {e}")
+            return None
+
+# Global instance
+supabase_service = SupabaseService()
+
+def get_supabase_service() -> SupabaseService:
+    """Dependency to get Supabase service."""
+    return supabase_service 

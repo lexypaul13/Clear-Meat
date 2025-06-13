@@ -105,9 +105,18 @@ class CitationSearch(BaseModel):
     ingredient: str
     health_claim: str
     max_results: int = Field(default=5, ge=1, le=20)
+    
+    # Academic sources
     search_pubmed: bool = True
     search_crossref: bool = True
-    search_web: bool = False
+    search_semantic_scholar: bool = True
+    
+    # Web sources
+    search_fda: bool = True
+    search_who: bool = True
+    search_harvard_health: bool = True
+    search_web: bool = False  # Keep general web search disabled for now
+    
     year_range: Optional[tuple[int, int]] = None
 
 

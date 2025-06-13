@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
-from app.db.connection import get_db, is_using_local_db
+from app.db.supabase_client import get_supabase_service
 
 # Configure logging for this module
 logger = logging.getLogger(__name__)
@@ -17,25 +17,24 @@ router = APIRouter()
 
 @router.get("/count", response_model=Dict[str, int])
 def get_product_count(
-    db: Session = Depends(get_db),
+    supabase_service = Depends(get_supabase_service),
 ) -> Any:
     """
-    Get the total count of products in the database using a direct SQL query.
+    Get the total count of products in the database using Supabase.
     
     Args:
-        db: Database session
+        supabase_service: Supabase service instance
         
     Returns:
         Dict[str, int]: Total count of products
     """
     try:
-        logger.info(f"Getting product count (using local DB: {is_using_local_db()})")
+        logger.info("Getting product count from Supabase")
         
-        # Use a direct SQL query to avoid ORM issues
-        query = text("SELECT COUNT(*) FROM products")
-        result = db.execute(query).scalar()
+        # Use Supabase service to get count
+        result = supabase_service.count_products()
         
-        return {"count": result or 0}
+        return {"count": result}
     except Exception as e:
         logger.error(f"Error getting product count: {str(e)}")
         raise HTTPException(

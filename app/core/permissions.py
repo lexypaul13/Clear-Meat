@@ -7,7 +7,7 @@ from fastapi.security import OAuth2PasswordBearer
 
 from sqlalchemy.orm import Session
 
-from app.db.session import get_db
+from app.db.supabase_client import get_supabase_service
 from app.internal.dependencies import get_current_user
 from app.db import models as db_models
 
@@ -117,7 +117,7 @@ def has_permission(permission: Permission):
     
     async def check_permission(
         current_user: db_models.User = Depends(get_current_user),
-        db: Session = Depends(get_db)
+        supabase_service = Depends(get_supabase_service)
     ) -> db_models.User:
         """Check if the current user has the required permission."""
         user_role = get_user_role(current_user)
