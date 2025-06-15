@@ -108,7 +108,7 @@ async def db_health_check():
         supabase_service = get_supabase_service()
         # Check if service is available
         if supabase_service:
-        return {"status": "healthy", "database": "connected"}
+            return {"status": "healthy", "database": "connected"}
         else:
             return JSONResponse(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
