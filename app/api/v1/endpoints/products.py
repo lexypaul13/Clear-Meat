@@ -6,6 +6,7 @@ import os
 import json
 import html
 import re
+import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
@@ -23,7 +24,8 @@ from app.services.recommendation_service import (
 from app.services.health_assessment_service import (
     generate_health_assessment, 
     generate_health_assessment_with_citations_option,
-    convert_to_enhanced_assessment
+    convert_to_enhanced_assessment,
+    transform_health_assessment_json
 )
 from app.services.search_service import search_products
 from app.utils.personalization import apply_user_preferences
@@ -540,12 +542,10 @@ def get_product_alternatives(
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Failed to find product alternatives: {str(e)}"
-        )
+        logger.error(f"Error fetching alternatives for product {code}: {e}")
+        raise HTTPException(status_code=500, detail="Could not fetch product alternatives")
 
-@router.get("/{code}/health-assessment", response_model=Union[models.HealthAssessment, models.EnhancedHealthAssessment])
+@router.get("/{code}/health-assessment")
 def get_product_health_assessment(
     code: str,
     include_citations: bool = Query(
@@ -554,7 +554,7 @@ def get_product_health_assessment(
     ),
     format: str = Query(
         default="standard",
-        description="Response format: 'standard' for classic format or 'enhanced' for detailed citation metadata"
+        description="Response format: 'standard' for classic format, 'enhanced' for detailed citation metadata, or 'transformed' for new JSON format"
     ),
     user_preferences: Optional[str] = Query(
         None, 
@@ -562,71 +562,75 @@ def get_product_health_assessment(
     ),
     supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user)
-) -> Union[models.HealthAssessment, models.EnhancedHealthAssessment]:
+) -> Union[models.HealthAssessment, models.EnhancedHealthAssessment, Dict[str, Any]]:
     """
-    Get a comprehensive health assessment for a product with AI insights and optional real citations.
+    Generate a health assessment for a specific product.
+    
+    - **standard**: The default, balanced health assessment.
+    - **enhanced**: Includes detailed metadata for each scientific citation.
+    - **transformed**: A new, consolidated JSON format with nutrition insights.
     
     Args:
-        code: Product barcode/code
-        include_citations: Whether to include real scientific citations (default: True)
-        format: Response format - 'standard' or 'enhanced' for richer citation metadata
-        user_preferences: Optional JSON string of user health preferences
-        db: Database session
-        current_user: Current authenticated user
+        code: The product's barcode
+        include_citations: Whether to include scientific citations
+        format: The response format
+        user_preferences: User-specific health preferences (JSON string)
+        supabase_service: Supabase client
+        current_user: Currently authenticated user
         
     Returns:
-        Union[HealthAssessment, EnhancedHealthAssessment]: Detailed health assessment with optional real citations
-        in either standard or enhanced format
+        The health assessment in the specified format.
     """
+    logger.info(f"Starting health assessment for product {code} with format '{format}'.")
     try:
-        # Get the product from Supabase
+        # Step 1: Fetch product data
+        logger.info("Step 1: Fetching product data from Supabase.")
         product_data = supabase_service.get_product_by_code(code)
-        
         if not product_data:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Product with code {code} not found"
-            )
-        
-        # Parse user preferences if provided
-        parsed_preferences = None
-        if user_preferences:
-            try:
-                parsed_preferences = json.loads(user_preferences)
-            except json.JSONDecodeError:
-                pass
-        
-        # Convert to structured format using the helper function
-        structured_product = helpers.convert_dict_to_structured_product(product_data)
-            
-        # Generate health assessment with citation option
+            logger.warning(f"Product with code '{code}' not found.")
+            raise HTTPException(status_code=404, detail=f"Product with code '{code}' not found")
+        logger.info("Step 1: Product data fetched successfully.")
+
+        # Step 2: Structure product data
+        logger.info("Step 2: Structuring product data.")
+        structured_product = helpers.structure_product_data(product_data)
+        if not structured_product:
+            logger.error("Failed to structure product data.")
+            raise HTTPException(status_code=500, detail="Failed to structure product data for assessment")
+        logger.info("Step 2: Product data structured successfully.")
+
+        # Step 3: Generate health assessment with citations
+        logger.info("Step 3: Generating health assessment with citations.")
         assessment = generate_health_assessment_with_citations_option(
-            structured_product, 
-            db=None,  # No longer using SQLAlchemy session
+            product=structured_product,
             include_citations=include_citations
         )
-        
         if not assessment:
-            raise HTTPException(
-                status_code=500,
-                detail="Health assessment service unavailable"
-            )
-        
-        # Apply user preferences if provided
-        if parsed_preferences:
-            assessment = apply_user_preferences(assessment, parsed_preferences)
-        
-        # Convert to enhanced format if requested
-        if format.lower() == "enhanced" and hasattr(assessment, "real_citations") and assessment.real_citations:
+            logger.error("Failed to generate health assessment.")
+            raise HTTPException(status_code=500, detail="Failed to generate health assessment")
+        logger.info("Step 3: Health assessment generated successfully.")
+
+        # Step 4: Handle different formats
+        logger.info(f"Step 4: Handling format '{format}'.")
+        if format == 'transformed':
+            logger.info("Transforming assessment to 'transformed' format.")
+            assessment_dict = assessment.dict()
+            logger.info(f"Assessment dict keys: {list(assessment_dict.keys())}")
+            transformed_result = transform_health_assessment_json(assessment_dict, product_data)
+            logger.info(f"Transformed result keys: {list(transformed_result.keys())}")
+            # Force return as dict to bypass any validation
+            from fastapi.responses import JSONResponse
+            return JSONResponse(content=transformed_result)
+        elif format == 'enhanced':
+            logger.info("Converting assessment to 'enhanced' format.")
             return convert_to_enhanced_assessment(assessment)
-        
-        return assessment
-        
+        else: # 'standard'
+            logger.info("Returning standard assessment.")
+            return assessment
+
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error generating health assessment: {str(e)}"
-        )
+        logger.error(f"An unexpected error occurred in get_product_health_assessment: {e.__class__.__name__}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred during health assessment.")
 

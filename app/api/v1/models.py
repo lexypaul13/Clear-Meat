@@ -323,14 +323,16 @@ class HealthAssessment(BaseModel):
 
 class Citation(BaseModel):
     """Scientific citation model."""
+    id: str
     title: str
-    authors: List[str]
-    journal: Optional[str] = None
+    authors: List[str] = Field(default_factory=list)
+    source: str
     year: Optional[int] = None
+    journal: Optional[str] = None
     doi: Optional[str] = None
     pmid: Optional[str] = None
     url: Optional[str] = None
-    formatted: str
+    formatted: Optional[str] = None
 
 
 class EnhancedHealthAssessment(BaseModel):
@@ -339,16 +341,9 @@ class EnhancedHealthAssessment(BaseModel):
     risk_summary: RiskSummary
     nutrition_labels: List[str] = Field(default_factory=list)
     ingredients_assessment: IngredientAssessment
-    ingredient_reports: Dict[str, IngredientReport] = Field(default_factory=dict)
-    recommendations: List[ProductRecommendation] = Field(default_factory=list)
-    source_disclaimer: Optional[str] = None
-    
-    # Enhanced citation fields
-    citation_count: int = Field(default=0)
     citations: List[Citation] = Field(default_factory=list)
-    citation_grade: Optional[str] = None
-    citation_sources: List[str] = Field(default_factory=list)
-    cited_ingredients: List[str] = Field(default_factory=list)
+    healthier_alternatives: List[ProductRecommendation] = Field(default_factory=list)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 # Social Authentication Models

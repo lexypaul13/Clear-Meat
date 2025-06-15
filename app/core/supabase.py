@@ -15,8 +15,8 @@ def init_supabase_client(url: str, key: str, is_admin: bool = False) -> Tuple[Op
         
         # Test the connection with a simple query
         try:
-            # Try to get a count of products - this should work with both anon and service role keys
-            client.table('products').select('id', count='exact').limit(1).execute()
+            # A simple select to ensure the connection is valid
+            client.table('products').select('*').limit(1).execute()
             return client, ""
         except Exception as test_e:
             error_msg = str(test_e)

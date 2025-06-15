@@ -202,7 +202,7 @@ def get_supabase_with_options(
         return create_client(final_url, final_key)
     except Exception as e:
         logger.error(f"Failed to create custom Supabase client: {str(e)}")
-        raise
+        raise 
 
 
 class SupabaseService:

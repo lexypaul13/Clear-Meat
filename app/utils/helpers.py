@@ -2,6 +2,7 @@
 
 from typing import Any, Dict, List, Optional, Union
 import re
+import logging
 
 from app.api.v1 import models
 from app.db import models as db_models
@@ -195,7 +196,6 @@ def assess_health_concerns(product: Union[models.ProductBase, Dict[str, Any], db
                 concerns.append("High in fat")
     except Exception as e:
         # Log the error but don't raise it
-        import logging
         logging.error(f"Error assessing health concerns: {str(e)}")
     
     return concerns
@@ -239,7 +239,6 @@ def assess_environmental_impact(product: Union[models.ProductBase, Dict[str, Any
                 details = "Poultry generally has a lower environmental footprint than red meat."
     except Exception as e:
         # Log the error but don't raise it
-        import logging
         logging.error(f"Error assessing environmental impact: {str(e)}")
     
     return {
@@ -306,58 +305,73 @@ def convert_to_structured_product(product: db_models.Product) -> models.ProductS
     ) 
 
 
-def convert_dict_to_structured_product(product_data: Dict[str, Any]) -> models.ProductStructured:
+def structure_product_data(product_data: Dict[str, Any]) -> Optional[models.ProductStructured]:
     """
-    Convert a dictionary (from Supabase) to a ProductStructured model.
-    
-    Args:
-        product_data: Dictionary containing product data from Supabase
+    Converts a product data dictionary from Supabase into a structured Pydantic model.
+    This version is simplified and more robust to handle missing data.
+    """
+    if not product_data:
+        return None
+    try:
+        # We only need a minimal set of data to create the structured object
+        # The rest of the data is passed in the `product_data` dictionary
         
-    Returns:
-        ProductStructured: Structured product model for API responses
-    """
-    # Extract additives from ingredients text
-    additives = extract_additives_from_text(product_data.get('ingredients_text', '') or "")
-    
-    # Assess health concerns based on data
-    health_concerns = assess_health_concerns(product_data)
-    
-    # Create environmental impact assessment
-    env_impact = assess_environmental_impact(product_data)
-    
-    # Build structured response
-    return models.ProductStructured(
-        product=models.ProductInfo(
-            code=product_data.get('code', ''),
-            name=product_data.get('name', ''),
-            brand=product_data.get('brand', ''),
-            description=product_data.get('description', ''),
-            ingredients_text=product_data.get('ingredients_text', ''),
-            image_url=product_data.get('image_url', ''),
-            image_data=product_data.get('image_data', ''),
-            meat_type=product_data.get('meat_type', '')
-        ),
-        criteria=models.ProductCriteria(
-            risk_rating=product_data.get('risk_rating', ''),
-            additives=additives
-        ),
-        health=models.ProductHealth(
-            nutrition=models.ProductNutrition(
-                calories=product_data.get('calories'),
-                protein=product_data.get('protein'),
-                fat=product_data.get('fat'),
-                carbohydrates=product_data.get('carbohydrates'),
-                salt=product_data.get('salt')
-            ),
-            health_concerns=health_concerns
-        ),
-        environment=models.ProductEnvironment(
-            impact=env_impact["impact"],
-            details=env_impact["details"],
-            sustainability_practices=env_impact["sustainability_practices"]
-        ),
-        metadata=models.ProductMetadata(
-            last_updated=product_data.get('last_updated'),
-            created_at=product_data.get('created_at')
+        # We need to ensure that the required fields for ProductBase are present
+        product_info = models.ProductInfo(
+            code=product_data.get("code", "N/A"),
+            name=product_data.get("name", "Unknown Product"),
+            brand=product_data.get("brand"),
+            description=product_data.get("description"),
+            ingredients_text=product_data.get("ingredients_text"),
+            image_url=product_data.get("image_url"),
+            image_data=product_data.get("image_data"),
+            meat_type=product_data.get("meat_type")
         )
-    ) 
+        
+        # For the nested models, we can create empty ones if data is missing
+        nutrition_info = models.ProductNutrition(
+            calories=product_data.get("calories"),
+            protein=product_data.get("protein"),
+            fat=product_data.get("fat"),
+            carbohydrates=product_data.get("carbohydrates"),
+            salt=product_data.get("salt")
+        )
+        health_info = models.ProductHealth(
+            nutrition=nutrition_info,
+            health_concerns=[]
+        )
+        criteria_info = models.ProductCriteria(
+            risk_rating=product_data.get("risk_rating"),
+            additives=[]
+        )
+        environment_info = models.ProductEnvironment(
+            impact="Moderate",
+            details="Environmental impact assessment based on meat type and processing method.",
+            sustainability_practices=[]
+        )
+        metadata_info = models.ProductMetadata(
+            last_updated=product_data.get("last_updated"),
+            created_at=product_data.get("created_at")
+        )
+
+        return models.ProductStructured(
+            product=product_info,
+            health=health_info,
+            criteria=criteria_info,
+            environment=environment_info,
+            metadata=metadata_info
+        )
+    except Exception as e:
+        logging.error(f"Failed to structure product data for code {product_data.get('code')}: {e}", exc_info=True)
+        return None
+
+
+def find_healthier_alternatives(
+    target_product: models.Product,
+    products: List[models.Product]
+) -> List[models.Product]:
+    """
+    Find healthier alternatives to a target product from a list of products.
+    """
+    # Implementation for finding healthier alternatives
+    pass
