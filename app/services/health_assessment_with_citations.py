@@ -222,55 +222,51 @@ class HealthAssessmentWithCitations:
     ) -> Optional[HealthAssessment]:
         """Enhance the basic assessment with real citations."""
         try:
-            # Build enhanced prompt with real citations
-            prompt = self._build_enhanced_prompt(basic_assessment, high_risk_ingredients, citations_dict)
+            # Use the structured assessment from Gemini directly instead of rebuilding it
+            # Just inject the real citations into the existing structure
+            enhanced_assessment_data = basic_assessment.copy()
             
-            response = genai.GenerativeModel(settings.GEMINI_MODEL).generate_content(
-                prompt,
-                generation_config=genai.GenerationConfig(temperature=0)
-            )
+            # Add real citations to the structure
+            enhanced_assessment_data["real_citations"] = citations_dict
+            enhanced_assessment_data["source_disclaimer"] = f"Health assessment based on {len(citations_dict)} real scientific citations from PubMed and CrossRef"
             
-            # For this example, create a simplified HealthAssessment
-            # In a real implementation, you'd parse the JSON response properly
-            enhanced_assessment = HealthAssessment(
-                summary=f"Enhanced health assessment with {len(citations_dict)} real scientific citations",
-                risk_summary=basic_assessment["risk_summary"],
-                nutrition_labels=["High Protein"],  # Simplified
-                ingredients_assessment={
-                    "high_risk": [
-                        {
-                            "name": ingredient,
-                            "risk_level": "high", 
-                            "category": "preservative",
-                            "concerns": f"Health concerns documented in scientific literature"
-                        }
-                        for ingredient in high_risk_ingredients
-                    ],
-                    "moderate_risk": [],
-                    "low_risk": []
-                },
-                ingredient_reports={
-                    ingredient: {
-                        "title": f"{ingredient} - Health Assessment",
-                        "summary": f"Scientific evidence for {ingredient}",
-                        "health_concerns": [
-                            "Health effects documented in peer-reviewed research",
-                            "See citations for specific studies"
-                        ],
-                        "common_uses": "Used in meat processing"
-                    }
-                    for ingredient in high_risk_ingredients
-                },
-                recommendations=[],
-                source_disclaimer=f"Health assessment based on {len(citations_dict)} real scientific citations from PubMed and CrossRef",
-                real_citations=citations_dict  # Add real citations
-            )
+            # Update citation IDs in ingredients to match real citations
+            if "ingredients_assessment" in enhanced_assessment_data:
+                citation_id_map = {str(i+1): str(i+1) for i in range(len(citations_dict))}
+                
+                # Update high-risk ingredients with real citation IDs
+                for ingredient in enhanced_assessment_data["ingredients_assessment"].get("high_risk", []):
+                    if "citations" in ingredient and ingredient["citations"]:
+                        # Map to real citation IDs (first 2 citations for each ingredient)
+                        ingredient["citations"] = list(citation_id_map.keys())[:2]
+                
+                # Update moderate-risk ingredients with real citation IDs  
+                for ingredient in enhanced_assessment_data["ingredients_assessment"].get("moderate_risk", []):
+                    if "citations" in ingredient and ingredient["citations"]:
+                        ingredient["citations"] = list(citation_id_map.keys())[:2]
+            
+            # Convert citations dict to proper works_cited format
+            works_cited = []
+            for i, (citation_id, citation_text) in enumerate(citations_dict.items(), 1):
+                works_cited.append({
+                    "id": i,
+                    "citation": citation_text
+                })
+            
+            enhanced_assessment_data["works_cited"] = works_cited
+            
+            # Create HealthAssessment object from enhanced data
+            enhanced_assessment = HealthAssessment(**enhanced_assessment_data)
             
             return enhanced_assessment
             
         except Exception as e:
             logger.error(f"Error enhancing assessment with citations: {e}")
-            return None
+            # Fallback to original assessment without real citations
+            try:
+                return HealthAssessment(**basic_assessment)
+            except:
+                return None
     
     def _build_basic_assessment_prompt(self, product: ProductStructured) -> str:
         """Build prompt for basic assessment without citations."""

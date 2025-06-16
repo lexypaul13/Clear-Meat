@@ -20,6 +20,45 @@ from app.services.health_assessment_with_citations import HealthAssessmentWithCi
 
 logger = logging.getLogger(__name__)
 
+def parse_ingredients_list(ingredients_text: str) -> List[str]:
+    """Parse ingredients text into individual ingredients array."""
+    if not ingredients_text or not ingredients_text.strip():
+        return []
+    
+    # Split by common delimiters (commas, semicolons, periods followed by spaces)
+    # Handle periods that separate ingredient sections
+    text = re.sub(r'\.\s+([A-Z])', r'. \1', ingredients_text)  # Ensure space after period before capital letter
+    ingredients = re.split(r'[,;]\s*|\.\s+(?=[A-Z])', text)
+    
+    parsed = []
+    
+    for ingredient in ingredients:
+        # Clean up each ingredient
+        cleaned = ingredient.strip()
+        
+        # Remove parentheses content (like (E250), (preservative), etc.)
+        cleaned = re.sub(r'\([^)]*\)', '', cleaned).strip()
+        
+        # Remove percentage indicators
+        cleaned = re.sub(r'^\d+%\s*', '', cleaned).strip()
+        
+        # Remove leading/trailing punctuation except colons (for "conservateur : E250")
+        cleaned = re.sub(r'^[.•-]\s*', '', cleaned).strip()
+        cleaned = re.sub(r'[.•-]\s*$', '', cleaned).strip()
+        
+        # Split on periods that aren't part of abbreviations and create sub-ingredients
+        if '.' in cleaned and not re.search(r'\b[A-Z]\.\s*[A-Z]', cleaned):  # Don't split abbreviations like "U.E"
+            sub_ingredients = [s.strip() for s in cleaned.split('.') if s.strip()]
+            for sub in sub_ingredients:
+                if sub and len(sub) > 1:
+                    parsed.append(sub)
+        else:
+            # Only include non-empty ingredients with at least 2 characters
+            if cleaned and len(cleaned) > 1:
+                parsed.append(cleaned)
+    
+    return parsed
+
 class HealthAssessmentService:
     def __init__(self):
         if not settings.GEMINI_API_KEY:
@@ -310,7 +349,7 @@ def transform_health_assessment_json(assessment_data: Dict[str, Any], product_da
                             ingredient_citations.extend(cite_ids)
                     
                     # If still no citations, assign based on ingredient type for common preservatives
-                    if not ingredient_citations and transformed["citations"]:
+                    if not ingredient_citations and transformed["citations"] and risk_level in ["high", "moderate"]:
                         if "nitrite" in name_lower or "nitrate" in name_lower:
                             # Assign first two citations if they exist
                             ingredient_citations = [1, 2] if len(transformed["citations"]) > 1 else [1]
@@ -362,31 +401,38 @@ def transform_health_assessment_json(assessment_data: Dict[str, Any], product_da
                             micro_report = "Natural source of nitrates; similar concerns as synthetic nitrites"
                         else:
                             micro_report = "Some concerns in sensitive populations"
-                    else:
-                        micro_report = "Generally recognized as safe"
+                    else:  # low_risk
+                        # For low-risk ingredients, use the fixed string as required
+                        micro_report = "No known health concerns at typical amounts."
                     
-                    # Ensure micro_report ends with period before adding citations
-                    if micro_report and not micro_report.endswith('.'):
-                        micro_report += '.'
-                    
-                    # Add citation markers if available
-                    if ingredient_citations:
-                        citations_str = f" [{']['.join(map(str, ingredient_citations))}]."
-                        # Remove existing period to avoid double periods
-                        if micro_report.endswith('.'):
-                            micro_report = micro_report[:-1]
+                    # For high/moderate risk, ensure micro_report is ≤ 200 chars and add citations
+                    if risk_level in ["high", "moderate"]:
+                        # Ensure micro_report ends with period before adding citations
+                        if micro_report and not micro_report.endswith('.'):
+                            micro_report += '.'
                         
-                        # Ensure total length ≤ 200
-                        if len(micro_report + citations_str) > 200:
-                            micro_report = micro_report[:200 - len(citations_str) - 3] + "..." + citations_str[:-1]  # Remove trailing period from citations_str
-                        else:
-                            micro_report += citations_str
+                        # Add citation markers if available (only for high/moderate)
+                        if ingredient_citations:
+                            citations_str = f" [{']['.join(map(str, ingredient_citations))}]."
+                            # Remove existing period to avoid double periods
+                            if micro_report.endswith('.'):
+                                micro_report = micro_report[:-1]
+                            
+                            # Ensure total length ≤ 200
+                            if len(micro_report + citations_str) > 200:
+                                micro_report = micro_report[:200 - len(citations_str) - 3] + "..." + citations_str[:-1]  # Remove trailing period from citations_str
+                            else:
+                                micro_report += citations_str
+                        
+                        # Final length check and ensure ends with period
+                        if len(micro_report) > 200:
+                            micro_report = micro_report[:197] + "..."
+                        elif micro_report and not micro_report.endswith('.'):
+                            micro_report += '.'
                     
-                    # Final length check and ensure ends with period
-                    if len(micro_report) > 200:
-                        micro_report = micro_report[:197] + "..."
-                    elif micro_report and not micro_report.endswith('.'):
-                        micro_report += '.'
+                    # Low-risk ingredients should NOT have citations (even if citations array is empty)
+                    if risk_level == "low":
+                        ingredient_citations = []
                     
                     processed.append({
                         "name": name,
@@ -405,54 +451,63 @@ def transform_health_assessment_json(assessment_data: Dict[str, Any], product_da
         transformed["ingredients_assessment"]["moderate_risk"] = process_ingredient_list(
             ingredients_assessment.get("moderate_risk", []), "moderate"
         )
-        transformed["ingredients_assessment"]["low_risk"] = process_ingredient_list(
+        low_risk_items = process_ingredient_list(
             ingredients_assessment.get("low_risk", []), "low"
         )
         
-        # Generate summary with citation markers
+        # Implement payload size guard for low_risk items
+        if len(low_risk_items) > 30:
+            # Sort alphabetically and take first 30
+            low_risk_items = sorted(low_risk_items, key=lambda x: x["name"])[:30]
+            transformed["metadata"]["note"] = "Additional low-risk ingredients omitted for brevity."
+        
+        transformed["ingredients_assessment"]["low_risk"] = low_risk_items
+        
+        # Generate summary with citation markers (exactly two sentences, ≤ 450 chars)
         high_risk_ingredients = transformed["ingredients_assessment"]["high_risk"]
         moderate_risk_ingredients = transformed["ingredients_assessment"]["moderate_risk"]
         
-        if high_risk_ingredients:
-            ingredient_names = [ing["name"] for ing in high_risk_ingredients[:2]]
-            
-            # Collect all citation IDs from high-risk ingredients
-            all_citations = []
-            for ing in high_risk_ingredients:
-                all_citations.extend(ing["citations"])
-            
-            # Remove duplicates and sort
-            unique_citations = sorted(list(set(all_citations)))
+        if high_risk_ingredients or moderate_risk_ingredients:
+            # Sentence 1: letter grade + list of High/Moderate ingredients
+            risk_ingredients = high_risk_ingredients + moderate_risk_ingredients
+            ingredient_names = [ing["name"] for ing in risk_ingredients[:3]]  # First 3 ingredients
             
             if len(ingredient_names) == 1:
-                summary = f"Overall grade {grade}. Contains high-risk preservative {ingredient_names[0]} linked to health concerns"
+                sentence1 = f"Overall grade {grade}: contains {ingredient_names[0]}."
+            elif len(ingredient_names) == 2:
+                sentence1 = f"Overall grade {grade}: contains {ingredient_names[0]} and {ingredient_names[1]}."
             else:
-                summary = f"Overall grade {grade}. Contains high-risk preservatives {ingredient_names[0]} and {ingredient_names[1]} linked to health concerns"
+                sentence1 = f"Overall grade {grade}: contains {', '.join(ingredient_names[:2])}, and other concerning additives."
             
-            # Add citation markers - format: [1][2]
-            if unique_citations:
-                citation_markers = f"[{']['.join(map(str, unique_citations))}]"
-                summary += f" {citation_markers}."
+            # Sentence 2: one-line mechanism + consequence
+            if any("nitrite" in ing["name"].lower() or "nitrate" in ing["name"].lower() for ing in risk_ingredients):
+                sentence2 = "These preservatives form carcinogenic nitrosamines when heated, increasing colorectal cancer risk"
+            elif any("bha" in ing["name"].lower() or "bht" in ing["name"].lower() for ing in risk_ingredients):
+                sentence2 = "These synthetic antioxidants disrupt endocrine function and show carcinogenic potential in studies"
+            elif any("msg" in ing["name"].lower() or "glutamate" in ing["name"].lower() for ing in risk_ingredients):
+                sentence2 = "This flavor enhancer triggers headaches and allergic reactions in sensitive individuals"
             else:
-                summary += "."
+                sentence2 = "These additives are associated with various health concerns based on scientific research"
+            
+            # Add citation markers to sentence 2 (first two markers if any High/Moderate risks exist)
+            if transformed["citations"] and len(transformed["citations"]) >= 2:
+                sentence2 += " [1][2]."
+            elif transformed["citations"] and len(transformed["citations"]) >= 1:
+                sentence2 += " [1]."
+            else:
+                sentence2 += "."
+            
+            # Combine sentences and ensure ≤ 450 chars
+            summary = f"{sentence1} {sentence2}"
+            if len(summary) > 450:
+                # Trim sentence2 to fit
+                available_chars = 450 - len(sentence1) - 1  # -1 for space
+                sentence2_trimmed = sentence2[:available_chars - 4] + "..."
+                summary = f"{sentence1} {sentence2_trimmed}"
                 
             transformed["summary"] = summary
-        elif moderate_risk_ingredients:
-            # Include moderate risk in summary if no high risk
-            ingredient_names = [ing["name"] for ing in moderate_risk_ingredients[:2]]
-            all_citations = []
-            for ing in moderate_risk_ingredients:
-                all_citations.extend(ing["citations"])
-            unique_citations = sorted(list(set(all_citations)))
-            
-            summary = f"Overall grade {grade}. Contains ingredients with moderate health concerns"
-            if unique_citations:
-                citation_markers = f"[{']['.join(map(str, unique_citations))}]"
-                summary += f" {citation_markers}."
-            else:
-                summary += "."
-            transformed["summary"] = summary
         else:
+            # No high or moderate risk ingredients
             transformed["summary"] = f"Overall grade {grade}. Product ingredients meet general safety standards."
         
         # Process nutrition insights with realistic values
@@ -504,38 +559,42 @@ def transform_health_assessment_json(assessment_data: Dict[str, Any], product_da
             else:
                 evaluation = "low"
             
-            # Generate AI commentary
+            # Generate AI commentary (≤ 160 chars)
             if nutrient_name == "Protein":
                 if evaluation == "high":
-                    ai_commentary = f"Provides {percent_dv:.0f}% of daily value—excellent protein source."
+                    ai_commentary = f"Provides {percent_dv:.0f}% of daily value—excellent protein source for muscle building and satiety."
                 elif evaluation == "moderate":
-                    ai_commentary = f"Provides {percent_dv:.0f}% of daily value—good protein source."
+                    ai_commentary = f"Provides {percent_dv:.0f}% of daily value—good protein contribution to your diet."
                 else:
-                    ai_commentary = "Low protein content."
+                    ai_commentary = "Low protein content relative to daily needs."
             elif nutrient_name == "Fat":
                 if evaluation == "high":
-                    ai_commentary = f"Contains {percent_dv:.0f}% of daily fat limit."
+                    ai_commentary = f"Contains {percent_dv:.0f}% of daily fat limit—consider portion size for heart health."
                 elif evaluation == "moderate":
-                    ai_commentary = f"Moderate fat at {percent_dv:.0f}% of daily value."
+                    ai_commentary = f"Moderate fat at {percent_dv:.0f}% of daily value—balanced for most diets."
                 else:
-                    ai_commentary = "Low in fat."
+                    ai_commentary = "Low in fat—suitable for fat-restricted diets."
             elif nutrient_name == "Carbohydrates":
                 if evaluation == "low":
-                    ai_commentary = "Keto-friendly: minimal carbs."
+                    ai_commentary = "Keto-friendly: minimal carbs for low-carb dieters."
                 elif evaluation == "moderate":
-                    ai_commentary = f"Moderate carbs at {percent_dv:.0f}% of daily value."
+                    ai_commentary = f"Moderate carbs at {percent_dv:.0f}% DV—fits balanced eating patterns."
                 else:
-                    ai_commentary = f"High in carbs at {percent_dv:.0f}% of daily value."
+                    ai_commentary = f"High in carbs at {percent_dv:.0f}% DV—may impact blood sugar levels."
             else:  # Salt
                 if evaluation == "high":
                     if percent_dv > 100:
-                        ai_commentary = f"High sodium at {percent_dv:.0f}% of daily limit—exceeds recommended intake."
+                        ai_commentary = f"Very high sodium at {percent_dv:.0f}% DV—exceeds daily limit, risk for hypertension."
                     else:
-                        ai_commentary = f"High sodium at {percent_dv:.0f}% of daily limit—concern for blood pressure and cardiovascular health."
+                        ai_commentary = f"High sodium at {percent_dv:.0f}% DV—concern for blood pressure and heart health."
                 elif evaluation == "moderate":
-                    ai_commentary = f"Moderate sodium at {percent_dv:.0f}% of daily value."
+                    ai_commentary = f"Moderate sodium at {percent_dv:.0f}% DV—acceptable for most people."
                 else:
-                    ai_commentary = "Low sodium."
+                    ai_commentary = "Low sodium—heart-healthy choice."
+            
+            # Ensure ai_commentary is ≤ 160 chars
+            if len(ai_commentary) > 160:
+                ai_commentary = ai_commentary[:157] + "..."
             
             transformed["nutrition_insights"].append({
                 "nutrient": nutrient_name,
@@ -561,164 +620,84 @@ def transform_health_assessment_json(assessment_data: Dict[str, Any], product_da
 def _build_health_assessment_prompt(product: ProductStructured, similar_products: List[Dict[str, Any]]) -> str:
     """Build prompt for Gemini with product data for health assessment."""
     # Extract relevant data for the assessment
-    ingredients_text = product.product.ingredients_text or "Ingredients not available"
+    ingredients_text = product.product.ingredients_text or ""
     
-    # Extract nutrition data
-    nutrition = {}
-    if product.health and product.health.nutrition:
-        nutrition = {
-            "calories": product.health.nutrition.calories,
-            "protein": product.health.nutrition.protein,
-            "fat": product.health.nutrition.fat,
-            "carbohydrates": product.health.nutrition.carbohydrates,
-            "salt": product.health.nutrition.salt
-        }
+    # Parse ingredients into clean array
+    ingredients_list = parse_ingredients_list(ingredients_text)
     
-    # Get risk rating if available
-    risk_rating = None
-    if product.criteria and product.criteria.risk_rating:
-        risk_rating = product.criteria.risk_rating
+    # If no ingredients, return empty response
+    if not ingredients_list:
+        return """{"ingredients_assessment": {"high_risk": [], "moderate_risk": [], "low_risk": []}}"""
     
-    # Build product data section
-    product_data = {
-        "product_name": product.product.name,
-        "brand": product.product.brand,
-        "ingredients_text": ingredients_text,
-        "nutrition": nutrition,
-        "risk_rating": risk_rating
-    }
-    
-    # Use the new comprehensive prompt template
-    prompt = f"""You are an AI assistant specialized in analyzing meat products and providing health assessments. Your expertise focuses on meat processing, preservation methods, sourcing practices, and meat-specific health considerations. When provided with a JSON payload describing a meat product's ingredient list and nutritional facts, follow the steps below to produce a compact, UI-ready health summary.
-
-Your Tasks:
-
-1. Analyze each ingredient and assign it to one of three risk categories—high_risk, moderate_risk, or low_risk—with special attention to:
-   - Meat processing methods (curing, smoking, etc.)
-   - Preservatives commonly used in meat products
-   - Additives specific to meat processing
-   - Sourcing indicators (antibiotics, hormones, etc.)
-
-2. Exclude ingredients from the low_risk group if they have:
-   - No health risks or concerns
-   - Generic or empty descriptions like "None identified"
-
-3. Do not include alternatives[] in the ingredients_assessment block.
-
-4. Generate a 2–3 sentence plain-language summary of the product's overall health profile, focusing on:
-   - Meat processing method and its health implications
-   - Sourcing quality (antibiotic-free, grass-fed, etc.)
-   - Key preservatives or additives specific to meat products
-   - Notable nutritional aspects relevant to meat consumption
-
-5. Create a nutrition_labels array based on the nutrition values provided, with meat-specific terms like:
-   - "High Protein"
-   - "Lean Cut"
-   - "Low Sodium"
-   - "High in Saturated Fat"
-   - "Good Source of Iron"
-
-6. For every ingredient in high_risk and moderate_risk, return an entry in the ingredient_reports section that includes:
-   - title: ingredient name + category
-   - summary: short explanation of what it is and why it matters in meat processing
-   - health_concerns: bulleted list of concerns (NO citation markers needed)
-   - common_uses: where it's commonly used in meat products
-
-7. **RECOMMENDATIONS**: Analyze the provided similar products database and recommend up to 5 healthier alternatives that:
-   - Are the same meat type (e.g., beef, chicken)
-   - Use better processing methods (e.g., uncured vs cured)
-   - Have fewer preservatives or additives
-   - Come from better sourcing (e.g., grass-fed, antibiotic-free)
-   - Include a summary of why it's a better choice
-   If no valid alternatives exist, return an empty array.
-
-8. Add a source disclaimer explaining assessments are based on regulatory guidelines and scientific consensus.
-
-MAIN PRODUCT TO ANALYZE:
-{json.dumps(product_data, indent=2)}
-
-SIMILAR PRODUCTS DATABASE FOR RECOMMENDATIONS:
-{json.dumps(similar_products, indent=2) if similar_products else "[]"}
-
-Expected Output (as machine-readable JSON only):
-
+    # Build the streamlined prompt with pre-parsed ingredients
+    logger.info(f"DEBUG: Parsed ingredients for Gemini: {ingredients_list}")
+    prompt = f"""You will receive:
 {{
-  "summary": "This product contains multiple processed ingredients...",
-  "risk_summary": {{
-    "grade": "C",
-    "color": "Yellow"
-  }},
-  "nutrition_labels": [
-    "High Protein",
-    "Low Sodium"
-  ],
-  "ingredients_assessment": {{
-    "high_risk": [
-      {{
-        "name": "Sodium Nitrite",
-        "risk_level": "high",
-        "category": "preservative",
-        "concerns": "Common in cured meats, may form carcinogens when heated"
-      }}
-    ],
-    "moderate_risk": [
-      {{
-        "name": "Celery Powder",
-        "risk_level": "moderate",
-        "category": "natural preservative",
-        "concerns": "Natural source of nitrates used in meat curing"
-      }}
-    ],
-    "low_risk": [
-      {{
-        "name": "Sea Salt",
-        "risk_level": "low",
-        "category": "preservative",
-        "concerns": "Traditional meat preservation method"
-      }}
-    ]
-  }},
-  "ingredient_reports": {{
-    "Sodium Nitrite": {{
-      "title": "Sodium Nitrite – Meat Preservative",
-      "summary": "Sodium nitrite is a preservative commonly used in cured meats...",
-      "health_concerns": [
-        "May form nitrosamines (potential carcinogens) when heated",
-        "Associated with increased risk of colorectal cancer in high consumption"
-      ],
-      "common_uses": "Found in bacon, ham, hot dogs, and other cured meats"
-    }}
-  }},
-  "recommendations": [
-    {{
-      "code": "0025317005104",
-      "name": "Organic Grass-Fed Beef Jerky",
-      "brand": "Applegate",
-      "image_url": "https://example.com/images/beef_jerky.jpg",
-      "summary": "This jerky contains no artificial preservatives, has low sodium, and is made with organic grass-fed beef.",
-      "nutrition_highlights": [
-        "High Protein",
-        "No Artificial Preservatives",
-        "Grass-Fed Beef"
-      ],
-      "risk_rating": "Green"
-    }}
-  ],
-  "source_disclaimer": "Health assessments are based on regulatory guidelines from FDA, WHO, CDC, and established scientific consensus. Individual health effects may vary."
+  "ingredients": {json.dumps(ingredients_list)}
 }}
 
-CRITICAL GUIDELINES FOR RECOMMENDATIONS:
-- Only recommend products with the same meat_type as the main product
-- Prioritize products with better processing methods (e.g., uncured over cured)
-- Consider sourcing quality (grass-fed, antibiotic-free, etc.)
-- Look for products with fewer preservatives and additives
-- Ensure recommended products are actually different/better than the main product
-- If no suitable alternatives exist, return "recommendations": []
-- Maximum 5 recommendations
+Your task:
 
-IMPORTANT: Base all health assessments on general scientific consensus from regulatory bodies (FDA, WHO, CDC) and established research. Do not generate specific citations, studies, or URLs. Focus on providing accurate health information based on established knowledge.
+1. **Categorize EVERY ingredient** into exactly one bucket:
+   • high_risk • moderate_risk • low_risk  
+   (No item may be omitted.)
 
-Respond with valid JSON only."""
+2. **micro_report rules**
+   • high / moderate → ≤ 200 chars, plain English hazard + outcome, end with ≥ 2 citation markers, e.g. "… cancer risk [1][2]."  
+   • low → fixed text: "No known health concerns at typical amounts." (no markers)
+
+3. **Output schema (JSON)**
+```json
+{{
+  "ingredients_assessment": {{
+    "high_risk":    [ {{ "name", "risk_level", "category", "micro_report", "citations" }} ],
+    "moderate_risk":[ …same keys… ],
+    "low_risk":     [ …same keys… ]
+  }}
+}}
+```
+
+• `risk_level` must match the bucket.
+• `citations` = array of numeric IDs that you also list in a separate `citations` array (id, title, source, year).
+
+4. **Example**
+
+Input:
+```json
+{{"ingredients":["Beef","Water","Salt","Sodium Nitrite","Spices"]}}
+```
+
+Output:
+```json
+{{
+  "ingredients_assessment":{{
+    "high_risk":[
+      {{"name":"Sodium Nitrite","risk_level":"high","category":"preservative",
+       "micro_report":"Forms carcinogenic nitrosamines when heated; linked to colorectal cancer [1][2].",
+       "citations":[1,2]}}
+    ],
+    "moderate_risk":[],
+    "low_risk":[
+      {{"name":"Beef","risk_level":"low","category":"meat",
+       "micro_report":"No known health concerns at typical amounts.","citations":[]}},
+      {{"name":"Water","risk_level":"low","category":"ingredient",
+       "micro_report":"No known health concerns at typical amounts.","citations":[]}},
+      {{"name":"Salt","risk_level":"low","category":"preservative",
+       "micro_report":"No known health concerns at typical amounts.","citations":[]}},
+      {{"name":"Spices","risk_level":"low","category":"seasoning",
+       "micro_report":"No known health concerns at typical amounts.","citations":[]}}
+    ]
+  }},
+  "citations": [
+    {{"id": 1, "title": "Nitrite exposure and cancer risk", "source": "Journal of Food Science", "year": 2020}},
+    {{"id": 2, "title": "Processed meat and health effects", "source": "WHO Report", "year": 2021}}
+  ]
+}}
+```
+
+5. If > 30 low-risk items, list the first 30 alphabetically.
+
+Return only the JSON object—no extra text."""
     
     return prompt
 
@@ -735,6 +714,37 @@ def _parse_gemini_response(response_text: str) -> Optional[HealthAssessment]:
             # Try direct JSON parsing
             response_data = json.loads(text)
         
+        # Convert citations format to match HealthAssessment model
+        if "citations" in response_data:
+            # Convert citations list to works_cited format
+            works_cited = []
+            for citation in response_data["citations"]:
+                if isinstance(citation, dict):
+                    citation_text = f"{citation.get('title', 'Health Research Citation')}. {citation.get('source', 'Scientific Database')}, {citation.get('year', 2024)}"
+                    works_cited.append({
+                        "id": citation.get("id", 1),
+                        "citation": citation_text
+                    })
+            response_data["works_cited"] = works_cited
+            # Remove the original citations field as it's not expected in HealthAssessment
+            del response_data["citations"]
+        
+        # Ensure required fields with defaults
+        if "summary" not in response_data:
+            response_data["summary"] = "Health assessment completed"
+        if "risk_summary" not in response_data:
+            response_data["risk_summary"] = {"grade": "C", "color": "Yellow"}
+        if "nutrition_labels" not in response_data:
+            response_data["nutrition_labels"] = []
+        if "ingredients_assessment" not in response_data:
+            response_data["ingredients_assessment"] = {"high_risk": [], "moderate_risk": [], "low_risk": []}
+        if "ingredient_reports" not in response_data:
+            response_data["ingredient_reports"] = {}
+        if "works_cited" not in response_data:
+            response_data["works_cited"] = []
+        if "recommendations" not in response_data:
+            response_data["recommendations"] = []
+        
         # Validate and convert to Pydantic model
         health_assessment = HealthAssessment(**response_data)
         return health_assessment
@@ -744,6 +754,7 @@ def _parse_gemini_response(response_text: str) -> Optional[HealthAssessment]:
         return None
     except ValidationError as e:
         logger.error(f"Failed to validate Gemini response against HealthAssessment model: {e}")
+        logger.error(f"Response data keys: {list(response_data.keys()) if 'response_data' in locals() else 'N/A'}")
         return None
 
 def generate_health_assessment_with_citations_option(
