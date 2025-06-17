@@ -5,6 +5,7 @@ import time
 import random
 import re
 import datetime
+import hashlib
 from typing import Dict, Any, Optional, List
 
 import google.generativeai as genai
@@ -20,10 +21,15 @@ from app.services.health_assessment_with_citations import HealthAssessmentWithCi
 
 logger = logging.getLogger(__name__)
 
-def parse_ingredients_list(ingredients_text: str) -> List[str]:
-    """Parse ingredients text into individual ingredients array."""
+def parse_ingredients_list(ingredients_text: str, max_ingredients: int = 100) -> List[str]:
+    """Parse ingredients text into individual ingredients array with memory optimization."""
     if not ingredients_text or not ingredients_text.strip():
         return []
+    
+    # Memory optimization: truncate very long ingredient texts
+    if len(ingredients_text) > 5000:
+        logger.warning(f"Truncating long ingredients text ({len(ingredients_text)} chars)")
+        ingredients_text = ingredients_text[:5000] + "..."
     
     # Split by common delimiters (commas, semicolons, periods followed by spaces)
     # Handle periods that separate ingredient sections
@@ -32,32 +38,58 @@ def parse_ingredients_list(ingredients_text: str) -> List[str]:
     
     parsed = []
     
-    for ingredient in ingredients:
-        # Clean up each ingredient
-        cleaned = ingredient.strip()
+    # Process in batches to avoid memory issues with very long ingredient lists
+    batch_size = 50
+    for i in range(0, len(ingredients), batch_size):
+        batch = ingredients[i:i + batch_size]
         
-        # Remove parentheses content (like (E250), (preservative), etc.)
-        cleaned = re.sub(r'\([^)]*\)', '', cleaned).strip()
-        
-        # Remove percentage indicators
-        cleaned = re.sub(r'^\d+%\s*', '', cleaned).strip()
-        
-        # Remove leading/trailing punctuation except colons (for "conservateur : E250")
-        cleaned = re.sub(r'^[.•-]\s*', '', cleaned).strip()
-        cleaned = re.sub(r'[.•-]\s*$', '', cleaned).strip()
-        
-        # Split on periods that aren't part of abbreviations and create sub-ingredients
-        if '.' in cleaned and not re.search(r'\b[A-Z]\.\s*[A-Z]', cleaned):  # Don't split abbreviations like "U.E"
-            sub_ingredients = [s.strip() for s in cleaned.split('.') if s.strip()]
-            for sub in sub_ingredients:
-                if sub and len(sub) > 1:
-                    parsed.append(sub)
-        else:
-            # Only include non-empty ingredients with at least 2 characters
-            if cleaned and len(cleaned) > 1:
-                parsed.append(cleaned)
+        for ingredient in batch:
+            # Clean up each ingredient
+            cleaned = ingredient.strip()
+            
+            # Remove parentheses content (like (E250), (preservative), etc.)
+            cleaned = re.sub(r'\([^)]*\)', '', cleaned).strip()
+            
+            # Remove percentage indicators
+            cleaned = re.sub(r'^\d+%\s*', '', cleaned).strip()
+            
+            # Remove leading/trailing punctuation except colons (for "conservateur : E250")
+            cleaned = re.sub(r'^[.•-]\s*', '', cleaned).strip()
+            cleaned = re.sub(r'[.•-]\s*$', '', cleaned).strip()
+            
+            # Split on periods that aren't part of abbreviations and create sub-ingredients
+            if '.' in cleaned and not re.search(r'\b[A-Z]\.\s*[A-Z]', cleaned):  # Don't split abbreviations like "U.E"
+                sub_ingredients = [s.strip() for s in cleaned.split('.') if s.strip()]
+                for sub in sub_ingredients:
+                    if sub and len(sub) > 1:
+                        parsed.append(sub)
+                        if len(parsed) >= max_ingredients:
+                            logger.warning(f"Reached max ingredients limit ({max_ingredients})")
+                            return parsed
+            else:
+                # Only include non-empty ingredients with at least 2 characters
+                if cleaned and len(cleaned) > 1:
+                    parsed.append(cleaned)
+                    if len(parsed) >= max_ingredients:
+                        logger.warning(f"Reached max ingredients limit ({max_ingredients})")
+                        return parsed
     
     return parsed
+
+def _hash_ingredients(ingredients_text: str) -> str:
+    """Create stable hash of ingredients for better cache reuse."""
+    if not ingredients_text:
+        return "empty"
+    
+    # Normalize ingredients for consistent hashing
+    normalized = ingredients_text.lower().strip()
+    # Remove common variations that don't affect health assessment
+    normalized = re.sub(r'\s+', '', normalized)  # Remove all whitespace
+    normalized = re.sub(r'[,;.]', '', normalized)  # Remove punctuation
+    normalized = re.sub(r'\([^)]*\)', '', normalized)  # Remove parenthetical content
+    
+    # Create hash
+    return hashlib.md5(normalized.encode()).hexdigest()[:12]
 
 class HealthAssessmentService:
     def __init__(self):
@@ -70,7 +102,7 @@ class HealthAssessmentService:
 
 def generate_health_assessment(product: ProductStructured, db: Optional[Session] = None) -> Optional[HealthAssessment]:
     """
-    Generate a detailed health assessment for a product using Gemini.
+    Generate a detailed health assessment for a product using Gemini with optimized caching.
     
     Args:
         product: The structured product data to analyze
@@ -83,13 +115,14 @@ def generate_health_assessment(product: ProductStructured, db: Optional[Session]
         logger.error("Gemini API key not configured")
         return None
     
-    # Generate cache key based on product code
-    cache_key = cache.generate_key(product.product.code, prefix="health_assessment")
+    # Generate cache key based on ingredients hash for better cache reuse
+    ingredients_hash = _hash_ingredients(product.product.ingredients_text or "")
+    cache_key = cache.generate_key(f"{product.product.code}:{ingredients_hash}", prefix="health_assessment")
     
-    # Check cache first
+    # Check cache first with more detailed logging
     cached_result = cache.get(cache_key)
     if cached_result:
-        logger.info(f"Returning cached health assessment for product {product.product.code}")
+        logger.debug(f"Cache hit for product {product.product.code}")
         try:
             return HealthAssessment(**cached_result)
         except ValidationError as e:
@@ -141,15 +174,43 @@ def generate_health_assessment(product: ProductStructured, db: Optional[Session]
     return None
 
 def _get_similar_products(db: Session, target_product: ProductStructured) -> List[Dict[str, Any]]:
-    """Get similar products from database for recommendations."""
+    """Get similar products from database for recommendations - OPTIMIZED."""
     try:
-        # Query products with same meat type, excluding the current product
+        # Cache similar products lookup
+        cache_key = cache.generate_key(
+            f"{target_product.product.meat_type}:similar", 
+            prefix="similar_products"
+        )
+        cached_similar = cache.get(cache_key)
+        if cached_similar:
+            logger.debug(f"Similar products cache hit for {target_product.product.meat_type}")
+            return cached_similar
+        
+        # Optimized query using the new indexes
+        # This will use idx_products_meat_type_risk index
         similar_products = (
-            db.query(db_models.Product)
+            db.query(
+                db_models.Product.code,
+                db_models.Product.name,
+                db_models.Product.brand,
+                db_models.Product.meat_type,
+                db_models.Product.risk_rating,
+                db_models.Product.ingredients_text,
+                db_models.Product.image_url,
+                db_models.Product.calories,
+                db_models.Product.protein,
+                db_models.Product.fat,
+                db_models.Product.carbohydrates,
+                db_models.Product.salt
+            )
             .filter(db_models.Product.meat_type == target_product.product.meat_type)
             .filter(db_models.Product.code != target_product.product.code)
-            .filter(db_models.Product.ingredients_text.isnot(None))  # Must have ingredients
-            .limit(20)  # Get more than needed, let Gemini choose the best
+            .filter(db_models.Product.ingredients_text.isnot(None))
+            .order_by(
+                db_models.Product.risk_rating.asc(),  # Prioritize healthier options
+                db_models.Product.protein.desc()     # Higher protein is generally better
+            )
+            .limit(15)  # Reduced from 20 for better performance
             .all()
         )
         
@@ -174,6 +235,8 @@ def _get_similar_products(db: Session, target_product: ProductStructured) -> Lis
             }
             products_data.append(product_data)
         
+        # Cache for 1 hour
+        cache.set(cache_key, products_data, ttl=3600)
         logger.info(f"Found {len(products_data)} similar products for recommendations")
         return products_data
         

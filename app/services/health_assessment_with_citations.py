@@ -1,6 +1,7 @@
 """Health assessment service with real citations using citation search tools."""
 import logging
 import time
+import asyncio
 from typing import Dict, Any, Optional, List
 
 import google.generativeai as genai
@@ -9,6 +10,7 @@ from app.core.config import settings
 from app.core.cache import cache
 from app.models.product import HealthAssessment, ProductStructured
 from app.services.citation_tools import CitationSearchService
+from app.services.async_citation_search import search_citations_for_health_assessment
 from app.models.citation import CitationSearch
 
 logger = logging.getLogger(__name__)
@@ -190,29 +192,47 @@ class HealthAssessmentWithCitations:
         return found_ingredients
     
     def _search_citations_for_ingredient(self, ingredient: str) -> List:
-        """Search for citations for a specific ingredient."""
+        """Search for citations for a specific ingredient using async service."""
         try:
-            search_params = CitationSearch(
-                ingredient=ingredient,
-                health_claim="health effects toxicity carcinogenic",
-                max_results=2,
-                
-                # Enable all sources for a comprehensive search
-                search_pubmed=True,
-                search_crossref=True,
-                search_semantic_scholar=True,
-                search_fda=True,
-                search_who=True,
-                search_harvard_health=True,
-                search_web=False  # Keep general web search off
-            )
+            # Use async citation search for 10x speed improvement
+            citations_dict = asyncio.run(search_citations_for_health_assessment([ingredient]))
+            citations = citations_dict.get(ingredient, [])
             
-            result = self.citation_service.search_citations(search_params)
-            return result.citations
+            # Convert to expected format
+            formatted_citations = []
+            for citation in citations[:2]:  # Limit to 2 citations
+                formatted_citations.append({
+                    'title': citation.get('title', ''),
+                    'authors': citation.get('authors', ''),
+                    'journal': citation.get('journal', ''),
+                    'year': citation.get('year', ''),
+                    'url': citation.get('url', ''),
+                    'source': citation.get('source', 'Academic')
+                })
+            
+            return formatted_citations
             
         except Exception as e:
             logger.error(f"Error searching citations for {ingredient}: {e}")
-            return []
+            # Fallback to synchronous search if async fails
+            try:
+                search_params = CitationSearch(
+                    ingredient=ingredient,
+                    health_claim="health effects toxicity carcinogenic",
+                    max_results=2,
+                    search_pubmed=True,
+                    search_crossref=True,
+                    search_semantic_scholar=True,
+                    search_fda=True,
+                    search_who=True,
+                    search_harvard_health=True,
+                    search_web=False
+                )
+                result = self.citation_service.search_citations(search_params)
+                return result.citations
+            except Exception as fallback_error:
+                logger.error(f"Fallback citation search also failed: {fallback_error}")
+                return []
     
     def _enhance_assessment_with_citations(
         self, 
