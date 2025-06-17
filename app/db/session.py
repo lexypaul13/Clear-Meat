@@ -11,10 +11,12 @@ from contextlib import contextmanager
 
 # Configure logging with a more structured approach
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.DEBUG)
+# Don't set logging level here - let it be configured centrally
 
 # Use environment variable or default to postgres database
-database_url = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@localhost:54322/postgres")
+database_url = os.environ.get("DATABASE_URL")
+if not database_url:
+    raise ValueError("DATABASE_URL environment variable is required")
 
 # Log the database URL (with password masked)
 if database_url:

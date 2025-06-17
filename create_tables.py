@@ -9,7 +9,10 @@ from sqlalchemy.orm import sessionmaker
 from typing import List
 
 # Set database URL directly - don't rely on environment variables
-DATABASE_URL = "postgresql://postgres:postgres@localhost:54322/postgres"
+import os
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL environment variable is required")
 
 # Create engine
 engine = create_engine(DATABASE_URL)

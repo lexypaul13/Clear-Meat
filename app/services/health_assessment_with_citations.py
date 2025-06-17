@@ -50,7 +50,7 @@ class HealthAssessmentWithCitations:
                 logger.info(f"Returning cached cited health assessment for product {product.product.code}")
                 return HealthAssessment(**cached_result)
             
-            print(f"[Health Assessment] Analyzing product: {product.product.name}")
+            logger.info(f"[Health Assessment] Analyzing product: {product.product.name}")
             
             # Step 1: Generate basic health assessment without citations
             basic_assessment = self._generate_basic_assessment(product)
@@ -59,14 +59,14 @@ class HealthAssessmentWithCitations:
             
             # Step 2: Extract high-risk ingredients for citation search
             high_risk_ingredients = self._extract_high_risk_ingredients(basic_assessment)
-            print(f"[Health Assessment] High-risk ingredients found: {high_risk_ingredients}")
+            logger.info(f"[Health Assessment] High-risk ingredients found: {high_risk_ingredients}")
             
             # Step 3: Search for real citations for each high-risk ingredient
             citations_dict = {}
             citation_counter = 1
             
             for ingredient in high_risk_ingredients:
-                print(f"[Health Assessment] Searching citations for: {ingredient}")
+                logger.debug(f"[Health Assessment] Searching citations for: {ingredient}")
                 citations = self._search_citations_for_ingredient(ingredient)
                 
                 if citations:
@@ -84,13 +84,13 @@ class HealthAssessmentWithCitations:
             if enhanced_assessment:
                 # Cache the result
                 cache.set(cache_key, enhanced_assessment.model_dump(), ttl=86400)  # 24 hours
-                print(f"[Health Assessment] Enhanced assessment generated with {len(citations_dict)} real citations")
+                logger.info(f"[Health Assessment] Enhanced assessment generated with {len(citations_dict)} real citations")
             
             return enhanced_assessment
             
         except Exception as e:
             logger.error(f"Error generating health assessment with citations: {e}")
-            print(f"[Health Assessment] Error: {e}")
+            logger.error(f"[Health Assessment] Error: {e}")
             return None
     
     def _generate_basic_assessment(self, product: ProductStructured) -> Optional[Dict[str, Any]]:
@@ -105,7 +105,7 @@ class HealthAssessmentWithCitations:
             if full_assessment:
                 # Convert HealthAssessment model to dict for processing
                 assessment_dict = full_assessment.model_dump()
-                print(f"[Citation Engine] Generated structured assessment with {len(assessment_dict.get('ingredients_assessment', {}).get('high_risk', []))} high-risk ingredients")
+                logger.info(f"[Citation Engine] Generated structured assessment with {len(assessment_dict.get('ingredients_assessment', {}).get('high_risk', []))} high-risk ingredients")
                 return assessment_dict
             else:
                 # Fallback to simple assessment
@@ -160,7 +160,7 @@ class HealthAssessmentWithCitations:
                 #     if isinstance(ingredient, dict) and "name" in ingredient:
                 #         high_risk_ingredients.append(ingredient["name"])
                 
-                print(f"[Citation Engine] Extracted from Gemini risk analysis: {high_risk_ingredients}")
+                logger.info(f"[Citation Engine] Extracted from Gemini risk analysis: {high_risk_ingredients}")
                 return high_risk_ingredients
                 
         except Exception as e:
@@ -186,7 +186,7 @@ class HealthAssessmentWithCitations:
             if ingredient.upper() in assessment_text:
                 found_ingredients.append(ingredient)
         
-        print(f"[Citation Engine] Fallback text extraction found: {found_ingredients}")
+        logger.info(f"[Citation Engine] Fallback text extraction found: {found_ingredients}")
         return found_ingredients
     
     def _search_citations_for_ingredient(self, ingredient: str) -> List:
@@ -344,15 +344,15 @@ def test_citation_enhanced_assessment():
     result = service.generate_health_assessment_with_real_citations(test_product)
     
     if result:
-        print("✅ Citation-Enhanced Health Assessment Generated!")
-        print(f"Summary: {result.summary}")
-        print(f"Source disclaimer: {result.source_disclaimer}")
+        logger.info("✅ Citation-Enhanced Health Assessment Generated!")
+        logger.info(f"Summary: {result.summary}")
+        logger.info(f"Source disclaimer: {result.source_disclaimer}")
         if hasattr(result, 'real_citations'):
-            print(f"Real citations found: {len(result.real_citations)}")
+            logger.info(f"Real citations found: {len(result.real_citations)}")
             for i, citation in enumerate(result.real_citations.values(), 1):
-                print(f"{i}. {citation[:100]}...")
+                logger.debug(f"{i}. {citation[:100]}...")
     else:
-        print("❌ Failed to generate citation-enhanced assessment")
+        logger.error("❌ Failed to generate citation-enhanced assessment")
 
 
 if __name__ == "__main__":

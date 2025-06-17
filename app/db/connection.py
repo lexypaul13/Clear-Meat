@@ -32,7 +32,8 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 # Default local database URL if none is provided
-DEFAULT_LOCAL_DB_URL = "postgresql://postgres:postgres@localhost:54322/postgres"
+# Database URL must be provided via environment variable
+# Example: postgresql://user:password@host:port/database
 
 # Determine which database to use
 def get_database_url() -> str:
@@ -48,16 +49,12 @@ def get_database_url() -> str:
     
     if ENVIRONMENT == "production":
         if not DATABASE_URL:
-            logger.warning("No DATABASE_URL found for production environment, falling back to Supabase")
-            # In production, we should have a proper DATABASE_URL, but we can fallback to Supabase
-            # if needed (though this is not ideal)
-            return DEFAULT_LOCAL_DB_URL
+            raise ValueError("DATABASE_URL environment variable is required in production")
         return DATABASE_URL
     
     # Development environment
     if not DATABASE_URL:
-        logger.info(f"No DATABASE_URL found for development, using default: {DEFAULT_LOCAL_DB_URL}")
-        return DEFAULT_LOCAL_DB_URL
+        raise ValueError("DATABASE_URL environment variable is required. Set it in your .env file.")
     
     logger.info(f"Using DATABASE_URL from environment: {DATABASE_URL[:20]}...")
     return DATABASE_URL

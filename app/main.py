@@ -11,16 +11,15 @@ import logging
 import time
 import os
 
-# Configure root logger
-logging.basicConfig(
-    level=logging.DEBUG if os.getenv("DEBUG", "false").lower() == "true" else logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-)
+# Import and configure logging
+from app.core.logging import setup_logging
+setup_logging()
 logger = logging.getLogger(__name__)
 
-# Enable DEBUG logging for httpx/httpcore to log API requests
-logging.getLogger("httpx").setLevel(logging.DEBUG)
-logging.getLogger("httpcore").setLevel(logging.DEBUG)
+# Only enable debug logging for HTTP in development
+if os.getenv("DEBUG", "false").lower() == "true":
+    logging.getLogger("httpx").setLevel(logging.DEBUG)
+    logging.getLogger("httpcore").setLevel(logging.DEBUG)
 
 try:
     from app.core.config import settings
@@ -71,15 +70,18 @@ if settings.parsed_cors_origins:
         allow_headers=["*"],
     )
 else:
-    # If no origins are defined, allow all for local development or specific cases
-    # WARNING: This might be too permissive for production.
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"], # Allows all origins
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # If no origins are defined, check environment
+    if settings.ENVIRONMENT == "production":
+        raise ValueError("BACKEND_CORS_ORIGINS must be configured in production environment")
+    else:
+        # Only allow wildcard in development
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"], # Allows all origins - DEVELOPMENT ONLY
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
 # Include API router
 app.include_router(api_router, prefix=settings.API_V1_STR)

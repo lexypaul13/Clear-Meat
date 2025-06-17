@@ -61,7 +61,7 @@ def main():
         print("Switching to LOCAL development environment...")
         env_vars = {
             "ENVIRONMENT": "development",
-            "DATABASE_URL": "postgresql://postgres:postgres@localhost:54322/postgres",
+            "DATABASE_URL": current_vars.get("DATABASE_URL", "# Set your local database URL here"),
             "SUPABASE_URL": current_vars.get("SUPABASE_URL", "http://localhost:54321"),
             "SUPABASE_KEY": current_vars.get("SUPABASE_KEY", "your-supabase-anon-key-here"),
             "DEBUG": "true"
