@@ -27,6 +27,7 @@ from app.services.health_assessment_service import (
     convert_to_enhanced_assessment,
     transform_health_assessment_json
 )
+from app.services.health_assessment_mcp_service import HealthAssessmentMCPService
 from app.services.search_service import search_products
 from app.utils.personalization import apply_user_preferences
 
@@ -545,8 +546,64 @@ def get_product_alternatives(
         logger.error(f"Error fetching alternatives for product {code}: {e}")
         raise HTTPException(status_code=500, detail="Could not fetch product alternatives")
 
+@router.get("/{code}/health-assessment-mcp")
+async def get_product_health_assessment_mcp(
+    code: str,
+    supabase_service = Depends(get_supabase_service),
+    current_user: db_models.User = Depends(get_current_active_user)
+) -> Union[models.HealthAssessment, Dict[str, Any]]:
+    """
+    Generate an evidence-based health assessment using MCP (Model Context Protocol).
+    
+    This endpoint uses real scientific research to generate micro-reports for ingredients,
+    providing evidence-based health assessments instead of hardcoded templates.
+    
+    Args:
+        code: The product's barcode
+        supabase_service: Supabase client
+        current_user: Currently authenticated user
+        
+    Returns:
+        Evidence-based health assessment with real scientific citations
+    """
+    logger.info(f"Starting MCP health assessment for product {code}")
+    try:
+        # Step 1: Fetch product data
+        logger.info("Step 1: Fetching product data from Supabase")
+        product_data = supabase_service.get_product_by_code(code)
+        if not product_data:
+            logger.warning(f"Product with code '{code}' not found")
+            raise HTTPException(status_code=404, detail=f"Product with code '{code}' not found")
+        logger.info("Step 1: Product data fetched successfully")
+
+        # Step 2: Structure product data
+        logger.info("Step 2: Structuring product data")
+        structured_product = helpers.structure_product_data(product_data)
+        if not structured_product:
+            logger.error("Failed to structure product data")
+            raise HTTPException(status_code=500, detail="Failed to structure product data for assessment")
+        logger.info("Step 2: Product data structured successfully")
+
+        # Step 3: Generate MCP-based evidence assessment
+        logger.info("Step 3: Generating evidence-based assessment using MCP")
+        mcp_service = HealthAssessmentMCPService()
+        assessment = await mcp_service.generate_health_assessment_with_real_evidence(structured_product)
+        
+        if not assessment:
+            logger.error("Failed to generate MCP health assessment")
+            raise HTTPException(status_code=500, detail="Failed to generate evidence-based health assessment")
+        
+        logger.info("Step 3: MCP health assessment generated successfully")
+        return assessment
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in MCP health assessment: {e.__class__.__name__}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred during evidence-based assessment")
+
 @router.get("/{code}/health-assessment")
-def get_product_health_assessment(
+async def get_product_health_assessment(
     code: str,
     include_citations: bool = Query(
         default=True, 
@@ -554,7 +611,7 @@ def get_product_health_assessment(
     ),
     format: str = Query(
         default="standard",
-        description="Response format: 'standard' for classic format, 'enhanced' for detailed citation metadata, or 'transformed' for new JSON format"
+        description="Response format: 'standard' for classic format, 'enhanced' for detailed citation metadata, 'transformed' for new JSON format, or 'mcp' for evidence-based analysis"
     ),
     user_preferences: Optional[str] = Query(
         None, 
@@ -612,7 +669,16 @@ def get_product_health_assessment(
 
         # Step 4: Handle different formats
         logger.info(f"Step 4: Handling format '{format}'.")
-        if format == 'transformed':
+        if format == 'mcp':
+            logger.info("Generating evidence-based assessment using MCP.")
+            mcp_service = HealthAssessmentMCPService()
+            mcp_assessment = await mcp_service.generate_health_assessment_with_real_evidence(structured_product)
+            if mcp_assessment:
+                return mcp_assessment
+            else:
+                logger.warning("MCP assessment failed, falling back to standard assessment")
+                return assessment
+        elif format == 'transformed':
             logger.info("Transforming assessment to 'transformed' format.")
             assessment_dict = assessment.dict()
             logger.info(f"Assessment dict keys: {list(assessment_dict.keys())}")

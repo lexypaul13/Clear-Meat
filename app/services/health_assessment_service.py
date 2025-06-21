@@ -438,64 +438,16 @@ def transform_health_assessment_json(assessment_data: Dict[str, Any], product_da
                     # Remove duplicates and sort
                     ingredient_citations = sorted(list(set(ingredient_citations)))
                     
-                    # Generate specific micro_report based on ingredient
-                    micro_report = ""
+                    # NOTE: Hardcoded micro-reports have been removed.
+                    # Use the MCP-based health assessment service for evidence-based micro-reports.
+                    # This legacy service now provides basic categorization only.
                     
                     if risk_level == "high":
-                        if "nitrite" in name_lower or "e250" in name_lower:
-                            micro_report = "Forms carcinogenic nitrosamines when heated with amino acids, directly increasing colorectal cancer risk through DNA damage"
-                        elif "nitrate" in name_lower or "e251" in name_lower:
-                            micro_report = "Converts to nitrites in digestive system, forming cancer-causing compounds that damage intestinal cells"
-                        elif "bha" in name_lower:
-                            micro_report = "Disrupts endocrine function and shows carcinogenic effects in animal studies, potentially affecting hormone regulation"
-                        elif "bht" in name_lower:
-                            micro_report = "Suspected endocrine disruptor that may promote tumor growth and interfere with normal cellular processes"
-                        elif "msg" in name_lower or "glutamate" in name_lower:
-                            micro_report = "Triggers headaches, nausea, and allergic reactions in sensitive individuals through neurotransmitter disruption"
-                        elif "benzoate" in name_lower:
-                            micro_report = "Forms benzene carcinogen when combined with vitamin C, linked to hyperactivity and cellular damage"
-                        elif "caramel" in name_lower and "color" in name_lower:
-                            micro_report = "Contains 4-MEI compound classified as potential carcinogen, accumulates in body over time"
-                        elif "tbhq" in name_lower:
-                            micro_report = "May cause DNA damage and oxidative stress, FDA limits to 0.02% due to toxicity concerns"
-                        elif "phosphate" in name_lower:
-                            micro_report = "High intake linked to cardiovascular disease and kidney damage through calcium-phosphorus imbalance"
-                        else:
-                            micro_report = "Associated with adverse health effects documented in peer-reviewed studies"
+                        micro_report = "High-risk ingredient - use MCP service for evidence-based analysis."
                     elif risk_level == "moderate":
-                        if "fumage" in name_lower or "smoking" in name_lower or "smoked" in name_lower:
-                            micro_report = "Smoking process can introduce polycyclic aromatic hydrocarbons (PAHs) linked to cancer in animal studies"
-                        elif "caramel" in name_lower and "colorant" in name_lower:
-                            micro_report = "May contain 4-methylimidazole (4-MEI), a potential carcinogen formed during caramel color production"
-                        elif "abats" in name_lower or "organ" in name_lower:
-                            micro_report = "Organ meats may accumulate toxins and heavy metals from animal diet and environment"
-                        elif "chaudin" in name_lower or "casing" in name_lower:
-                            micro_report = "Natural casings may contain higher bacterial contamination risks than synthetic alternatives"
-                        elif "celery" in name_lower:
-                            micro_report = "Natural source of nitrates; similar concerns as synthetic nitrites"
-                        else:
-                            micro_report = "Contains compounds that may pose health risks in sensitive populations"
+                        micro_report = "Moderate-risk ingredient - use MCP service for evidence-based analysis."
                     else:  # low_risk
-                        # For low-risk ingredients, use the fixed string as required
                         micro_report = "No known health concerns at typical amounts."
-                    
-                    # For high/moderate risk, ensure micro_report is ≤ 200 chars and add citations
-                    if risk_level in ["high", "moderate"]:
-                        # Ensure micro_report ends with period before adding citations
-                        if micro_report and not micro_report.endswith('.'):
-                            micro_report += '.'
-                        
-                        # Always add citation markers [1][2] for high/moderate risk
-                        citations_str = " [1][2]."
-                        # Remove existing period to avoid double periods
-                        if micro_report.endswith('.'):
-                            micro_report = micro_report[:-1]
-                        
-                        # Ensure total length ≤ 200
-                        if len(micro_report + citations_str) > 200:
-                            micro_report = micro_report[:200 - len(citations_str) - 3] + "..." + citations_str[:-1]  # Remove trailing period from citations_str
-                        else:
-                            micro_report += citations_str
                     
                     # Set proper citations for each risk level
                     if risk_level == "high":

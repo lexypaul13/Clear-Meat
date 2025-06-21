@@ -500,6 +500,202 @@ class CitationSearchService:
                 pass
         
         return False
+    
+    def fetch_abstract_by_doi(self, doi: str) -> Optional[Dict[str, Any]]:
+        """Fetch full abstract and details by DOI."""
+        try:
+            print(f"[Abstract Fetch] Fetching DOI: {doi}")
+            
+            # Use CrossRef API to get detailed information
+            url = f"https://api.crossref.org/works/{doi}"
+            response = requests.get(url, timeout=10, verify=False)
+            response.raise_for_status()
+            
+            data = response.json()
+            work = data.get('message', {})
+            
+            # Extract authors
+            authors_str = "Unknown"
+            if 'author' in work:
+                authors = []
+                for author in work['author'][:3]:  # Limit to first 3 authors
+                    given = author.get('given', '')
+                    family = author.get('family', '')
+                    if family:
+                        authors.append(f"{given} {family}".strip())
+                if authors:
+                    authors_str = ", ".join(authors)
+            
+            # Extract publication year
+            year = "Unknown"
+            if 'published-print' in work:
+                date_parts = work['published-print'].get('date-parts', [[]])[0]
+                if date_parts:
+                    year = str(date_parts[0])
+            elif 'published-online' in work:
+                date_parts = work['published-online'].get('date-parts', [[]])[0]
+                if date_parts:
+                    year = str(date_parts[0])
+            
+            abstract_details = {
+                'title': work.get('title', ['Unknown'])[0] if work.get('title') else 'Unknown',
+                'authors': authors_str,
+                'journal': work.get('container-title', ['Unknown'])[0] if work.get('container-title') else 'Unknown',
+                'year': year,
+                'abstract': work.get('abstract', 'Abstract not available'),
+                'doi': doi,
+                'pmid': None
+            }
+            
+            return abstract_details
+            
+        except Exception as e:
+            logger.error(f"Error fetching abstract by DOI {doi}: {e}")
+            return None
+    
+    def fetch_abstract_by_pmid(self, pmid: str) -> Optional[Dict[str, Any]]:
+        """Fetch full abstract and details by PMID."""
+        try:
+            print(f"[Abstract Fetch] Fetching PMID: {pmid}")
+            
+            # Use PubMed to get detailed information
+            query = f"PMID:{pmid}"
+            articles = list(self.pubmed.query(query, max_results=1))
+            
+            if not articles:
+                return None
+            
+            article = articles[0]
+            
+            # Extract authors
+            authors_str = "Unknown"
+            if hasattr(article, 'authors') and article.authors:
+                authors = []
+                for author in article.authors[:3]:  # Limit to first 3 authors
+                    if isinstance(author, dict):
+                        given = author.get('firstname', '')
+                        family = author.get('lastname', '')
+                        if family:
+                            authors.append(f"{given} {family}".strip())
+                    else:
+                        authors.append(str(author))
+                if authors:
+                    authors_str = ", ".join(authors)
+            
+            # Extract publication year
+            year = "Unknown"
+            if hasattr(article, 'publication_date') and article.publication_date:
+                try:
+                    if isinstance(article.publication_date, str):
+                        year = article.publication_date[:4]
+                    else:
+                        year = str(article.publication_date.year)
+                except:
+                    pass
+            
+            abstract_details = {
+                'title': article.title or 'Unknown',
+                'authors': authors_str,
+                'journal': getattr(article, 'journal', 'Unknown'),
+                'year': year,
+                'abstract': getattr(article, 'abstract', 'Abstract not available'),
+                'doi': getattr(article, 'doi', None),
+                'pmid': pmid
+            }
+            
+            return abstract_details
+            
+        except Exception as e:
+            logger.error(f"Error fetching abstract by PMID {pmid}: {e}")
+            return None
+    
+    def extract_key_findings(self, abstract: str, ingredient: str, health_claim: str) -> str:
+        """Extract key health findings from an abstract."""
+        try:
+            if not abstract or len(abstract) < 50:
+                return "Key findings not available"
+            
+            # Simple keyword-based extraction
+            abstract_lower = abstract.lower()
+            ingredient_lower = ingredient.lower()
+            
+            # Look for key result indicators
+            key_phrases = []
+            
+            # Look for results, conclusions, or findings
+            sentences = abstract.split('.')
+            for sentence in sentences:
+                sentence_lower = sentence.lower().strip()
+                
+                # Skip if sentence is too short
+                if len(sentence_lower) < 20:
+                    continue
+                
+                # Check if sentence contains ingredient and result indicators
+                if (ingredient_lower in sentence_lower and 
+                    any(indicator in sentence_lower for indicator in 
+                        ['result', 'conclusion', 'finding', 'showed', 'demonstrated', 
+                         'associated', 'increased', 'decreased', 'caused', 'linked'])):
+                    key_phrases.append(sentence.strip())
+            
+            if key_phrases:
+                # Return the most relevant finding (usually the first one)
+                return key_phrases[0][:200] + "..." if len(key_phrases[0]) > 200 else key_phrases[0]
+            else:
+                # Fallback: return first part of abstract
+                return abstract[:150] + "..." if len(abstract) > 150 else abstract
+                
+        except Exception as e:
+            logger.error(f"Error extracting key findings: {e}")
+            return "Key findings extraction failed"
+    
+    def generate_health_summary(self, evidence_text: str, ingredient: str, max_chars: int = 180) -> str:
+        """Generate a concise health summary from scientific evidence."""
+        try:
+            if not evidence_text or len(evidence_text) < 50:
+                return f"Limited scientific evidence available for {ingredient}"
+            
+            # Extract key health effects mentioned in the evidence
+            evidence_lower = evidence_text.lower()
+            ingredient_lower = ingredient.lower()
+            
+            # Common health concern keywords and their descriptions
+            health_effects = {
+                'carcinogen': 'may increase cancer risk',
+                'toxic': 'shows toxic effects',
+                'endocrine': 'disrupts hormone function',
+                'inflammatory': 'causes inflammation',
+                'allergic': 'triggers allergic reactions',
+                'oxidative': 'causes oxidative stress',
+                'mutagenic': 'damages DNA',
+                'neurotoxic': 'affects nervous system',
+                'hepatotoxic': 'damages liver function',
+                'nephrotoxic': 'harms kidney function'
+            }
+            
+            # Find relevant health effects
+            found_effects = []
+            for keyword, description in health_effects.items():
+                if keyword in evidence_lower:
+                    found_effects.append(description)
+            
+            # Build summary
+            if found_effects:
+                effects_text = ", ".join(found_effects[:2])  # Limit to 2 effects
+                summary = f"Research indicates {ingredient} {effects_text} based on scientific studies"
+            else:
+                # Fallback summary
+                summary = f"Scientific studies suggest potential health concerns with {ingredient}"
+            
+            # Ensure summary fits within character limit
+            if len(summary) > max_chars - 20:  # Reserve space for period
+                summary = summary[:max_chars - 23] + "..."
+            
+            return summary + "."
+            
+        except Exception as e:
+            logger.error(f"Error generating health summary: {e}")
+            return f"Health assessment unavailable for {ingredient}."
 
 
 # Test the citation search
