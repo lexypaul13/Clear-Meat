@@ -34,7 +34,7 @@ class AsyncCitationSearchService:
     async def __aenter__(self):
         """Async context manager entry."""
         timeout = aiohttp.ClientTimeout(total=30, connect=10)
-        connector = aiohttp.TCPConnector(limit=100, limit_per_host=20)
+        connector = aiohttp.TCPConnector(limit=100, limit_per_host=20, ssl=False)  # Disable SSL verification for development
         
         self.session = aiohttp.ClientSession(
             timeout=timeout,

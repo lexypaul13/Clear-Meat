@@ -73,7 +73,27 @@ class HealthAssessmentWithCitations:
                 
                 if citations:
                     for citation in citations:
-                        citations_dict[str(citation_counter)] = citation.to_apa_format()
+                        # Handle both dict and Citation object formats
+                        if isinstance(citation, dict):
+                            # Format dict as APA citation
+                            authors = citation.get('authors', 'Unknown')
+                            year = citation.get('year', 'n.d.')
+                            title = citation.get('title', 'Untitled')
+                            journal = citation.get('journal', '')
+                            url = citation.get('url', '')
+                            
+                            if journal:
+                                apa_citation = f"{authors} ({year}). {title}. {journal}."
+                            else:
+                                apa_citation = f"{authors} ({year}). {title}."
+                            
+                            if url:
+                                apa_citation += f" Retrieved from {url}"
+                                
+                            citations_dict[str(citation_counter)] = apa_citation
+                        else:
+                            # Citation object with to_apa_format method
+                            citations_dict[str(citation_counter)] = citation.to_apa_format()
                         citation_counter += 1
             
             # Step 4: Enhance assessment with real citations

@@ -5,6 +5,10 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 import requests
 from pymed import PubMed
+import urllib3
+
+# Disable SSL warnings for development
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from app.models.citation import Citation, Author, CitationSearch, CitationResult
 
@@ -215,7 +219,7 @@ class CitationSearchService:
                 'sort': 'relevance'
             }
             
-            response = requests.get(url, params=params, timeout=10)
+            response = requests.get(url, params=params, timeout=10, verify=False)  # Disable SSL verification for development
             response.raise_for_status()
             
             data = response.json()
@@ -297,7 +301,7 @@ class CitationSearchService:
                 'fields': 'title,authors,venue,year,doi,url,abstract,citationCount'
             }
             
-            response = requests.get(url, params=params, timeout=10)
+            response = requests.get(url, params=params, timeout=10, verify=False)  # Disable SSL verification for development
             response.raise_for_status()
             
             data = response.json()
