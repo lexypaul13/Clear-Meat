@@ -464,6 +464,11 @@ class JWTErrorHandlerMiddleware(BaseHTTPMiddleware):
         if self._is_public_path(request.url.path):
             return await call_next(request)
 
+        # Skip validation if auth bypass is enabled (development only)
+        import os
+        if os.environ.get("ENABLE_AUTH_BYPASS") == "true":
+            return await call_next(request)
+
         try:
             # Get authorization header
             authorization = request.headers.get("Authorization", "")

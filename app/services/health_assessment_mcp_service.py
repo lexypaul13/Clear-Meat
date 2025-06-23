@@ -13,9 +13,10 @@ from fastapi import HTTPException
 from app.core.config import settings
 from app.core.cache import cache
 from app.models.product import HealthAssessment, ProductStructured
-from app.services.citation_mcp_server import get_citation_server
-from fastmcp.client.transports import FastMCPTransport
-from fastmcp import Client as MCPClient
+# MCP functionality disabled - requires fastmcp package installation
+# from app.services.citation_mcp_server import get_citation_server
+# from fastmcp.client.transports import FastMCPTransport
+# from fastmcp import Client as MCPClient
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,9 @@ class HealthAssessmentMCPService:
         # Configure Gemini
         genai.configure(api_key=settings.GEMINI_API_KEY)
         self.model = settings.GEMINI_MODEL
-        self.mcp_server = get_citation_server()
+        # MCP server disabled - requires fastmcp package
+        # self.mcp_server = get_citation_server()
+        self.mcp_server = None
         
     async def generate_health_assessment_with_real_evidence(
         self, 
@@ -139,35 +142,32 @@ class HealthAssessmentMCPService:
     ) -> Optional[HealthAssessment]:
         """Generate evidence-based assessment using MCP tools."""
         try:
-            # Set up MCP transport and client
-            transport = FastMCPTransport(self.mcp_server)
+            # Using direct Gemini assessment (MCP disabled)
+            logger.info(f"[Assessment] Starting health analysis")
             
-            async with MCPClient(transport) as mcp_client:
-                # Build the evidence-based assessment prompt
-                prompt = self._build_evidence_assessment_prompt(
-                    product, high_risk_ingredients, moderate_risk_ingredients
+            # Build the evidence-based assessment prompt
+            prompt = self._build_evidence_assessment_prompt(
+                product, high_risk_ingredients, moderate_risk_ingredients
+            )
+            
+            # Send request to Gemini directly
+            response = genai.GenerativeModel(self.model).generate_content(
+                prompt,
+                generation_config=genai.GenerationConfig(
+                    temperature=0,
+                    max_output_tokens=4000
                 )
-                
-                logger.info(f"[MCP Assessment] Starting evidence-based analysis")
-                
-                # Send request to Gemini with MCP tools available
-                response = genai.GenerativeModel(self.model).generate_content(
-                    prompt,
-                    generation_config=genai.GenerationConfig(
-                        temperature=0,
-                        max_output_tokens=4000
-                    )
-                )
-                
-                # Parse the structured response into HealthAssessment
-                assessment_data = self._parse_assessment_response(
-                    response.text, high_risk_ingredients, moderate_risk_ingredients
-                )
-                
-                if assessment_data:
-                    return HealthAssessment(**assessment_data)
-                else:
-                    return None
+            )
+            
+            # Parse the structured response into HealthAssessment
+            assessment_data = self._parse_assessment_response(
+                response.text, high_risk_ingredients, moderate_risk_ingredients
+            )
+            
+            if assessment_data:
+                return HealthAssessment(**assessment_data)
+            else:
+                return None
                 
         except Exception as e:
             logger.error(f"Error in MCP evidence-based assessment: {e}")

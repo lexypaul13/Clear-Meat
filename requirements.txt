@@ -1,50 +1,43 @@
-# Core requirements
-fastapi>=0.109.0
-uvicorn>=0.27.0
-sqlalchemy>=2.0.0
-pydantic[email]>=2.6.0
-pydantic-settings>=2.1.0
-python-dotenv>=1.0.0
-supabase>=2.3.0
+# Core API requirements - tested and compatible
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+sqlalchemy==2.0.25
+pydantic[email]==2.6.4
+pydantic-settings==2.2.1
+python-dotenv==1.0.1
 alembic==1.12.0
-Jinja2==3.1.2
+Jinja2==3.1.4
+
+# Supabase - use latest version for best httpx compatibility
+supabase==2.9.1
 
 # Database drivers
-psycopg2-binary>=2.9.0
+psycopg2-binary==2.9.9
 
-# Scraping tools
-requests>=2.31.0
-beautifulsoup4==4.12.2
+# HTTP client - must be compatible with supabase 2.9.1
+httpx==0.27.0
 
-# Data processing
-pandas==2.1.0
-matplotlib==3.8.0
+# Web scraping
+requests==2.31.0
+beautifulsoup4==4.12.3
 
-# Dashboard and visualization
+# Auth and security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.9
+
+# AI services
+google-generativeai==0.4.0
+backoff==2.2.1
+
+# Essential packages that might be imported
 tqdm==4.66.1
-streamlit>=1.31.0
-streamlit-extras>=0.4.0
-pillow==10.0.1
-extra-streamlit-components==0.1.60
+pillow>=10.0.0
 
-# Scheduling
-schedule==1.2.0
+# Citation and research tools (required by citation_tools.py)
+crossref-commons==0.0.7
+pymed==0.8.9
+newspaper3k==0.2.8
 
-# Testing
-pytest==7.4.2
-httpx==0.25.0
-
-# Additional requirements
-python-jose[cryptography]>=3.3.0
-passlib[bcrypt]>=1.7.4
-python-multipart>=0.0.6
-backoff>=2.2.0 
-google-generativeai>=0.3.0 
-
-# Citation and research tools
-crossref-commons>=0.0.7  # CrossRef API for DOI lookup
-pymed>=0.8.9  # PubMed client for medical research
-newspaper3k>=0.2.8  # Web article parsing
-
-# MCP (Model Context Protocol) support
-fastmcp>=0.1.0  # FastMCP for creating MCP servers 
+# MCP support (requires additional setup)
+# fastmcp>=0.1.0
