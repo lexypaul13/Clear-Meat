@@ -19,6 +19,7 @@ from app.models.product import Product
 from app.core import security
 from app.db import models as db_models
 from app.db.supabase_client import get_supabase_service
+from app.db.session import get_db
 from app.internal.dependencies import get_current_active_user
 from app.services.ai_service import generate_personalized_insights
 from app.services.gemini_service import get_personalized_recommendations
@@ -54,6 +55,7 @@ def get_current_user_profile(
 @router.put("/me", response_model=UserResponse)
 def update_current_user(
     user_in: UserUpdate,
+    db: Session = Depends(get_db),
     supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user),
 ) -> Any:
@@ -156,6 +158,7 @@ def update_current_user(
 
 @router.get("/history", response_model=List[ScanHistory])
 async def get_user_scan_history(
+    db: Session = Depends(get_db),
     supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user),
 ) -> Any:
@@ -203,6 +206,7 @@ async def get_user_scan_history(
 @router.post("/history", response_model=ScanHistory)
 async def add_scan_history(
     scan_data: ScanHistoryCreate,
+    db: Session = Depends(get_db),
     supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user),
 ):
@@ -284,6 +288,7 @@ async def add_scan_history(
 
 @router.get("/favorites", response_model=List[UserFavorite])
 async def get_user_favorites(
+    db: Session = Depends(get_db),
     supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user),
 ) -> Any:
@@ -329,6 +334,7 @@ async def get_user_favorites(
 @router.post("/favorites", response_model=UserFavorite)
 async def add_favorite(
     favorite_in: UserFavoriteCreate,
+    db: Session = Depends(get_db),
     supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user),
 ) -> Any:
@@ -398,6 +404,7 @@ async def add_favorite(
 @router.delete("/favorites/{product_code}")
 def remove_favorite(
     product_code: str,
+    db: Session = Depends(get_db),
     supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user),
 ) -> Any:
@@ -440,6 +447,7 @@ def remove_favorite(
 
 @router.get("/recommendations", response_model=List[Product])
 async def get_recommendations(
+    db: Session = Depends(get_db),
     supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user),
 ) -> Any:
@@ -618,6 +626,7 @@ async def get_recommendations(
 
 @router.get("/explore")
 async def get_personalized_explore(
+    db: Session = Depends(get_db),
     supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user),
 ):

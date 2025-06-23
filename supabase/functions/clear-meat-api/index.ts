@@ -16,15 +16,57 @@ serve(async (req) => {
 
   try {
     const url = new URL(req.url)
-    const path = url.pathname.replace('/functions/v1/clear-meat-api', '') || '/'
+    let path = url.pathname
+    
+    // Handle multiple possible path prefixes
+    const prefixes = ['/functions/v1/clear-meat-api', '/clear-meat-api']
+    for (const prefix of prefixes) {
+      if (path.startsWith(prefix)) {
+        path = path.substring(prefix.length)
+        break
+      }
+    }
+    
+    // Ensure path starts with /
+    if (!path.startsWith('/')) {
+      path = '/' + path
+    }
+    
+    // If path is just /, default to /health
+    if (path === '/') {
+      path = '/health'
+    }
     
     // Proxy all requests to Python API
     const targetUrl = `${PYTHON_API_URL}${path}${url.search}`
     
-    // Only forward essential headers, completely skip auth headers
+    // Log for debugging
+    console.log('Edge Function Request:', {
+      method: req.method,
+      originalPath: url.pathname,
+      processedPath: path,
+      targetUrl: targetUrl,
+    })
+    
+    // Forward more headers while filtering sensitive ones
+    const headersToSkip = ['host', 'authorization', 'x-supabase-auth']
     const cleanHeaders = new Headers()
-    cleanHeaders.set('Content-Type', 'application/json')
+    
+    // Add essential headers
     cleanHeaders.set('Accept', 'application/json')
+    
+    // Forward other safe headers from the request
+    for (const [key, value] of req.headers.entries()) {
+      const lowerKey = key.toLowerCase()
+      if (!headersToSkip.includes(lowerKey)) {
+        cleanHeaders.set(key, value)
+      }
+    }
+    
+    // Ensure content-type is set for requests with body
+    if (req.method !== 'GET' && req.method !== 'HEAD' && !cleanHeaders.has('content-type')) {
+      cleanHeaders.set('Content-Type', 'application/json')
+    }
     
     // Get request body if it exists
     let body = null
@@ -40,6 +82,12 @@ serve(async (req) => {
     
     const responseBody = await response.text()
     
+    // Log response status for debugging
+    console.log('Edge Function Response:', {
+      status: response.status,
+      targetUrl: targetUrl,
+    })
+    
     return new Response(responseBody, {
       status: response.status,
       headers: {
@@ -50,7 +98,8 @@ serve(async (req) => {
       },
     })
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    console.error('Edge Function Error:', error)
+    return new Response(JSON.stringify({ error: error.message, detail: 'Edge function error' }), {
       status: 500,
       headers: {
         'Content-Type': 'application/json',

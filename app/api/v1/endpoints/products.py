@@ -16,6 +16,7 @@ import uuid
 from app.api.v1 import models
 from app.db import models as db_models
 from app.db.supabase_client import get_supabase_service
+from app.db.session import get_db
 from app.utils import helpers
 from app.internal.dependencies import get_current_active_user
 from app.services.recommendation_service import (
@@ -219,6 +220,7 @@ def get_products(
 
 @router.get("/recommendations", response_model=models.RecommendationResponse)
 def get_product_recommendations(
+    db: Session = Depends(get_db),
     supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user),
     limit: int = Query(30, ge=1, le=100, description="Maximum number of recommendations to return"),
@@ -323,6 +325,7 @@ def get_product_recommendations(
 @router.get("/{code}")
 def get_product(
     code: str,
+    db: Session = Depends(get_db),
     supabase_service = Depends(get_supabase_service),
 ) -> Any:
     """
@@ -428,6 +431,7 @@ def get_product(
 @router.get("/{code}/alternatives", response_model=List[models.ProductAlternative])
 def get_product_alternatives(
     code: str,
+    db: Session = Depends(get_db),
     supabase_service = Depends(get_supabase_service),
 ) -> List[models.ProductAlternative]:
     """
@@ -549,6 +553,7 @@ def get_product_alternatives(
 @router.get("/{code}/health-assessment-mcp")
 async def get_product_health_assessment_mcp(
     code: str,
+    db: Session = Depends(get_db),
     supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user)
 ) -> Union[models.HealthAssessment, Dict[str, Any]]:
@@ -617,6 +622,7 @@ async def get_product_health_assessment(
         None, 
         description="JSON string of user health preferences"
     ),
+    db: Session = Depends(get_db),
     supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user)
 ) -> Union[models.HealthAssessment, models.EnhancedHealthAssessment, Dict[str, Any]]:

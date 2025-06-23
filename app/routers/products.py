@@ -11,6 +11,7 @@ from app.models import (
 from app.models.ingredient import AdditiveInfo
 from app.db import models as db_models
 from app.db.supabase_client import get_supabase_service
+from app.db.session import get_db
 from app.utils import helpers
 from app.services.ai_service import generate_personalized_insights
 from app.services.health_assessment_service import generate_health_assessment
@@ -21,6 +22,7 @@ router = APIRouter()
 
 @router.get("/", response_model=List[Product])
 def get_products(
+    db: Session = Depends(get_db),
     supabase_service = Depends(get_supabase_service),
     current_user: Optional[db_models.User] = Depends(get_current_user_optional),
     skip: int = 0,
@@ -112,6 +114,7 @@ def get_products(
 @router.get("/{code}", response_model=ProductStructured)
 def get_product(
     code: str,
+    db: Session = Depends(get_db),
     supabase_service = Depends(get_supabase_service),
     current_user: Optional[db_models.User] = Depends(get_current_user_optional),
 ) -> Any:
@@ -215,6 +218,7 @@ def get_product(
 @router.get("/{code}/health-assessment", response_model=HealthAssessment)
 def get_product_health_assessment(
     code: str,
+    db: Session = Depends(get_db),
     supabase_service = Depends(get_supabase_service)
 ) -> Any:
     """
