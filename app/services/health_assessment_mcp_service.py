@@ -270,7 +270,7 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
                 return None
                 
             assessment_data = {
-                "summary": f"This {product.product.name} contains preservatives and additives requiring moderation. High salt content may contribute to cardiovascular concerns. [1][2]",
+                "summary": "This product contains preservatives and additives requiring moderation. High salt content may contribute to cardiovascular concerns. [1][2]",
                 "risk_summary": {
                     "grade": "C",
                     "color": "Yellow"
@@ -284,10 +284,10 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
                 "citations": [],
                 "metadata": {
                     "generated_at": datetime.now().isoformat(),
-                    "product_code": product.product.code,
-                    "product_name": product.product.name,
-                    "product_brand": product.product.brand or "",
-                    "ingredients": product.product.ingredients_text or "",
+                    "product_code": "",
+                    "product_name": "",
+                    "product_brand": "",
+                    "ingredients": "",
                     "assessment_type": "MCP Evidence-Based Health Assessment"
                 }
             }
@@ -330,7 +330,7 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
                 })
             
             # Generate nutrition insights using existing method
-            assessment_data["nutrition_insights"] = self._generate_nutrition_insights(product)
+            assessment_data["nutrition_insights"] = self._generate_nutrition_insights(self._current_product)
             
             # Add default citations
             assessment_data["citations"] = [
@@ -360,14 +360,20 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
                 }
             ]
             
-            # Adjust grade based on number of high-risk ingredients
+            # Adjust grade based on number of high-risk ingredients  
             if len(assessment_data["ingredients_assessment"]["high_risk"]) >= 2:
                 assessment_data["risk_summary"]["grade"] = "D"
                 assessment_data["risk_summary"]["color"] = "Orange"
-                assessment_data["summary"] = f"This {product.product.name} receives a D grade due to multiple high-risk preservatives and additives. Regular consumption should be limited. [1][2]"
+                assessment_data["summary"] = f"This {self._current_product.product.name} receives a D grade due to multiple high-risk preservatives and additives. Regular consumption should be limited. [1][2]"
             elif len(assessment_data["ingredients_assessment"]["high_risk"]) >= 1:
                 assessment_data["risk_summary"]["grade"] = "C"
                 assessment_data["risk_summary"]["color"] = "Yellow"
+            
+            # Update metadata with actual product information
+            assessment_data["metadata"]["product_code"] = self._current_product.product.code
+            assessment_data["metadata"]["product_name"] = self._current_product.product.name
+            assessment_data["metadata"]["product_brand"] = self._current_product.product.brand or ""
+            assessment_data["metadata"]["ingredients"] = self._current_product.product.ingredients_text or ""
             
             return assessment_data
             
