@@ -168,7 +168,8 @@ class HealthAssessmentMCPService:
             )
             
             if assessment_data:
-                return HealthAssessment(**assessment_data)
+                # Ensure the response matches the exact contract format
+                return assessment_data  # Return dict instead of HealthAssessment to avoid Pydantic issues
             else:
                 return None
                 

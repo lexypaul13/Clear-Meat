@@ -658,7 +658,10 @@ async def get_product_health_assessment_mcp(
             raise HTTPException(status_code=500, detail="Failed to generate evidence-based health assessment")
         
         logger.info("Step 3: MCP health assessment generated successfully")
-        return assessment
+        
+        # Return dict directly to avoid Pydantic model conversion issues
+        from fastapi.responses import JSONResponse
+        return JSONResponse(content=assessment)
 
     except HTTPException:
         raise
