@@ -147,6 +147,71 @@ def get_product_count(
             detail=f"Database error: {str(e)}"
         )
 
+@router.get("/test-gemini")
+async def test_gemini_api() -> Dict[str, Any]:
+    """Test Gemini API connectivity and response"""
+    import os
+    import google.generativeai as genai
+    
+    try:
+        api_key = os.getenv("GEMINI_API_KEY", "")
+        if not api_key:
+            return {"error": "GEMINI_API_KEY not set", "success": False}
+        
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        
+        response = model.generate_content(
+            "Say 'Hello from Gemini' and nothing else",
+            generation_config=genai.GenerationConfig(temperature=0, max_output_tokens=10)
+        )
+        
+        return {
+            "success": True,
+            "api_key_set": True,
+            "api_key_length": len(api_key),
+            "response_text": response.text,
+            "model_used": "gemini-1.5-flash"
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_type": e.__class__.__name__,
+            "api_key_set": bool(api_key) if 'api_key' in locals() else False
+        }
+
+@router.get("/test-mcp-service")
+async def test_mcp_service() -> Dict[str, Any]:
+    """Test MCP service initialization and basic functionality"""
+    try:
+        from app.services.health_assessment_mcp_service import HealthAssessmentMCPService
+        
+        # Test service creation
+        mcp_service = HealthAssessmentMCPService()
+        
+        # Test that the service has the expected properties
+        has_model = hasattr(mcp_service, 'model')
+        model_value = getattr(mcp_service, 'model', 'not_found')
+        
+        return {
+            "success": True,
+            "service_created": True,
+            "has_model_attr": has_model,
+            "model_value": model_value,
+            "service_type": str(type(mcp_service))
+        }
+        
+    except Exception as e:
+        import traceback
+        return {
+            "success": False,
+            "error": str(e),
+            "error_type": e.__class__.__name__,
+            "traceback": traceback.format_exc()
+        }
+
 @router.get("/", response_model=List[models.Product])
 def get_products(
     supabase_service = Depends(get_supabase_service),
@@ -600,71 +665,6 @@ async def get_product_health_assessment_mcp(
     except Exception as e:
         logger.error(f"Unexpected error in MCP health assessment: {e.__class__.__name__}", exc_info=True)
         raise HTTPException(status_code=500, detail="An internal error occurred during evidence-based assessment")
-
-@router.get("/test-gemini")
-async def test_gemini_api() -> Dict[str, Any]:
-    """Test Gemini API connectivity and response"""
-    import os
-    import google.generativeai as genai
-    
-    try:
-        api_key = os.getenv("GEMINI_API_KEY", "")
-        if not api_key:
-            return {"error": "GEMINI_API_KEY not set", "success": False}
-        
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        
-        response = model.generate_content(
-            "Say 'Hello from Gemini' and nothing else",
-            generation_config=genai.GenerationConfig(temperature=0, max_output_tokens=10)
-        )
-        
-        return {
-            "success": True,
-            "api_key_set": True,
-            "api_key_length": len(api_key),
-            "response_text": response.text,
-            "model_used": "gemini-1.5-flash"
-        }
-        
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "error_type": e.__class__.__name__,
-            "api_key_set": bool(api_key) if 'api_key' in locals() else False
-        }
-
-@router.get("/test-mcp-service")
-async def test_mcp_service() -> Dict[str, Any]:
-    """Test MCP service initialization and basic functionality"""
-    try:
-        from app.services.health_assessment_mcp_service import HealthAssessmentMCPService
-        
-        # Test service creation
-        mcp_service = HealthAssessmentMCPService()
-        
-        # Test that the service has the expected properties
-        has_model = hasattr(mcp_service, 'model')
-        model_value = getattr(mcp_service, 'model', 'not_found')
-        
-        return {
-            "success": True,
-            "service_created": True,
-            "has_model_attr": has_model,
-            "model_value": model_value,
-            "service_type": str(type(mcp_service))
-        }
-        
-    except Exception as e:
-        import traceback
-        return {
-            "success": False,
-            "error": str(e),
-            "error_type": e.__class__.__name__,
-            "traceback": traceback.format_exc()
-        }
 
 @router.get("/{code}/debug-mcp")
 async def debug_mcp_health_assessment(
