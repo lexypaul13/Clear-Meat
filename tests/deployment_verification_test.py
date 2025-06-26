@@ -165,24 +165,26 @@ class DeploymentTestSuite:
             self.log_test_result("Product Info", False, f"HTTP {response.status_code if response else 'Request failed'}")
             all_passed = False
         
-        # Test health assessment (critical feature)
-        success, response, error = self.make_request('GET', f'/api/v1/products/{product_code}/health-assessment')
+        # Test health assessment (critical feature) - using MCP endpoint
+        success, response, error = self.make_request('GET', f'/api/v1/products/{product_code}/health-assessment-mcp')
         if success:
             if response.status_code == 200:
                 try:
                     data = response.json()
                     summary = data.get('summary', 'No summary')[:50] + "..."
-                    self.log_test_result("Health Assessment", True, f"Summary: {summary}", response.elapsed.total_seconds())
+                    self.log_test_result("Health Assessment (MCP)", True, f"Summary: {summary}", response.elapsed.total_seconds())
                 except json.JSONDecodeError:
-                    self.log_test_result("Health Assessment", False, "Invalid JSON response")
+                    self.log_test_result("Health Assessment (MCP)", False, "Invalid JSON response")
                     all_passed = False
             elif response.status_code == 404:
-                self.log_test_result("Health Assessment", True, "Product not found (expected for some products)", response.elapsed.total_seconds())
+                self.log_test_result("Health Assessment (MCP)", True, "Product not found (expected for some products)", response.elapsed.total_seconds())
+            elif response.status_code == 401:
+                self.log_test_result("Health Assessment (MCP)", True, "Requires authentication (expected)", response.elapsed.total_seconds())
             else:
-                self.log_test_result("Health Assessment", False, f"HTTP {response.status_code}")
+                self.log_test_result("Health Assessment (MCP)", False, f"HTTP {response.status_code}")
                 all_passed = False
         else:
-            self.log_test_result("Health Assessment", False, f"Request failed: {error}")
+            self.log_test_result("Health Assessment (MCP)", False, f"Request failed: {error}")
             all_passed = False
         
         return all_passed

@@ -22,12 +22,6 @@ from app.internal.dependencies import get_current_active_user
 from app.services.recommendation_service import (
     get_personalized_recommendations, analyze_product_match
 )
-from app.services.health_assessment_service import (
-    generate_health_assessment, 
-    generate_health_assessment_with_citations_option,
-    convert_to_enhanced_assessment,
-    transform_health_assessment_json
-)
 from app.services.health_assessment_mcp_service import HealthAssessmentMCPService
 from app.services.search_service import search_products
 from app.utils.personalization import apply_user_preferences
@@ -607,102 +601,4 @@ async def get_product_health_assessment_mcp(
         logger.error(f"Unexpected error in MCP health assessment: {e.__class__.__name__}", exc_info=True)
         raise HTTPException(status_code=500, detail="An internal error occurred during evidence-based assessment")
 
-@router.get("/{code}/health-assessment")
-async def get_product_health_assessment(
-    code: str,
-    include_citations: bool = Query(
-        default=True, 
-        description="Include real scientific citations from PubMed and CrossRef"
-    ),
-    format: str = Query(
-        default="standard",
-        description="Response format: 'standard' for classic format, 'enhanced' for detailed citation metadata, 'transformed' for new JSON format, or 'mcp' for evidence-based analysis"
-    ),
-    user_preferences: Optional[str] = Query(
-        None, 
-        description="JSON string of user health preferences"
-    ),
-    db: Session = Depends(get_db),
-    supabase_service = Depends(get_supabase_service),
-    current_user: db_models.User = Depends(get_current_active_user)
-) -> Union[models.HealthAssessment, models.EnhancedHealthAssessment, Dict[str, Any]]:
-    """
-    Generate a health assessment for a specific product.
-    
-    - **standard**: The default, balanced health assessment.
-    - **enhanced**: Includes detailed metadata for each scientific citation.
-    - **transformed**: A new, consolidated JSON format with nutrition insights.
-    
-    Args:
-        code: The product's barcode
-        include_citations: Whether to include scientific citations
-        format: The response format
-        user_preferences: User-specific health preferences (JSON string)
-        supabase_service: Supabase client
-        current_user: Currently authenticated user
-        
-    Returns:
-        The health assessment in the specified format.
-    """
-    logger.info(f"Starting health assessment for product {code} with format '{format}'.")
-    try:
-        # Step 1: Fetch product data
-        logger.info("Step 1: Fetching product data from Supabase.")
-        product_data = supabase_service.get_product_by_code(code)
-        if not product_data:
-            logger.warning(f"Product with code '{code}' not found.")
-            raise HTTPException(status_code=404, detail=f"Product with code '{code}' not found")
-        logger.info("Step 1: Product data fetched successfully.")
-
-        # Step 2: Structure product data
-        logger.info("Step 2: Structuring product data.")
-        structured_product = helpers.structure_product_data(product_data)
-        if not structured_product:
-            logger.error("Failed to structure product data.")
-            raise HTTPException(status_code=500, detail="Failed to structure product data for assessment")
-        logger.info("Step 2: Product data structured successfully.")
-
-        # Step 3: Generate health assessment with citations
-        logger.info("Step 3: Generating health assessment with citations.")
-        assessment = generate_health_assessment_with_citations_option(
-            product=structured_product,
-            include_citations=include_citations
-        )
-        if not assessment:
-            logger.error("Failed to generate health assessment.")
-            raise HTTPException(status_code=500, detail="Failed to generate health assessment")
-        logger.info("Step 3: Health assessment generated successfully.")
-
-        # Step 4: Handle different formats
-        logger.info(f"Step 4: Handling format '{format}'.")
-        if format == 'mcp':
-            logger.info("Generating evidence-based assessment using MCP.")
-            mcp_service = HealthAssessmentMCPService()
-            mcp_assessment = await mcp_service.generate_health_assessment_with_real_evidence(structured_product)
-            if mcp_assessment:
-                return mcp_assessment
-            else:
-                logger.warning("MCP assessment failed, falling back to standard assessment")
-                return assessment
-        elif format == 'transformed':
-            logger.info("Transforming assessment to 'transformed' format.")
-            assessment_dict = assessment.dict()
-            logger.info(f"Assessment dict keys: {list(assessment_dict.keys())}")
-            transformed_result = transform_health_assessment_json(assessment_dict, product_data)
-            logger.info(f"Transformed result keys: {list(transformed_result.keys())}")
-            # Force return as dict to bypass any validation
-            from fastapi.responses import JSONResponse
-            return JSONResponse(content=transformed_result)
-        elif format == 'enhanced':
-            logger.info("Converting assessment to 'enhanced' format.")
-            return convert_to_enhanced_assessment(assessment)
-        else: # 'standard'
-            logger.info("Returning standard assessment.")
-            return assessment
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"An unexpected error occurred in get_product_health_assessment: {e.__class__.__name__}", exc_info=True)
-        raise HTTPException(status_code=500, detail="An internal error occurred during health assessment.")
 
