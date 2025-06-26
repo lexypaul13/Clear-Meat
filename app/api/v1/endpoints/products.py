@@ -601,4 +601,82 @@ async def get_product_health_assessment_mcp(
         logger.error(f"Unexpected error in MCP health assessment: {e.__class__.__name__}", exc_info=True)
         raise HTTPException(status_code=500, detail="An internal error occurred during evidence-based assessment")
 
+@router.get("/{code}/debug-mcp")
+async def debug_mcp_health_assessment(
+    code: str,
+    db: Session = Depends(get_db),
+    supabase_service = Depends(get_supabase_service)
+) -> Dict[str, Any]:
+    """
+    DEBUG ENDPOINT: Shows detailed error information for MCP health assessment.
+    TEMPORARY - Will be removed after fixing the main endpoint.
+    """
+    debug_info = {
+        "step": "starting",
+        "product_code": code,
+        "errors": [],
+        "success": False
+    }
+    
+    try:
+        # Step 1: Test product data fetch
+        debug_info["step"] = "fetching_product_data"
+        product_data = supabase_service.get_product_by_code(code)
+        if not product_data:
+            debug_info["errors"].append(f"Product with code '{code}' not found")
+            return debug_info
+        debug_info["product_found"] = True
+        debug_info["product_name"] = product_data.get('name', 'Unknown')
+        
+        # Step 2: Test product structuring
+        debug_info["step"] = "structuring_product_data"
+        structured_product = helpers.structure_product_data(product_data)
+        if not structured_product:
+            debug_info["errors"].append("Failed to structure product data")
+            return debug_info
+        debug_info["product_structured"] = True
+        debug_info["ingredients"] = structured_product.product.ingredients_text[:100] + "..." if structured_product.product.ingredients_text else "None"
+        
+        # Step 3: Test MCP service initialization
+        debug_info["step"] = "initializing_mcp_service"
+        from app.services.health_assessment_mcp_service import HealthAssessmentMCPService
+        mcp_service = HealthAssessmentMCPService()
+        debug_info["mcp_service_initialized"] = True
+        
+        # Step 4: Test ingredient categorization
+        debug_info["step"] = "categorizing_ingredients"
+        basic_categorization = await mcp_service._categorize_ingredients_with_gemini(structured_product)
+        if not basic_categorization:
+            debug_info["errors"].append("Failed to categorize ingredients")
+            return debug_info
+        debug_info["categorization_success"] = True
+        debug_info["high_risk_ingredients"] = basic_categorization.get('high_risk_ingredients', [])
+        debug_info["moderate_risk_ingredients"] = basic_categorization.get('moderate_risk_ingredients', [])
+        
+        # Step 5: Test assessment generation
+        debug_info["step"] = "generating_assessment"
+        assessment_result = await mcp_service._generate_evidence_based_assessment(
+            structured_product, 
+            basic_categorization.get('high_risk_ingredients', []),
+            basic_categorization.get('moderate_risk_ingredients', [])
+        )
+        
+        if assessment_result:
+            debug_info["assessment_generated"] = True
+            debug_info["assessment_summary"] = assessment_result.summary[:100] + "..."
+            debug_info["assessment_grade"] = assessment_result.risk_summary.grade
+            debug_info["success"] = True
+        else:
+            debug_info["errors"].append("Assessment generation returned None")
+            
+        debug_info["step"] = "completed"
+        return debug_info
+        
+    except Exception as e:
+        debug_info["errors"].append(f"Exception in step '{debug_info['step']}': {str(e)}")
+        debug_info["exception_type"] = e.__class__.__name__
+        import traceback
+        debug_info["traceback"] = traceback.format_exc()
+        return debug_info
+
 
