@@ -74,7 +74,7 @@ class HealthAssessmentMCPService:
             logger.info(f"[MCP Health Assessment] High-risk ingredients: {high_risk_ingredients}")
             logger.info(f"[MCP Health Assessment] Moderate-risk ingredients: {moderate_risk_ingredients}")
             
-            # Step 3: Generate evidence-based assessment using MCP
+            # Step 3: Generate simplified evidence-based assessment (MCP features disabled)
             assessment_result = await self._generate_evidence_based_assessment(
                 product, high_risk_ingredients, moderate_risk_ingredients
             )
