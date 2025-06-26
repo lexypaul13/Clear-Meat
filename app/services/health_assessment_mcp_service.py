@@ -58,7 +58,7 @@ class HealthAssessmentMCPService:
             cached_result = cache.get(cache_key)
             if cached_result:
                 logger.info(f"Returning cached MCP health assessment for product {product.product.code}")
-                return HealthAssessment(**cached_result)
+                return cached_result  # Return dict directly, not HealthAssessment object
             
             logger.info(f"[MCP Health Assessment] Analyzing product: {product.product.name}")
             
@@ -80,8 +80,8 @@ class HealthAssessmentMCPService:
             )
             
             if assessment_result:
-                # Cache the result
-                cache.set(cache_key, assessment_result.model_dump(), ttl=86400)  # 24 hours
+                # Cache the result - assessment_result is already a dict
+                cache.set(cache_key, assessment_result, ttl=86400)  # 24 hours
                 logger.info(f"[MCP Health Assessment] Evidence-based assessment generated successfully")
             
             return assessment_result

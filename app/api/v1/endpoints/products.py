@@ -731,8 +731,15 @@ async def debug_mcp_health_assessment(
         
         if assessment_result:
             debug_info["assessment_generated"] = True
-            debug_info["assessment_summary"] = assessment_result.summary[:100] + "..."
-            debug_info["assessment_grade"] = assessment_result.risk_summary.grade
+            # Handle both dict and HealthAssessment object responses
+            if isinstance(assessment_result, dict):
+                debug_info["assessment_summary"] = str(assessment_result.get("summary", ""))[:100] + "..."
+                debug_info["assessment_grade"] = assessment_result.get("risk_summary", {}).get("grade", "Unknown")
+                debug_info["assessment_type"] = "dict"
+            else:
+                debug_info["assessment_summary"] = assessment_result.summary[:100] + "..."
+                debug_info["assessment_grade"] = assessment_result.risk_summary.grade
+                debug_info["assessment_type"] = "HealthAssessment object"
             debug_info["success"] = True
         else:
             debug_info["errors"].append("Assessment generation returned None")
