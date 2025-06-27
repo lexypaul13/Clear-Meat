@@ -6,6 +6,7 @@ import sys
 import uvicorn
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 import logging
 import time
@@ -50,6 +51,9 @@ app = FastAPI(
     docs_url=f"{settings.API_V1_STR}/docs",
     redoc_url=f"{settings.API_V1_STR}/redoc",
 )
+
+# Add GZip compression middleware (should be added first for optimal compression)
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 # Add security middleware
 add_security_middleware(app)

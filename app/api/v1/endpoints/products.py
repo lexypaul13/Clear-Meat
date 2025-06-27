@@ -68,6 +68,63 @@ def sanitize_search_query(query: str) -> str:
     
     return query.strip()
 
+def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
+    """Optimize health assessment response for mobile consumption to reduce bandwidth."""
+    try:
+        optimized = {
+            "summary": assessment.get("summary", "")[:120] + "..." if len(assessment.get("summary", "")) > 120 else assessment.get("summary", ""),
+            "grade": assessment.get("risk_summary", {}).get("grade", ""),
+            "color": assessment.get("risk_summary", {}).get("color", ""),
+            "high_risk": [],
+            "moderate_risk": [],
+            "nutrition": []
+        }
+        
+        # Optimize ingredients assessment - keep only top 2 high/moderate risk
+        ingredients = assessment.get("ingredients_assessment", {})
+        
+        # High risk ingredients (max 2)
+        for ingredient in ingredients.get("high_risk", [])[:2]:
+            optimized["high_risk"].append({
+                "name": ingredient.get("name", "")[:30],  # Truncate long names
+                "risk": ingredient.get("micro_report", "")[:80] + "..." if len(ingredient.get("micro_report", "")) > 80 else ingredient.get("micro_report", "")
+            })
+        
+        # Moderate risk ingredients (max 2)
+        for ingredient in ingredients.get("moderate_risk", [])[:2]:
+            optimized["moderate_risk"].append({
+                "name": ingredient.get("name", "")[:30],  # Truncate long names  
+                "risk": ingredient.get("micro_report", "")[:80] + "..." if len(ingredient.get("micro_report", "")) > 80 else ingredient.get("micro_report", "")
+            })
+        
+        # Optimize nutrition insights - keep only the most important nutrients
+        nutrition_priority = ["Salt", "Fat", "Protein"]  # Most relevant for mobile users
+        nutrition_insights = assessment.get("nutrition_insights", [])
+        
+        for nutrient_name in nutrition_priority:
+            for insight in nutrition_insights:
+                if insight.get("nutrient") == nutrient_name:
+                    optimized["nutrition"].append({
+                        "nutrient": insight.get("nutrient", ""),
+                        "amount": insight.get("amount_per_serving", ""),
+                        "eval": insight.get("evaluation", ""),
+                        "comment": insight.get("ai_commentary", "")[:60] + "..." if len(insight.get("ai_commentary", "")) > 60 else insight.get("ai_commentary", "")
+                    })
+                    break
+        
+        # Keep essential metadata but minimize it
+        optimized["meta"] = {
+            "product": assessment.get("metadata", {}).get("product_name", ""),
+            "generated": assessment.get("metadata", {}).get("generated_at", "")[:10]  # Just date, not full timestamp
+        }
+        
+        return optimized
+        
+    except Exception as e:
+        logger.error(f"Error optimizing response for mobile: {e}")
+        # Return original if optimization fails
+        return assessment
+
 # NEW: Dedicated natural language search endpoint - placed at the top to avoid conflicts
 @router.get("/nlp-search", response_model=Dict[str, Any])
 def natural_language_search(
@@ -612,6 +669,7 @@ def get_product_alternatives(
 @router.get("/{code}/health-assessment-mcp")
 async def get_product_health_assessment_mcp(
     code: str,
+    format: Optional[str] = Query(None, regex="^(mobile|full)$", description="Response format: 'mobile' for optimized mobile response, 'full' for complete data"),
     db: Session = Depends(get_db),
     supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user)
@@ -659,9 +717,20 @@ async def get_product_health_assessment_mcp(
         
         logger.info("Step 3: MCP health assessment generated successfully")
         
+        # Optimize response for mobile if requested
+        if format == "mobile":
+            assessment = _optimize_for_mobile(assessment)
+        
         # Return dict directly to avoid Pydantic model conversion issues
         from fastapi.responses import JSONResponse
-        return JSONResponse(content=assessment)
+        response = JSONResponse(content=assessment)
+        
+        # Add caching headers for mobile optimization
+        if format == "mobile":
+            response.headers["Cache-Control"] = "public, max-age=86400"  # 24 hours
+            response.headers["ETag"] = f'"{code}-mobile-{hash(str(assessment))}"'
+        
+        return response
 
     except HTTPException:
         raise
