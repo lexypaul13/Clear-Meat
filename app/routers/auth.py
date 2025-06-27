@@ -21,18 +21,42 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.post("/login", response_model=Token)
+@router.post("/login", 
+    response_model=Token,
+    summary="User Login",
+    description="Login with email and password to receive an access token",
+    responses={
+        200: {
+            "description": "Login successful",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                        "token_type": "bearer"
+                    }
+                }
+            }
+        },
+        401: {"description": "Invalid credentials"},
+        503: {"description": "Authentication service unavailable"}
+    },
+    tags=["Authentication"]
+)
 def login_access_token(
     form_data: OAuth2PasswordRequestForm = Depends(),
 ) -> Any:
     """
     OAuth2 compatible token login, get an access token for future requests.
     
+    **Request body (x-www-form-urlencoded):**
+    - username: User's email address
+    - password: User's password
+    
     Args:
         form_data: OAuth2 password request form
         
     Returns:
-        Token: Access token
+        Token: Access token for authenticated requests
         
     Raises:
         HTTPException: If authentication fails
@@ -134,18 +158,45 @@ def validate_password_strength(password: str) -> None:
         )
 
 
-@router.post("/register", response_model=Token)
+@router.post("/register", 
+    response_model=Token,
+    summary="Register New User",
+    description="Create a new user account with email and password",
+    responses={
+        200: {
+            "description": "Registration successful",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                        "token_type": "bearer"
+                    }
+                }
+            }
+        },
+        400: {"description": "Invalid user data or weak password"},
+        409: {"description": "Email already registered"},
+        503: {"description": "Registration service unavailable"}
+    },
+    tags=["Authentication"]
+)
 def register_user(
     user_in: UserCreate,
 ) -> Any:
     """
     Register a new user.
     
+    **Password Requirements:**
+    - At least 8 characters long
+    - Maximum 128 characters
+    - Must contain at least 3 of: uppercase, lowercase, number, special character
+    - Cannot be a common password
+    
     Args:
-        user_in: User data
+        user_in: User registration data (email, password, full_name)
         
     Returns:
-        Token: Access token
+        Token: Access token for immediate login
         
     Raises:
         HTTPException: If registration fails

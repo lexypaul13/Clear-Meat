@@ -10,6 +10,7 @@ from pydantic import EmailStr
 from app.api.v1 import models
 from app.core import security
 from app.db import models as db_models
+from app.db.session import get_db
 from app.db.supabase_client import get_supabase_service
 from app.internal.dependencies import get_current_active_user
 from app.services.recommendation_service import (
@@ -23,7 +24,35 @@ logger.setLevel(logging.INFO)
 router = APIRouter()
 
 
-@router.get("/me", response_model=models.User)
+@router.get("/me", 
+    response_model=models.User,
+    summary="Get Current User Profile",
+    description="Retrieve the profile information of the currently authenticated user",
+    responses={
+        200: {
+            "description": "User profile retrieved successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": "123e4567-e89b-12d3-a456-426614174000",
+                        "email": "user@example.com",
+                        "full_name": "John Doe",
+                        "is_active": True,
+                        "is_verified": True,
+                        "created_at": "2024-01-15T10:30:00Z",
+                        "preferences": {
+                            "nutrition_focus": "protein",
+                            "avoid_preservatives": True,
+                            "meat_preferences": ["chicken", "turkey"]
+                        }
+                    }
+                }
+            }
+        },
+        401: {"description": "Not authenticated"}
+    },
+    tags=["Users", "Profile"]
+)
 def get_current_user(
     supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user)
@@ -41,9 +70,42 @@ def get_current_user(
     return current_user
 
 
-@router.put("/me", response_model=models.User)
+@router.put("/me", 
+    response_model=models.User,
+    summary="Update User Profile",
+    description="Update the current user's profile information",
+    responses={
+        200: {
+            "description": "Profile updated successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": "123e4567-e89b-12d3-a456-426614174000",
+                        "email": "user@example.com",
+                        "full_name": "John Smith",
+                        "preferences": {
+                            "nutrition_focus": "low_sodium",
+                            "avoid_preservatives": True,
+                            "meat_preferences": ["chicken", "turkey", "fish"]
+                        }
+                    }
+                }
+            }
+        },
+        401: {"description": "Not authenticated"},
+        500: {"description": "Failed to update profile"}
+    },
+    tags=["Users", "Profile"]
+)
 def update_current_user(
-    user_in: models.UserUpdate,
+    user_in: models.UserUpdate = Body(..., example={
+        "full_name": "John Smith",
+        "preferences": {
+            "nutrition_focus": "low_sodium",
+            "avoid_preservatives": True,
+            "meat_preferences": ["chicken", "turkey"]
+        }
+    }),
     supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user)
 ) -> Any:
@@ -143,7 +205,36 @@ def add_scan_history(
     return scan
 
 
-@router.get("/favorites", response_model=List[models.UserFavorite])
+@router.get("/favorites", 
+    response_model=List[models.UserFavorite],
+    summary="Get User Favorites",
+    description="Retrieve all products marked as favorites by the current user",
+    responses={
+        200: {
+            "description": "Favorites retrieved successfully",
+            "content": {
+                "application/json": {
+                    "example": [
+                        {
+                            "id": "1",
+                            "user_id": "123e4567-e89b-12d3-a456-426614174000",
+                            "product_code": "0002000003197",
+                            "added_at": "2024-01-15T10:30:00Z",
+                            "product": {
+                                "code": "0002000003197",
+                                "name": "Organic Chicken Breast",
+                                "brand": "HealthyChoice",
+                                "risk_rating": "Green"
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+        401: {"description": "Not authenticated"}
+    },
+    tags=["Users", "Favorites"]
+)
 def get_user_favorites(
     db: Session = Depends(get_db),
     current_user: db_models.User = Depends(get_current_active_user)
@@ -250,11 +341,47 @@ def remove_favorite(
     return {"message": "Favorite removed successfully"} 
 
 
-@router.get("/explore", response_model=models.RecommendationResponse)
+@router.get("/explore", 
+    response_model=models.RecommendationResponse,
+    summary="Get Explore Page Recommendations",
+    description="Get personalized product recommendations optimized for discovery and exploration",
+    responses={
+        200: {
+            "description": "Explore recommendations generated successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "recommendations": [
+                            {
+                                "product": {
+                                    "code": "9876543210",
+                                    "name": "Grass-Fed Bison Jerky",
+                                    "brand": "Wild Harvest",
+                                    "risk_rating": "Green",
+                                    "protein": 30.0,
+                                    "salt": 0.9
+                                },
+                                "match_details": {
+                                    "matches": ["High protein content", "Grass-fed meat", "Low sodium"],
+                                    "concerns": []
+                                },
+                                "match_score": None
+                            }
+                        ],
+                        "total_matches": 25
+                    }
+                }
+            }
+        },
+        401: {"description": "Not authenticated"},
+        500: {"description": "Failed to generate recommendations"}
+    },
+    tags=["Users", "Recommendations"]
+)
 def get_explore_recommendations(
     db: Session = Depends(get_db),
     current_user: db_models.User = Depends(get_current_active_user),
-    limit: int = Query(30, ge=1, le=100, description="Maximum number of recommendations to return"),
+    limit: int = Query(30, ge=1, le=100, description="Maximum number of recommendations to return", example=20),
 ) -> Any:
     """
     Get personalized product recommendations for the explore page.

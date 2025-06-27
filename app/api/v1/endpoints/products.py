@@ -8,7 +8,7 @@ import html
 import re
 import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status, Path
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
 import uuid
@@ -126,9 +126,41 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
         return assessment
 
 # NEW: Dedicated natural language search endpoint - placed at the top to avoid conflicts
-@router.get("/nlp-search", response_model=Dict[str, Any])
+@router.get("/nlp-search", 
+    response_model=Dict[str, Any],
+    summary="Natural Language Product Search",
+    description="Search for products using natural language queries with AI-powered understanding",
+    responses={
+        200: {
+            "description": "Search results found",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "query": "low sodium chicken",
+                        "total_results": 3,
+                        "limit": 20,
+                        "skip": 0,
+                        "products": [
+                            {
+                                "code": "1234567890",
+                                "name": "Organic Chicken Breast",
+                                "brand": "HealthyMeat Co",
+                                "risk_rating": "Green",
+                                "salt": 0.5,
+                                "protein": 25.0
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        400: {"description": "Invalid search query"},
+        500: {"description": "Internal server error"}
+    },
+    tags=["Products"]
+)
 def natural_language_search(
-    q: str = Query(..., description="Natural language search query"),
+    q: str = Query(..., description="Natural language search query", example="low sodium chicken snacks"),
     limit: int = Query(20, ge=1, le=100, description="Maximum number of results to return"),
     skip: int = Query(0, ge=0, description="Number of results to skip for pagination"),
     supabase_service = Depends(get_supabase_service),
@@ -189,12 +221,29 @@ def natural_language_search(
             detail="An error occurred while searching products"  # Generic error message
         )
 
-@router.get("/count", response_model=Dict[str, int])
+@router.get("/count", 
+    response_model=Dict[str, int],
+    summary="Get Product Count",
+    description="Returns the total number of products in the database",
+    responses={
+        200: {
+            "description": "Product count retrieved successfully",
+            "content": {
+                "application/json": {
+                    "example": {"total": 15847}
+                }
+            }
+        },
+        401: {"description": "Authentication required"},
+        500: {"description": "Database error"}
+    },
+    tags=["Products"]
+)
 def get_product_count(
     supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user)
 ) -> Dict[str, int]:
-    """Get total count of products in database."""
+    """Get total count of products in database. Requires authentication."""
     try:
         total = supabase_service.count_products()
         return {"total": total}
@@ -204,7 +253,29 @@ def get_product_count(
             detail=f"Database error: {str(e)}"
         )
 
-@router.get("/test-gemini")
+@router.get("/test-gemini",
+    response_model=Dict[str, Any],
+    summary="Test Gemini API",
+    description="Test connectivity to Google Gemini API for health assessments",
+    responses={
+        200: {
+            "description": "Test completed",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "success": True,
+                        "api_key_set": True,
+                        "api_key_length": 39,
+                        "response_text": "Hello from Gemini",
+                        "model_used": "gemini-1.5-flash"
+                    }
+                }
+            }
+        }
+    },
+    tags=["Testing"],
+    include_in_schema=False  # Hide from production docs
+)
 async def test_gemini_api() -> Dict[str, Any]:
     """Test Gemini API connectivity and response"""
     import os
@@ -269,12 +340,46 @@ async def test_mcp_service() -> Dict[str, Any]:
             "traceback": traceback.format_exc()
         }
 
-@router.get("/", response_model=List[models.Product])
+@router.get("/", 
+    response_model=List[models.Product],
+    summary="List Products",
+    description="Get a paginated list of products with optional filtering by risk rating",
+    responses={
+        200: {
+            "description": "Products retrieved successfully",
+            "content": {
+                "application/json": {
+                    "example": [
+                        {
+                            "code": "0002000003197",
+                            "name": "Organic Beef Jerky",
+                            "brand": "HealthySnacks",
+                            "description": "Premium grass-fed beef jerky",
+                            "ingredients_text": "Beef, salt, spices",
+                            "calories": 250,
+                            "protein": 25.0,
+                            "fat": 10.0,
+                            "carbohydrates": 5.0,
+                            "salt": 1.2,
+                            "meat_type": "beef",
+                            "risk_rating": "Yellow",
+                            "image_url": "https://example.com/image.jpg",
+                            "last_updated": "2024-01-15T10:30:00Z"
+                        }
+                    ]
+                }
+            }
+        },
+        401: {"description": "Authentication required"},
+        500: {"description": "Database error"}
+    },
+    tags=["Products"]
+)
 def get_products(
     supabase_service = Depends(get_supabase_service),
-    skip: int = Query(0, ge=0, description="Number of products to skip"),
-    limit: int = Query(100, ge=1, le=1000, description="Maximum number of products to return"),
-    risk_rating: Optional[str] = Query(None, description="Filter by risk rating (Green, Yellow, Red)"),
+    skip: int = Query(0, ge=0, description="Number of products to skip", example=0),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of products to return", example=20),
+    risk_rating: Optional[str] = Query(None, description="Filter by risk rating", enum=["Green", "Yellow", "Red"]),
     current_user: db_models.User = Depends(get_current_active_user)
 ) -> List[models.Product]:
     """
@@ -334,12 +439,48 @@ def get_products(
             detail=f"Failed to retrieve products: {str(e)}"
         )
 
-@router.get("/recommendations", response_model=models.RecommendationResponse)
+@router.get("/recommendations", 
+    response_model=models.RecommendationResponse,
+    summary="Get Personalized Recommendations",
+    description="Get product recommendations based on user preferences set during onboarding",
+    responses={
+        200: {
+            "description": "Recommendations generated successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "recommendations": [
+                            {
+                                "product": {
+                                    "code": "1234567890",
+                                    "name": "Low Sodium Turkey Breast",
+                                    "brand": "HealthyChoice",
+                                    "risk_rating": "Green",
+                                    "salt": 0.5,
+                                    "protein": 22.0
+                                },
+                                "match_details": {
+                                    "matches": ["Low sodium content", "High protein", "Turkey preference"],
+                                    "concerns": []
+                                },
+                                "match_score": None
+                            }
+                        ],
+                        "total_matches": 15
+                    }
+                }
+            }
+        },
+        401: {"description": "Authentication required"},
+        500: {"description": "Failed to generate recommendations"}
+    },
+    tags=["Products", "Recommendations"]
+)
 def get_product_recommendations(
     db: Session = Depends(get_db),
     supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user),
-    limit: int = Query(30, ge=1, le=100, description="Maximum number of recommendations to return"),
+    limit: int = Query(30, ge=1, le=100, description="Maximum number of recommendations to return", example=10),
 ) -> models.RecommendationResponse:
     """
     Get personalized product recommendations based on user preferences.
@@ -438,9 +579,59 @@ def get_product_recommendations(
             detail=f"Failed to generate recommendations: {str(e)}"
         )
 
-@router.get("/{code}")
+@router.get("/{code}",
+    response_model=models.ProductStructured,
+    summary="Get Product Details",
+    description="Get detailed information about a specific product by its barcode",
+    responses={
+        200: {
+            "description": "Product found",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "product": {
+                            "code": "0002000003197",
+                            "name": "Premium Beef Jerky",
+                            "brand": "MeatCraft",
+                            "description": "Artisanal beef jerky",
+                            "ingredients_text": "Beef, salt, sodium nitrite, spices",
+                            "image_url": "https://example.com/product.jpg",
+                            "meat_type": "beef"
+                        },
+                        "criteria": {
+                            "risk_rating": "Yellow",
+                            "additives": ["E250 (Sodium nitrite)", "Natural spices"]
+                        },
+                        "health": {
+                            "nutrition": {
+                                "calories": 280,
+                                "protein": 25.0,
+                                "fat": 15.0,
+                                "carbohydrates": 8.0,
+                                "salt": 2.1
+                            },
+                            "health_concerns": ["High salt content", "Contains preservatives"]
+                        },
+                        "environment": {
+                            "impact": "High",
+                            "details": "Beef production typically has higher environmental impact",
+                            "sustainability_practices": ["Unknown"]
+                        },
+                        "metadata": {
+                            "last_updated": "2024-01-15T10:30:00Z",
+                            "created_at": "2023-12-01T08:00:00Z"
+                        }
+                    }
+                }
+            }
+        },
+        404: {"description": "Product not found"},
+        500: {"description": "Error retrieving product"}
+    },
+    tags=["Products"]
+)
 def get_product(
-    code: str,
+    code: str = Path(..., description="Product barcode", example="0002000003197"),
     db: Session = Depends(get_db),
     supabase_service = Depends(get_supabase_service),
 ) -> Any:
@@ -544,9 +735,41 @@ def get_product(
         )
 
 
-@router.get("/{code}/alternatives", response_model=List[models.ProductAlternative])
+@router.get("/{code}/alternatives", 
+    response_model=List[models.ProductAlternative],
+    summary="Get Product Alternatives",
+    description="Find healthier alternatives for a specific product with better risk ratings",
+    responses={
+        200: {
+            "description": "Alternatives found",
+            "content": {
+                "application/json": {
+                    "example": [
+                        {
+                            "product_code": "0002000003197",
+                            "alternative_code": "9876543210",
+                            "similarity_score": 0.85,
+                            "reason": "Better risk rating (Green vs Yellow)",
+                            "alternative": {
+                                "code": "9876543210",
+                                "name": "Organic Turkey Jerky",
+                                "brand": "NaturalChoice",
+                                "risk_rating": "Green",
+                                "protein": 28.0,
+                                "salt": 0.8
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+        404: {"description": "Product not found"},
+        500: {"description": "Could not fetch product alternatives"}
+    },
+    tags=["Products", "Alternatives"]
+)
 def get_product_alternatives(
-    code: str,
+    code: str = Path(..., description="Product barcode", example="0002000003197"),
     db: Session = Depends(get_db),
     supabase_service = Depends(get_supabase_service),
 ) -> List[models.ProductAlternative]:
@@ -666,7 +889,53 @@ def get_product_alternatives(
         logger.error(f"Error fetching alternatives for product {code}: {e}")
         raise HTTPException(status_code=500, detail="Could not fetch product alternatives")
 
-@router.get("/{code}/health-assessment-mcp")
+@router.get("/{code}/health-assessment-mcp", 
+    response_model=Dict[str, Any],
+    responses={
+        200: {
+            "description": "Health assessment generated successfully",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "full": {
+                            "summary": "Full assessment with complete details",
+                            "value": {
+                                "summary": "This product contains preservatives requiring moderation...",
+                                "risk_summary": {"grade": "C", "color": "Yellow"},
+                                "ingredients_assessment": {
+                                    "high_risk": [{"name": "E250", "risk_level": "high", "micro_report": "Linked to...", "citations": [1,2]}],
+                                    "moderate_risk": [], 
+                                    "low_risk": []
+                                },
+                                "nutrition_insights": [
+                                    {"nutrient": "Protein", "amount_per_serving": "16.0 g", "evaluation": "high", "ai_commentary": "Excellent source..."}
+                                ],
+                                "citations": [{"id": 1, "title": "Health effects...", "source": "Journal", "year": 2024}],
+                                "metadata": {"product_code": "0002000003197", "generated_at": "2025-06-26T16:29:18.171531"}
+                            }
+                        },
+                        "mobile": {
+                            "summary": "Mobile-optimized response",
+                            "value": {
+                                "summary": "This product contains preservatives requiring moderation...",
+                                "grade": "C",
+                                "color": "Yellow", 
+                                "high_risk": [{"name": "E250", "risk": "Linked to potential carcinogenic..."}],
+                                "moderate_risk": [],
+                                "nutrition": [
+                                    {"nutrient": "Salt", "amount": "2350 mg", "eval": "high", "comment": "High sodium content..."}
+                                ],
+                                "meta": {"product": "Product Name", "generated": "2025-06-26"}
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        404: {"description": "Product not found"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def get_product_health_assessment_mcp(
     code: str,
     format: Optional[str] = Query(None, regex="^(mobile|full)$", description="Response format: 'mobile' for optimized mobile response, 'full' for complete data"),
@@ -680,8 +949,29 @@ async def get_product_health_assessment_mcp(
     This endpoint uses real scientific research to generate micro-reports for ingredients,
     providing evidence-based health assessments instead of hardcoded templates.
     
+    ## Format Options:
+    - **full** (default): Complete assessment with all details (~3.5KB)
+    - **mobile**: Optimized for mobile apps (~1.2KB, 65% smaller)
+    
+    ## Mobile Format Benefits:
+    - 93% bandwidth reduction when combined with gzip
+    - Truncated summaries and micro-reports
+    - Limited to top 2 high/moderate risk ingredients
+    - Only essential nutrients (Salt, Fat, Protein)
+    - 24-hour cache headers for offline support
+    
+    ## Example Usage:
+    ```
+    # Full assessment
+    GET /api/v1/products/0002000003197/health-assessment-mcp
+    
+    # Mobile-optimized
+    GET /api/v1/products/0002000003197/health-assessment-mcp?format=mobile
+    ```
+    
     Args:
         code: The product's barcode
+        format: Response format - 'mobile' or 'full' (default: full)
         supabase_service: Supabase client
         current_user: Currently authenticated user
         
