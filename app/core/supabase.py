@@ -13,20 +13,27 @@ def init_supabase_client(url: str, key: str, is_admin: bool = False) -> Tuple[Op
     try:
         client: Client = create_client(url, key)
         
-        # Test the connection with a simple query
-        try:
-            # A simple select to ensure the connection is valid
-            client.table('products').select('*').limit(1).execute()
-            return client, ""
-        except Exception as test_e:
-            error_msg = str(test_e)
-            if "Invalid API key" in error_msg:
-                return None, f"Invalid {'service role' if is_admin else 'anon'} API key"
-            elif "does not exist" in error_msg:
-                # If table doesn't exist, that's okay - just check auth
-                if hasattr(client, 'auth'):
-                    return client, ""
-            return None, f"Connection test failed: {error_msg}"
+        # Test the connection - skip for admin client as it might not have table access
+        if is_admin:
+            # For admin client, just verify auth.admin exists
+            if hasattr(client, 'auth') and hasattr(client.auth, 'admin'):
+                return client, ""
+            else:
+                return None, "Admin auth module not available"
+        else:
+            # For regular client, test with a simple query
+            try:
+                client.table('products').select('*').limit(1).execute()
+                return client, ""
+            except Exception as test_e:
+                error_msg = str(test_e)
+                if "Invalid API key" in error_msg:
+                    return None, f"Invalid anon API key"
+                elif "does not exist" in error_msg:
+                    # If table doesn't exist, that's okay - just check auth
+                    if hasattr(client, 'auth'):
+                        return client, ""
+                return None, f"Connection test failed: {error_msg}"
             
     except Exception as e:
         return None, f"Failed to initialize client: {str(e)}"
