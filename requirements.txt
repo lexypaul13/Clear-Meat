@@ -40,5 +40,8 @@ crossref-commons==0.0.7
 pymed==0.8.9
 newspaper3k==0.2.8
 
-# MCP support (requires additional setup)
-# fastmcp>=0.1.0
+# MCP support
+fastmcp>=0.1.0
+
+# Additional dependencies
+urllib3>=2.0.0
