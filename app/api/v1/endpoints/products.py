@@ -518,8 +518,8 @@ def get_product_recommendations(
                     "meat_preferences": ["chicken", "beef", "pork"]
                 }
         
-        # Get personalized recommendations
-        recommended_products = get_personalized_recommendations(db, preferences, limit)
+        # Get personalized recommendations using Supabase
+        recommended_products = get_personalized_recommendations(supabase_service, preferences, limit)
         
         if not recommended_products:
             return models.RecommendationResponse(
@@ -529,29 +529,29 @@ def get_product_recommendations(
         
         # Build response with match details
         result = []
-        for product in recommended_products:
+        for product_dict in recommended_products:
             try:
                 # Analyze why this product matches preferences
-                matches, concerns = analyze_product_match(product, preferences)
+                matches, concerns = analyze_product_match(product_dict, preferences)
                 
-                # Create Product model using our proven method
+                # Create Product model from dictionary
                 product_model = models.Product(
-                    code=product.code,
-                    name=product.name,
-                    brand=product.brand,
-                    description=product.description,
-                    ingredients_text=product.ingredients_text,
-                    calories=product.calories,
-                    protein=product.protein,
-                    fat=product.fat,
-                    carbohydrates=product.carbohydrates,
-                    salt=product.salt,
-                    meat_type=product.meat_type,
-                    risk_rating=product.risk_rating,
-                    image_url=product.image_url,
-                    image_data=product.image_data,
-                    last_updated=product.last_updated,
-                    created_at=product.created_at
+                    code=product_dict.get('code', ''),
+                    name=product_dict.get('name', ''),
+                    brand=product_dict.get('brand', ''),
+                    description=product_dict.get('description', ''),
+                    ingredients_text=product_dict.get('ingredients_text', ''),
+                    calories=product_dict.get('calories'),
+                    protein=product_dict.get('protein'),
+                    fat=product_dict.get('fat'),
+                    carbohydrates=product_dict.get('carbohydrates'),
+                    salt=product_dict.get('salt'),
+                    meat_type=product_dict.get('meat_type', ''),
+                    risk_rating=product_dict.get('risk_rating', ''),
+                    image_url=product_dict.get('image_url', ''),
+                    image_data=product_dict.get('image_data', ''),
+                    last_updated=product_dict.get('last_updated'),
+                    created_at=product_dict.get('created_at')
                 )
                 
                 # Create RecommendedProduct object

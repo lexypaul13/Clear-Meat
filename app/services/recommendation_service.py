@@ -24,27 +24,27 @@ _max_values_cache = {}
 _MAX_VALUES_CACHE_TTL = 1800
 
 def get_personalized_recommendations(
-    db: Session, 
+    supabase_service, 
     user_preferences: Dict[str, Any],
     limit: int = 30
-) -> List[db_models.Product]:
+) -> List[Dict[str, Any]]:
     """
     Generate personalized product recommendations based on user preferences.
     
     Args:
-        db: Database session
+        supabase_service: Supabase service instance
         user_preferences: User preferences dictionary from profile
         limit: Maximum number of products to return
         
     Returns:
-        List of product objects that best match the user preferences
+        List of product dictionaries that best match the user preferences
     """
     try:
         start_time = time.time()
-        logger.info(f"Generating personalized recommendations (using local DB: {is_using_local_db()})")
+        logger.info(f"Generating personalized recommendations using Supabase")
         
-        # Get available products from database
-        products = _get_products_from_db(db)
+        # Get available products from Supabase
+        products = _get_products_from_supabase(supabase_service)
         if not products:
             logger.warning("No products found in database")
             return []
@@ -54,7 +54,7 @@ def get_personalized_recommendations(
         logger.debug(f"Filtered to {len(filtered_products)} products by meat type")
         
         # Calculate maximum values for normalization
-        max_values = _get_max_nutritional_values(db, filtered_products)
+        max_values = _get_max_nutritional_values_from_products(filtered_products)
         
         # Score products based on user preferences
         scored_products = []
@@ -79,14 +79,14 @@ def get_personalized_recommendations(
         return []
         
 def analyze_product_match(
-    product: db_models.Product, 
+    product: Dict[str, Any], 
     user_preferences: Dict[str, Any]
 ) -> Tuple[List[str], List[str]]:
     """
     Analyze why a product matches or doesn't match user preferences.
     
     Args:
-        product: Product object
+        product: Product dictionary
         user_preferences: User preferences dictionary
         
     Returns:
@@ -97,8 +97,8 @@ def analyze_product_match(
     
     # Create search text from product attributes
     search_text = (
-        f"{product.name or ''} {product.brand or ''} "
-        f"{product.description or ''} {product.ingredients_text or ''}"
+        f"{product.get('name', '') or ''} {product.get('brand', '') or ''} "
+        f"{product.get('description', '') or ''} {product.get('ingredients_text', '') or ''}"
     ).lower()
     
     # Check for preservatives
@@ -146,9 +146,9 @@ def analyze_product_match(
     
     # Check for sodium content (if available)
     nutrition_focus = user_preferences.get('nutrition_focus')
-    if nutrition_focus == "salt" and hasattr(product, 'salt') and product.salt is not None:
+    if nutrition_focus == "salt" and product.get('salt') is not None:
         try:
-            salt = float(product.salt)
+            salt = float(product.get('salt'))
             if salt < 0.5:  # Threshold for "low sodium"
                 matches.append(f"Low sodium: {salt}g per 100g")
             else:
@@ -158,47 +158,39 @@ def analyze_product_match(
     
     # Check for preferred meat type
     meat_types = _get_preferred_meat_types(user_preferences)
-    if meat_types and product.meat_type in meat_types:
-        matches.append(f"Preferred meat type: {product.meat_type}")
+    if meat_types and product.get('meat_type') in meat_types:
+        matches.append(f"Preferred meat type: {product.get('meat_type')}")
     
     return matches, concerns
 
-def _get_products_from_db(db: Session) -> List[db_models.Product]:
+def _get_products_from_supabase(supabase_service) -> List[Dict[str, Any]]:
     """
-    Get products from database with error handling and fallback strategies.
+    Get products from Supabase with error handling and fallback strategies.
     
     Args:
-        db: Database session
+        supabase_service: Supabase service instance
         
     Returns:
-        List of product objects
+        List of product dictionaries
     """
     try:
-        # Primary query method
-        products = db.query(db_models.Product).all()
-        logger.debug(f"Retrieved {len(products)} products from database")
+        # Get products from Supabase (limit to reasonable amount for recommendations)
+        products = supabase_service.get_products(limit=1000, offset=0)
+        logger.debug(f"Retrieved {len(products)} products from Supabase")
         return products
     except Exception as e:
-        logger.warning(f"Primary product query failed: {str(e)}")
-        
-        try:
-            # Fallback: Try simpler query
-            products = db.query(db_models.Product).limit(1000).all()
-            logger.debug(f"Retrieved {len(products)} products using fallback query")
-            return products
-        except Exception as e2:
-            logger.error(f"All product query methods failed: {str(e2)}")
-            return []
+        logger.error(f"Failed to get products from Supabase: {str(e)}")
+        return []
 
 def _filter_by_meat_types(
-    products: List[db_models.Product], 
+    products: List[Dict[str, Any]], 
     preferences: Dict[str, Any]
-) -> List[db_models.Product]:
+) -> List[Dict[str, Any]]:
     """
     Filter products by preferred meat types.
     
     Args:
-        products: List of product objects
+        products: List of product dictionaries
         preferences: User preferences dictionary
         
     Returns:
@@ -208,7 +200,7 @@ def _filter_by_meat_types(
     if not preferred_types:
         return products
         
-    return [p for p in products if p.meat_type in preferred_types]
+    return [p for p in products if p.get('meat_type') in preferred_types]
 
 def _get_preferred_meat_types(preferences: Dict[str, Any]) -> Set[str]:
     """
@@ -243,16 +235,14 @@ def _get_preservative_keywords() -> List[str]:
         'bha', 'bht', 'sodium erythorbate', 'sodium nitrite'
     ]
 
-def _get_max_nutritional_values(
-    db: Session, 
-    products: List[db_models.Product]
+def _get_max_nutritional_values_from_products(
+    products: List[Dict[str, Any]]
 ) -> Dict[str, float]:
     """
-    Get maximum nutritional values for normalization, with caching.
+    Get maximum nutritional values for normalization from product dictionaries.
     
     Args:
-        db: Database session
-        products: List of product objects (fallback if DB query fails)
+        products: List of product dictionaries
         
     Returns:
         Dictionary of maximum values
@@ -267,87 +257,43 @@ def _get_max_nutritional_values(
         return _max_values_cache
         
     try:
-        # Try to get max values from the database directly
-        if is_using_local_db():
-            # For local DB, we use SQLAlchemy
-            max_protein = db.query(db_models.Product.protein).order_by(
-                db_models.Product.protein.desc()).first()
-            max_fat = db.query(db_models.Product.fat).order_by(
-                db_models.Product.fat.desc()).first()
-            max_salt = db.query(db_models.Product.salt).order_by(
-                db_models.Product.salt.desc()).first()
-            
-            max_values = {
-                "max_protein": float(max_protein[0] or 100) if max_protein else 100,
-                "max_fat": float(max_fat[0] or 100) if max_fat else 100,
-                "max_salt": float(max_salt[0] or 5) if max_salt else 5,
-                "timestamp": now
-            }
-        else:
-            # For remote DB, we use a single query
-            result = db.execute(text("""
-                SELECT 
-                    MAX(protein) as max_protein,
-                    MAX(fat) as max_fat,
-                    MAX(salt) as max_salt
-                FROM products
-                WHERE protein IS NOT NULL AND fat IS NOT NULL AND salt IS NOT NULL
-            """))
-            row = result.fetchone()
-            
-            if row:
-                max_values = {
-                    "max_protein": float(row.max_protein or 100),
-                    "max_fat": float(row.max_fat or 100),
-                    "max_salt": float(row.max_salt or 5),
-                    "timestamp": now
-                }
-            else:
-                raise ValueError("No valid nutritional values found")
-                
+        # Calculate from the provided products
+        protein_values = [p.get('protein', 0) or 0 for p in products if p.get('protein') is not None]
+        fat_values = [p.get('fat', 0) or 0 for p in products if p.get('fat') is not None]
+        salt_values = [p.get('salt', 0) or 0 for p in products if p.get('salt') is not None]
+        
+        max_values = {
+            "max_protein": max(protein_values) if protein_values else 100,
+            "max_fat": max(fat_values) if fat_values else 100,
+            "max_salt": max(salt_values) if salt_values else 5,
+            "timestamp": now
+        }
+        
+        # Ensure we have reasonable values (avoid division by zero)
+        max_values = {
+            k: v if v > 0 else (100 if k != "max_salt" else 5) 
+            for k, v in max_values.items() if k != "timestamp"
+        }
+        max_values["timestamp"] = now
+        
         # Cache the values
         _max_values_cache = max_values
-        logger.debug(f"Updated max nutritional values cache: {max_values}")
+        logger.debug(f"Updated max nutritional values from products: {max_values}")
         
         return max_values
-            
     except Exception as e:
-        logger.warning(f"Failed to get max values from DB: {str(e)}")
+        logger.error(f"Failed to calculate max values: {str(e)}")
         
-        # Fallback: Calculate from the provided products
-        try:
-            max_values = {
-                "max_protein": max((getattr(p, 'protein', 0) or 0) for p in products if hasattr(p, 'protein')),
-                "max_fat": max((getattr(p, 'fat', 0) or 0) for p in products if hasattr(p, 'fat')),
-                "max_salt": max((getattr(p, 'salt', 0) or 0) for p in products if hasattr(p, 'salt')),
-                "timestamp": now
-            }
-            
-            # Ensure we have reasonable values (avoid division by zero)
-            max_values = {
-                k: v if v > 0 else (100 if k != "max_salt" else 5) 
-                for k, v in max_values.items() if k != "timestamp"
-            }
-            max_values["timestamp"] = now
-            
-            # Cache the values
-            _max_values_cache = max_values
-            logger.debug(f"Updated max nutritional values from products: {max_values}")
-            
-            return max_values
-        except Exception as e2:
-            logger.error(f"All max value methods failed: {str(e2)}")
-            
-            # Last resort: Use hardcoded defaults
-            return {
-                "max_protein": 100,
-                "max_fat": 100,
-                "max_salt": 5,
-                "timestamp": now
-            }
+        # Last resort: Use hardcoded defaults
+        return {
+            "max_protein": 100,
+            "max_fat": 100,
+            "max_salt": 5,
+            "timestamp": now
+        }
 
 def _calculate_product_score(
-    product: db_models.Product,
+    product: Dict[str, Any],
     preferences: Dict[str, Any],
     max_values: Dict[str, float]
 ) -> float:
@@ -355,7 +301,7 @@ def _calculate_product_score(
     Calculate a score for a product based on user preferences.
     
     Args:
-        product: Product object
+        product: Product dictionary
         preferences: User preferences dictionary
         max_values: Maximum nutritional values for normalization
         
@@ -363,8 +309,8 @@ def _calculate_product_score(
         Numerical score representing match quality
     """
     search_text = (
-        f"{product.name or ''} {product.brand or ''} "
-        f"{product.description or ''} {product.ingredients_text or ''}"
+        f"{product.get('name', '') or ''} {product.get('brand', '') or ''} "
+        f"{product.get('description', '') or ''} {product.get('ingredients_text', '') or ''}"
     ).lower()
     
     score = 0
@@ -375,14 +321,14 @@ def _calculate_product_score(
     sodium = 0
     
     try:
-        if hasattr(product, 'protein') and product.protein is not None:
-            protein = float(product.protein) / max_values["max_protein"]
-        if hasattr(product, 'fat') and product.fat is not None:
-            fat = float(product.fat) / max_values["max_fat"]
-        if hasattr(product, 'salt') and product.salt is not None:
-            sodium = float(product.salt) / max_values["max_salt"]
+        if product.get('protein') is not None:
+            protein = float(product.get('protein')) / max_values["max_protein"]
+        if product.get('fat') is not None:
+            fat = float(product.get('fat')) / max_values["max_fat"]
+        if product.get('salt') is not None:
+            sodium = float(product.get('salt')) / max_values["max_salt"]
     except (ValueError, TypeError):
-        logger.debug(f"Error normalizing nutritional values for product {product.code}")
+        logger.debug(f"Error normalizing nutritional values for product {product.get('code', 'unknown')}")
     
     # Default weights - balanced approach
     w_protein = 0.15
@@ -441,7 +387,7 @@ def _calculate_product_score(
     # Check for meat type match
     meat_type_match = 0.0
     preferred_types = _get_preferred_meat_types(preferences)
-    if preferred_types and product.meat_type in preferred_types:
+    if preferred_types and product.get('meat_type') in preferred_types:
         meat_type_match = 1.0
     
     # Calculate final score using normalized values and weights
@@ -458,27 +404,27 @@ def _calculate_product_score(
     return score
 
 def _apply_diversity_factor(
-    scored_products: List[Tuple[db_models.Product, float]], 
+    scored_products: List[Tuple[Dict[str, Any], float]], 
     limit: int, 
     preferred_types: Set[str]
-) -> List[db_models.Product]:
+) -> List[Dict[str, Any]]:
     """
     Apply a diversity factor to ensure representation of different meat types.
     
     Args:
-        scored_products: List of (product, score) tuples
+        scored_products: List of (product dict, score) tuples
         limit: Maximum number of products to return
         preferred_types: Set of preferred meat types
         
     Returns:
-        List of products with diversity factor applied
+        List of product dictionaries with diversity factor applied
     """
     if not scored_products:
         return []
     
     # If no preferred types, use all available types from scored products
     if not preferred_types:
-        preferred_types = set(p.meat_type for p, _ in scored_products if p.meat_type)
+        preferred_types = set(p.get('meat_type') for p, _ in scored_products if p.get('meat_type'))
     
     # If still no meat types, just return the top scoring products
     if not preferred_types:
@@ -494,7 +440,7 @@ def _apply_diversity_factor(
     
     # Group products by meat type
     for product, score in scored_products:
-        meat_type = product.meat_type
+        meat_type = product.get('meat_type')
         if meat_type in type_products:
             type_products[meat_type].append((product, score))
     
