@@ -180,19 +180,33 @@ class HealthAssessmentMCPService:
     def _build_categorization_prompt(self, product: ProductStructured) -> str:
         """Build prompt for ingredient categorization."""
         ingredients_text = product.product.ingredients_text or "Ingredients not available"
+        product_name = product.product.name or "Unknown product"
         
-        return f"""You are a food safety expert analyzing meat product ingredients.
+        return f"""You are a food safety expert analyzing meat product ingredients with a balanced perspective.
 
 PRODUCT TO ANALYZE:
-Name: {product.product.name}
+Name: {product_name}
 Ingredients: {ingredients_text}
 
-TASK: Categorize each ingredient by health risk level. Focus on preservatives, additives, and processing agents.
+IMPORTANT CONTEXT:
+- Consider the product type and quality indicators (organic, grass-fed, natural, etc.)
+- Some preservatives are necessary for food safety and preventing foodborne illness
+- Natural doesn't always mean safer, and synthetic doesn't always mean harmful
+- Consider typical consumption amounts and frequency
+
+TASK: Categorize each ingredient by actual health risk level based on scientific evidence.
 
 CATEGORIES:
-- HIGH RISK: Ingredients with documented serious health concerns (carcinogenic, toxic, endocrine disrupting)
-- MODERATE RISK: Ingredients with some health concerns or that need moderation
-- LOW RISK: Generally safe ingredients in typical amounts
+- HIGH RISK: Only ingredients with strong scientific evidence of serious health risks at typical consumption levels (e.g., known carcinogens, severe allergens for general population)
+- MODERATE RISK: Ingredients that may have some concerns but are generally safe in moderation (e.g., high sodium, some preservatives, common allergens)
+- LOW RISK: Generally recognized as safe (GRAS) ingredients, natural components of meat, basic seasonings
+
+GUIDELINES:
+- Sodium nitrite/E250: Consider it MODERATE risk unless present in very high amounts
+- Natural preservatives (salt, vinegar, celery powder): Usually LOW risk
+- Basic meat (beef, pork, chicken, turkey): Always LOW risk
+- Water, spices, herbs: Always LOW risk
+- Consider organic/natural products may use celery powder instead of sodium nitrite (similar function)
 
 FORMAT YOUR RESPONSE AS:
 
@@ -205,7 +219,7 @@ MODERATE RISK INGREDIENTS:
 LOW RISK INGREDIENTS:
 - [List remaining ingredients]
 
-Be specific and focus only on ingredients that actually appear in the product."""
+Be balanced and scientific. Don't categorize ingredients as high-risk without strong evidence."""
     
     def _build_evidence_assessment_prompt(
         self, 
@@ -293,18 +307,38 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
             }
             
             # Check for specific high-risk ingredients that should be categorized as high-risk
-            high_risk_additives = ["E250", "Sodium nitrite", "caramel", "BHA", "BHT", "Sodium Nitrite"]
+            # Only truly dangerous additives at typical consumption levels
+            high_risk_additives = ["BHA", "BHT", "TBHQ", "Potassium bromate", "Propyl gallate"]
             
-            # Move specific preservatives to high-risk if found in moderate list
-            actual_high_risk = high_risk_ingredients.copy()
-            remaining_moderate = []
+            # Ingredients that are often flagged but should be moderate risk
+            moderate_risk_additives = ["E250", "Sodium nitrite", "sodium nitrite", "caramel color", "MSG", "monosodium glutamate"]
             
-            for ingredient in moderate_risk_ingredients:
-                is_high_risk = any(additive.lower() in ingredient.lower() for additive in high_risk_additives)
-                if is_high_risk:
+            # Re-categorize ingredients based on scientific evidence
+            actual_high_risk = []
+            actual_moderate_risk = []
+            
+            # First, check high-risk ingredients from Gemini and re-categorize if needed
+            for ingredient in high_risk_ingredients:
+                ingredient_lower = ingredient.lower()
+                # Check if this should actually be moderate risk
+                if any(mod_additive.lower() in ingredient_lower for mod_additive in moderate_risk_additives):
+                    actual_moderate_risk.append(ingredient)
+                # Check if it's truly high risk
+                elif any(high_additive.lower() in ingredient_lower for high_additive in high_risk_additives):
                     actual_high_risk.append(ingredient)
                 else:
-                    remaining_moderate.append(ingredient)
+                    # If Gemini marked it as high-risk but it's not in our lists, 
+                    # trust Gemini but log it
+                    logger.info(f"Gemini marked '{ingredient}' as high-risk, keeping classification")
+                    actual_high_risk.append(ingredient)
+            
+            # Then check moderate-risk ingredients and promote to high if needed
+            for ingredient in moderate_risk_ingredients:
+                ingredient_lower = ingredient.lower()
+                if any(high_additive.lower() in ingredient_lower for high_additive in high_risk_additives):
+                    actual_high_risk.append(ingredient)
+                else:
+                    actual_moderate_risk.append(ingredient)
             
             # Process high-risk ingredients
             for i, ingredient in enumerate(actual_high_risk[:3]):  # Limit to 3
@@ -326,7 +360,7 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
                 "default": "This ingredient may contribute to digestive issues and metabolic disruption with frequent consumption. [3][4]"
             }
             
-            for i, ingredient in enumerate(remaining_moderate[:3]):  # Limit to 3
+            for i, ingredient in enumerate(actual_moderate_risk[:3]):  # Limit to 3
                 # Find appropriate micro-report based on ingredient type
                 micro_report = moderate_reports["default"]
                 ingredient_lower = ingredient.lower()
@@ -419,17 +453,82 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
                 }
             ]
             
-            # Adjust grade and summary based on number of high-risk ingredients  
-            if len(assessment_data["ingredients_assessment"]["high_risk"]) >= 2:
-                assessment_data["risk_summary"]["grade"] = "D"
-                assessment_data["risk_summary"]["color"] = "Orange"
-                assessment_data["summary"] = f"This {self._current_product.product.name} receives a D grade due to multiple high-risk preservatives and additives. Regular consumption should be limited. [1][2]"
-            elif len(assessment_data["ingredients_assessment"]["high_risk"]) >= 1:
-                assessment_data["risk_summary"]["grade"] = "C"
-                assessment_data["risk_summary"]["color"] = "Yellow"
-                assessment_data["summary"] = f"This {self._current_product.product.name} contains high-risk preservatives requiring caution. Moderate consumption recommended. [1][2]"
+            # Analyze product quality indicators
+            product_name = self._current_product.product.name.lower() if self._current_product else ""
+            product_desc = self._current_product.product.description.lower() if self._current_product and self._current_product.product.description else ""
+            ingredients_text = self._current_product.product.ingredients_text.lower() if self._current_product and self._current_product.product.ingredients_text else ""
+            
+            # Check for positive quality indicators
+            quality_indicators = {
+                "organic": any("organic" in text for text in [product_name, product_desc, ingredients_text]),
+                "grass_fed": any("grass" in text and "fed" in text for text in [product_name, product_desc]),
+                "free_range": any("free range" in text or "free-range" in text for text in [product_name, product_desc]),
+                "no_antibiotics": any("no antibiotic" in text or "antibiotic free" in text for text in [product_name, product_desc]),
+                "minimal_ingredients": len(ingredients_text.split(',')) <= 5 if ingredients_text else False,
+                "natural": any("natural" in text and "flavoring" not in text for text in [product_name, product_desc])
+            }
+            
+            quality_score = sum(quality_indicators.values())
+            
+            # Calculate nutrition score
+            nutrition_score = 0
+            if self._current_product and hasattr(self._current_product.health, 'nutrition'):
+                nutrition = self._current_product.health.nutrition
+                # Low sodium is good
+                if hasattr(nutrition, 'salt') and nutrition.salt is not None and nutrition.salt < 1.0:
+                    nutrition_score += 2
+                # High protein is good for meat products
+                if hasattr(nutrition, 'protein') and nutrition.protein is not None and nutrition.protein > 15:
+                    nutrition_score += 1
+                # Low fat can be good
+                if hasattr(nutrition, 'fat') and nutrition.fat is not None and nutrition.fat < 10:
+                    nutrition_score += 1
+            
+            # Determine grade based on comprehensive factors
+            high_risk_count = len(assessment_data["ingredients_assessment"]["high_risk"])
+            moderate_risk_count = len(assessment_data["ingredients_assessment"]["moderate_risk"])
+            
+            # Grade determination logic
+            if high_risk_count == 0 and moderate_risk_count == 0:
+                # No risky ingredients
+                grade = "A"
+                color = "Green"
+                summary_template = f"This {self._current_product.product.name} receives an A grade with no concerning additives. Excellent choice for health-conscious consumers."
+            elif high_risk_count == 0 and moderate_risk_count <= 2 and quality_score >= 2:
+                # No high-risk, few moderate, good quality
+                grade = "B"
+                color = "Green"
+                summary_template = f"This {self._current_product.product.name} receives a B grade with minimal additives and good quality indicators. Generally healthy choice."
+            elif high_risk_count == 1 and quality_score >= 3 and nutrition_score >= 2:
+                # One high-risk but excellent quality and nutrition
+                grade = "B"
+                color = "Green"
+                summary_template = f"This {self._current_product.product.name} receives a B grade. Despite containing {assessment_data['ingredients_assessment']['high_risk'][0]['name']}, its {', '.join([k.replace('_', ' ') for k, v in quality_indicators.items() if v][:2])} qualities make it acceptable in moderation. [1][2]"
+            elif high_risk_count == 1 and (quality_score >= 2 or nutrition_score >= 2):
+                # One high-risk but some positive factors
+                grade = "C"
+                color = "Yellow"
+                summary_template = f"This {self._current_product.product.name} contains {assessment_data['ingredients_assessment']['high_risk'][0]['name']} requiring caution. Moderate consumption recommended. [1][2]"
+            elif high_risk_count >= 2:
+                # Multiple high-risk ingredients
+                grade = "D"
+                color = "Orange"
+                summary_template = f"This {self._current_product.product.name} receives a D grade due to multiple high-risk preservatives and additives. Regular consumption should be limited. [1][2]"
+            elif high_risk_count == 1:
+                # One high-risk, no positive factors
+                grade = "C"
+                color = "Yellow"
+                summary_template = f"This {self._current_product.product.name} contains high-risk preservatives requiring caution. Moderate consumption recommended. [1][2]"
             else:
-                assessment_data["summary"] = f"This {self._current_product.product.name} contains moderate-risk additives requiring moderation. Generally acceptable with balanced diet. [3][4]"
+                # Many moderate risks
+                grade = "C"
+                color = "Yellow"
+                summary_template = f"This {self._current_product.product.name} contains moderate-risk additives requiring moderation. Generally acceptable with balanced diet. [3][4]"
+            
+            # Update the assessment with new grade
+            assessment_data["risk_summary"]["grade"] = grade
+            assessment_data["risk_summary"]["color"] = color
+            assessment_data["summary"] = summary_template
             
             # Update metadata with actual product information
             assessment_data["metadata"]["product_code"] = self._current_product.product.code
