@@ -166,7 +166,7 @@ class HealthAssessmentMCPService:
             self._current_product = product
             
             # Parse the structured response into HealthAssessment
-            assessment_data = self._parse_assessment_response(
+            assessment_data = await self._parse_assessment_response(
                 response.text, high_risk_ingredients, moderate_risk_ingredients, existing_risk_rating
             )
             
@@ -270,7 +270,7 @@ WORKS CITED: [Numbered list of all citations]
 
 Remember: Base ALL micro-reports on actual scientific evidence you find using the tools. Do NOT use generic statements."""
     
-    def _parse_assessment_response(
+    async def _parse_assessment_response(
         self, 
         response_text: str,
         high_risk_ingredients: List[str],
@@ -414,8 +414,8 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
                     "citations": [1]
                 })
             
-            # Generate nutrition insights using existing method
-            assessment_data["nutrition_insights"] = self._generate_nutrition_insights(self._current_product)
+            # Generate nutrition insights using dynamic AI method
+            assessment_data["nutrition_insights"] = await self._generate_nutrition_insights(self._current_product)
             
             # Add default citations
             assessment_data["citations"] = [
@@ -674,99 +674,183 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
         
         return citations
     
-    def _generate_nutrition_insights(self, product: ProductStructured) -> List[Dict[str, Any]]:
-        """Generate nutrition insights for the 4 required nutrients."""
+    async def _generate_nutrition_insights(self, product: ProductStructured) -> List[Dict[str, Any]]:
+        """Generate dynamic AI-powered nutrition insights for the key nutrients."""
         nutrition_insights = []
         
         # Get nutrition data
         nutrition = product.health.nutrition if product.health else None
+        product_name = product.product.name or "this product"
         
-        # Protein insight - FDA %DV: 50g daily value
-        protein_amount = f"{nutrition.protein} g" if nutrition and nutrition.protein else "0.0 g"
-        protein_percent_dv = (nutrition.protein / 50.0 * 100) if nutrition and nutrition.protein else 0
-        if protein_percent_dv >= 20:
-            protein_eval = "high"
-            protein_comment = "Excellent source of complete protein supporting muscle maintenance and growth."
-        elif protein_percent_dv >= 5:
-            protein_eval = "moderate"
-            protein_comment = "Moderate protein content suitable for daily nutritional needs."
-        else:
-            protein_eval = "low"
-            protein_comment = "Low protein content, may need supplementation from other sources."
+        if not nutrition:
+            logger.warning(f"No nutrition data available for product {product.product.code}")
+            return []
         
-        nutrition_insights.append({
-            "nutrient": "Protein",
-            "amount_per_serving": protein_amount,
-            "evaluation": protein_eval,
-            "ai_commentary": protein_comment[:160]  # Ensure ≤160 chars
-        })
-        
-        # Fat insight - FDA %DV: 78g daily value  
-        fat_amount = f"{nutrition.fat} g" if nutrition and nutrition.fat else "0.0 g"
-        fat_percent_dv = (nutrition.fat / 78.0 * 100) if nutrition and nutrition.fat else 0
-        if fat_percent_dv >= 20:
-            fat_eval = "high"
-            fat_comment = "High fat content which may contribute to cardiovascular risk if consumed regularly. Consider portion control."
-        elif fat_percent_dv >= 5:
-            fat_eval = "moderate"
-            fat_comment = "Moderate fat content suitable for balanced diet when consumed in appropriate portions."
-        else:
-            fat_eval = "low"
-            fat_comment = "Low fat content supports cardiovascular health and weight management goals."
-        
-        nutrition_insights.append({
-            "nutrient": "Fat",
-            "amount_per_serving": fat_amount,
-            "evaluation": fat_eval,
-            "ai_commentary": fat_comment[:160]
-        })
-        
-        # Carbohydrates insight - FDA %DV: 275g daily value
-        carb_amount = f"{nutrition.carbohydrates} g" if nutrition and nutrition.carbohydrates else "0.0 g"
-        carb_percent_dv = (nutrition.carbohydrates / 275.0 * 100) if nutrition and nutrition.carbohydrates else 0
-        if carb_percent_dv >= 20:
-            carb_eval = "high"
-            carb_comment = "High carbohydrate content may impact blood glucose levels significantly."
-        elif carb_percent_dv >= 5:
-            carb_eval = "moderate"
-            carb_comment = "Moderate carbohydrate content with manageable impact on blood glucose levels."
-        else:
-            carb_eval = "low"
-            carb_comment = "Low carbohydrate content with minimal impact on blood glucose levels."
-        
-        nutrition_insights.append({
-            "nutrient": "Carbohydrates", 
-            "amount_per_serving": carb_amount,
-            "evaluation": carb_eval,
-            "ai_commentary": carb_comment[:160]
-        })
-        
-        # Salt insight - FDA %DV: 2.3g daily value
-        if nutrition and nutrition.salt:
-            # Convert grams to mg for display
-            salt_mg = nutrition.salt * 1000
-            salt_amount = f"{int(salt_mg)} mg"
-            salt_percent_dv = (nutrition.salt / 2.3 * 100)
-        else:
-            salt_amount = "0 mg"
-            salt_percent_dv = 0
+        # Generate AI commentary for each nutrient using Gemini
+        try:
+            nutrients_to_analyze = [
+                ("Protein", nutrition.protein, 50.0, "g"),
+                ("Fat", nutrition.fat, 78.0, "g"), 
+                ("Carbohydrates", nutrition.carbohydrates, 275.0, "g"),
+                ("Salt", nutrition.salt, 2.3, "mg")  # Will convert to mg for display
+            ]
             
-        if salt_percent_dv >= 20:
-            salt_eval = "high"
-            salt_comment = "High sodium content exceeding daily recommended intake. May contribute to hypertension and cardiovascular issues."
-        elif salt_percent_dv >= 5:
-            salt_eval = "moderate"
-            salt_comment = "Moderate sodium content requiring mindful consumption as part of balanced diet."
-        else:
-            salt_eval = "low"
-            salt_comment = "Low sodium content supporting cardiovascular health and blood pressure management."
+            for nutrient_name, amount, daily_value, unit in nutrients_to_analyze:
+                if amount is None:
+                    continue
+                    
+                # Special handling for salt (convert g to mg for display)
+                if nutrient_name == "Salt":
+                    display_amount = f"{int(amount * 1000)} mg" if amount > 0 else "0 mg"
+                    percent_dv = (amount / daily_value * 100)
+                else:
+                    display_amount = f"{amount} {unit}"
+                    percent_dv = (amount / daily_value * 100)
+                
+                # Determine evaluation level
+                if percent_dv >= 20:
+                    evaluation = "high"
+                elif percent_dv >= 5:
+                    evaluation = "moderate"  
+                else:
+                    evaluation = "low"
+                
+                # Generate dynamic AI commentary
+                ai_commentary = await self._generate_dynamic_nutrition_commentary(
+                    nutrient_name, amount, percent_dv, evaluation, product_name
+                )
+                
+                nutrition_insights.append({
+                    "nutrient": nutrient_name,
+                    "amount_per_serving": display_amount,
+                    "evaluation": evaluation,
+                    "ai_commentary": ai_commentary[:160]  # Ensure ≤160 chars
+                })
+            
+            return nutrition_insights
+            
+        except Exception as e:
+            logger.error(f"Error generating nutrition insights: {e}")
+            # Fallback to simplified static data if AI fails
+            return self._generate_fallback_nutrition_insights(product)
+    
+    async def _generate_dynamic_nutrition_commentary(
+        self, 
+        nutrient: str, 
+        amount: float, 
+        percent_dv: float, 
+        evaluation: str, 
+        product_name: str
+    ) -> str:
+        """Generate dynamic AI commentary for a specific nutrient."""
         
-        nutrition_insights.append({
-            "nutrient": "Salt",
-            "amount_per_serving": salt_amount,
-            "evaluation": salt_eval,
-            "ai_commentary": salt_comment[:160]
-        })
+        # Create context-aware prompt for nutrition commentary
+        prompt = f"""Generate a concise, informative comment about {nutrient} content in {product_name}.
+
+NUTRIENT: {nutrient}
+AMOUNT: {amount}
+DAILY VALUE %: {percent_dv:.1f}%
+LEVEL: {evaluation}
+
+Requirements:
+- Maximum 150 characters
+- Be specific to this nutrient level and product type
+- Focus on health implications 
+- Use plain language
+- Mention context (meat product implications if relevant)
+- Avoid generic templates
+
+Examples of good comments:
+- "Moderate protein supports muscle health but consider pairing with vegetables for complete nutrition"
+- "High sodium may impact blood pressure; balance with low-sodium foods throughout the day"
+- "Low fat content makes this a heart-healthy choice for weight management goals"
+
+Generate ONE concise comment:"""
+
+        try:
+            response = genai.GenerativeModel(self.model).generate_content(
+                prompt,
+                generation_config=genai.GenerationConfig(
+                    temperature=0.3,  # Slight randomness for variety
+                    max_output_tokens=50  # Keep it concise
+                )
+            )
+            
+            # Clean and validate the response
+            commentary = response.text.strip()
+            
+            # Remove quotes if AI added them
+            if commentary.startswith('"') and commentary.endswith('"'):
+                commentary = commentary[1:-1]
+            
+            return commentary
+            
+        except Exception as e:
+            logger.warning(f"Failed to generate AI commentary for {nutrient}: {e}")
+            # Fallback to improved static commentary
+            return self._get_fallback_commentary(nutrient, evaluation, percent_dv)
+    
+    def _get_fallback_commentary(self, nutrient: str, evaluation: str, percent_dv: float) -> str:
+        """Generate improved fallback commentary when AI is unavailable."""
+        
+        fallback_templates = {
+            "Protein": {
+                "high": f"Excellent protein source providing {percent_dv:.0f}% daily needs for muscle health",
+                "moderate": f"Good protein content supporting daily nutritional requirements",
+                "low": f"Limited protein; consider pairing with protein-rich foods"
+            },
+            "Fat": {
+                "high": f"High fat content ({percent_dv:.0f}% DV) - practice portion control for heart health",
+                "moderate": f"Balanced fat content suitable for most dietary needs",
+                "low": f"Low fat option supporting cardiovascular and weight goals"
+            },
+            "Carbohydrates": {
+                "high": f"High carb content may significantly impact blood glucose levels", 
+                "moderate": f"Moderate carbs with manageable glucose impact",
+                "low": f"Low carb content minimally affects blood sugar levels"
+            },
+            "Salt": {
+                "high": f"High sodium ({percent_dv:.0f}% DV) may elevate blood pressure risk",
+                "moderate": f"Moderate sodium requiring mindful daily intake balance",
+                "low": f"Low sodium supports healthy blood pressure management"
+            }
+        }
+        
+        return fallback_templates.get(nutrient, {}).get(evaluation, "Nutrient content within normal range")
+    
+    def _generate_fallback_nutrition_insights(self, product: ProductStructured) -> List[Dict[str, Any]]:
+        """Generate basic nutrition insights when AI fails."""
+        nutrition_insights = []
+        nutrition = product.health.nutrition if product.health else None
+        
+        if not nutrition:
+            return []
+        
+        # Basic protein insight
+        if nutrition.protein is not None:
+            protein_amount = f"{nutrition.protein} g"
+            protein_percent_dv = (nutrition.protein / 50.0 * 100)
+            protein_eval = "high" if protein_percent_dv >= 20 else "moderate" if protein_percent_dv >= 5 else "low"
+            
+            nutrition_insights.append({
+                "nutrient": "Protein",
+                "amount_per_serving": protein_amount,
+                "evaluation": protein_eval,
+                "ai_commentary": self._get_fallback_commentary("Protein", protein_eval, protein_percent_dv)
+            })
+        
+        # Basic salt insight  
+        if nutrition.salt is not None:
+            salt_amount = f"{int(nutrition.salt * 1000)} mg"
+            salt_percent_dv = (nutrition.salt / 2.3 * 100)
+            salt_eval = "high" if salt_percent_dv >= 20 else "moderate" if salt_percent_dv >= 5 else "low"
+            
+            nutrition_insights.append({
+                "nutrient": "Salt",
+                "amount_per_serving": salt_amount,
+                "evaluation": salt_eval,
+                "ai_commentary": self._get_fallback_commentary("Salt", salt_eval, salt_percent_dv)
+            })
         
         return nutrition_insights
     
