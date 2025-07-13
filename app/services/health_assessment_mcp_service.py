@@ -143,8 +143,51 @@ class HealthAssessmentMCPService:
             logger.warning(f"Ingredient categorization timed out after 15 seconds")
             return None
         except Exception as e:
+            error_message = str(e)
+            # Handle quota exceeded error gracefully
+            if "quota" in error_message.lower() or "429" in error_message:
+                logger.warning(f"Gemini API quota exceeded, using fallback categorization")
+                # Return a basic categorization based on common ingredient patterns
+                return self._get_fallback_categorization(product)
             logger.error(f"Error categorizing ingredients: {e}")
             return None
+    
+    def _get_fallback_categorization(self, product: ProductStructured) -> Dict[str, Any]:
+        """Provide fallback ingredient categorization when AI is unavailable."""
+        ingredients_text = product.product.ingredients_text or ""
+        ingredients_lower = ingredients_text.lower()
+        
+        high_risk = []
+        moderate_risk = []
+        
+        # Common high-risk patterns
+        high_risk_patterns = [
+            "bha", "bht", "tbhq", "potassium bromate", "propyl gallate",
+            "sodium benzoate", "potassium sorbate", "sulfur dioxide"
+        ]
+        
+        # Common moderate-risk patterns  
+        moderate_risk_patterns = [
+            "sodium nitrite", "e250", "caramel color", "msg", "monosodium glutamate",
+            "phosphate", "carrageenan", "xanthan gum", "modified starch",
+            "natural flavor", "artificial flavor"
+        ]
+        
+        # Check for high-risk ingredients
+        for pattern in high_risk_patterns:
+            if pattern in ingredients_lower:
+                high_risk.append(pattern.title())
+        
+        # Check for moderate-risk ingredients  
+        for pattern in moderate_risk_patterns:
+            if pattern in ingredients_lower and pattern not in [hr.lower() for hr in high_risk]:
+                moderate_risk.append(pattern.title())
+        
+        return {
+            'high_risk_ingredients': high_risk,
+            'moderate_risk_ingredients': moderate_risk,
+            'categorization_text': f"Fallback categorization used due to API limits"
+        }
     
     async def _generate_evidence_based_assessment(
         self, 
