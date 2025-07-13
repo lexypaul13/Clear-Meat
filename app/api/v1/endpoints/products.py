@@ -1002,10 +1002,18 @@ async def get_product_health_assessment_mcp(
             raise HTTPException(status_code=500, detail="Failed to structure product data for assessment")
         logger.info("Step 2: Product data structured successfully")
 
-        # Step 3: Generate MCP-based evidence assessment
+        # Step 3: Generate MCP-based evidence assessment with existing risk rating
         logger.info("Step 3: Generating evidence-based assessment using MCP")
         mcp_service = HealthAssessmentMCPService()
-        assessment = await mcp_service.generate_health_assessment_with_real_evidence(structured_product)
+        
+        # Use OpenFoodFacts risk_rating from database instead of AI-generated grades
+        existing_risk_rating = product_data.get('risk_rating')  # e.g., "Green", "Yellow", "Red"
+        logger.info(f"Using existing risk_rating from database: {existing_risk_rating}")
+        
+        assessment = await mcp_service.generate_health_assessment_with_real_evidence(
+            structured_product, 
+            existing_risk_rating=existing_risk_rating
+        )
         
         if not assessment:
             logger.error("Failed to generate MCP health assessment")
@@ -1086,12 +1094,16 @@ async def debug_mcp_health_assessment(
         debug_info["high_risk_ingredients"] = basic_categorization.get('high_risk_ingredients', [])
         debug_info["moderate_risk_ingredients"] = basic_categorization.get('moderate_risk_ingredients', [])
         
-        # Step 5: Test assessment generation
+        # Step 5: Test assessment generation with existing risk rating
         debug_info["step"] = "generating_assessment"
+        existing_risk_rating = product_data.get('risk_rating')
+        debug_info["existing_risk_rating"] = existing_risk_rating
+        
         assessment_result = await mcp_service._generate_evidence_based_assessment(
             structured_product, 
             basic_categorization.get('high_risk_ingredients', []),
-            basic_categorization.get('moderate_risk_ingredients', [])
+            basic_categorization.get('moderate_risk_ingredients', []),
+            existing_risk_rating
         )
         
         if assessment_result:

@@ -4,7 +4,7 @@ import time
 import asyncio
 import os
 from datetime import datetime
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 from contextlib import AsyncExitStack
 
 import google.generativeai as genai
@@ -38,6 +38,7 @@ class HealthAssessmentMCPService:
     async def generate_health_assessment_with_real_evidence(
         self, 
         product: ProductStructured, 
+        existing_risk_rating: Optional[str] = None,
         db=None
     ) -> Optional[HealthAssessment]:
         """
@@ -45,6 +46,7 @@ class HealthAssessmentMCPService:
         
         Args:
             product: The structured product data to analyze
+            existing_risk_rating: Pre-computed risk rating from OpenFoodFacts (e.g., "Green", "Yellow", "Red")
             db: Database session (optional)
             
         Returns:
@@ -76,7 +78,7 @@ class HealthAssessmentMCPService:
             
             # Step 3: Generate simplified evidence-based assessment (MCP features disabled)
             assessment_result = await self._generate_evidence_based_assessment(
-                product, high_risk_ingredients, moderate_risk_ingredients
+                product, high_risk_ingredients, moderate_risk_ingredients, existing_risk_rating
             )
             
             if assessment_result:
@@ -138,7 +140,8 @@ class HealthAssessmentMCPService:
         self, 
         product: ProductStructured,
         high_risk_ingredients: List[str],
-        moderate_risk_ingredients: List[str]
+        moderate_risk_ingredients: List[str],
+        existing_risk_rating: Optional[str] = None
     ) -> Optional[HealthAssessment]:
         """Generate evidence-based assessment using MCP tools."""
         try:
@@ -164,7 +167,7 @@ class HealthAssessmentMCPService:
             
             # Parse the structured response into HealthAssessment
             assessment_data = self._parse_assessment_response(
-                response.text, high_risk_ingredients, moderate_risk_ingredients
+                response.text, high_risk_ingredients, moderate_risk_ingredients, existing_risk_rating
             )
             
             if assessment_data:
@@ -271,7 +274,8 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
         self, 
         response_text: str,
         high_risk_ingredients: List[str],
-        moderate_risk_ingredients: List[str]
+        moderate_risk_ingredients: List[str],
+        existing_risk_rating: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         """Parse Gemini's structured response into HealthAssessment format."""
         try:
@@ -484,46 +488,30 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
                 if hasattr(nutrition, 'fat') and nutrition.fat is not None and nutrition.fat < 10:
                     nutrition_score += 1
             
-            # Determine grade based on comprehensive factors
-            high_risk_count = len(assessment_data["ingredients_assessment"]["high_risk"])
-            moderate_risk_count = len(assessment_data["ingredients_assessment"]["moderate_risk"])
-            
-            # Grade determination logic
-            if high_risk_count == 0 and moderate_risk_count == 0:
-                # No risky ingredients
-                grade = "A"
-                color = "Green"
-                summary_template = f"This {self._current_product.product.name} receives an A grade with no concerning additives. Excellent choice for health-conscious consumers."
-            elif high_risk_count == 0 and moderate_risk_count <= 2 and quality_score >= 2:
-                # No high-risk, few moderate, good quality
-                grade = "B"
-                color = "Green"
-                summary_template = f"This {self._current_product.product.name} receives a B grade with minimal additives and good quality indicators. Generally healthy choice."
-            elif high_risk_count == 1 and quality_score >= 3 and nutrition_score >= 2:
-                # One high-risk but excellent quality and nutrition
-                grade = "B"
-                color = "Green"
-                summary_template = f"This {self._current_product.product.name} receives a B grade. Despite containing {assessment_data['ingredients_assessment']['high_risk'][0]['name']}, its {', '.join([k.replace('_', ' ') for k, v in quality_indicators.items() if v][:2])} qualities make it acceptable in moderation. [1][2]"
-            elif high_risk_count == 1 and (quality_score >= 2 or nutrition_score >= 2):
-                # One high-risk but some positive factors
-                grade = "C"
-                color = "Yellow"
-                summary_template = f"This {self._current_product.product.name} contains {assessment_data['ingredients_assessment']['high_risk'][0]['name']} requiring caution. Moderate consumption recommended. [1][2]"
-            elif high_risk_count >= 2:
-                # Multiple high-risk ingredients
-                grade = "D"
-                color = "Orange"
-                summary_template = f"This {self._current_product.product.name} receives a D grade due to multiple high-risk preservatives and additives. Regular consumption should be limited. [1][2]"
-            elif high_risk_count == 1:
-                # One high-risk, no positive factors
-                grade = "C"
-                color = "Yellow"
-                summary_template = f"This {self._current_product.product.name} contains high-risk preservatives requiring caution. Moderate consumption recommended. [1][2]"
+            # Use existing risk rating from OpenFoodFacts database instead of AI-generated grades
+            if existing_risk_rating:
+                logger.info(f"Using existing risk_rating from database: {existing_risk_rating}")
+                # Map OpenFoodFacts risk_rating to grade and color
+                grade, color = self._map_risk_rating_to_grade_color(existing_risk_rating)
             else:
-                # Many moderate risks
-                grade = "C"
-                color = "Yellow"
-                summary_template = f"This {self._current_product.product.name} contains moderate-risk additives requiring moderation. Generally acceptable with balanced diet. [3][4]"
+                logger.warning("No existing risk_rating provided, falling back to AI grading logic")
+                # Fallback: Use ingredient-based grading for products without OpenFoodFacts data
+                high_risk_count = len(assessment_data["ingredients_assessment"]["high_risk"])
+                moderate_risk_count = len(assessment_data["ingredients_assessment"]["moderate_risk"])
+                
+                if high_risk_count == 0 and moderate_risk_count <= 1:
+                    grade, color = "A", "Green"
+                elif high_risk_count == 0 and moderate_risk_count <= 3:
+                    grade, color = "B", "Green"  
+                elif high_risk_count == 1 or moderate_risk_count > 3:
+                    grade, color = "C", "Yellow"
+                elif high_risk_count >= 2:
+                    grade, color = "D", "Orange"
+                else:
+                    grade, color = "C", "Yellow"
+            
+            # Generate appropriate summary based on grade
+            summary_template = self._generate_summary_for_grade(grade, high_risk_ingredients, moderate_risk_ingredients)
             
             # Update the assessment with new grade
             assessment_data["risk_summary"]["grade"] = grade
@@ -781,6 +769,44 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
         })
         
         return nutrition_insights
+    
+    def _map_risk_rating_to_grade_color(self, risk_rating: str) -> Tuple[str, str]:
+        """Map OpenFoodFacts risk_rating to grade and color format expected by the app."""
+        risk_rating_lower = risk_rating.lower() if risk_rating else ""
+        
+        if risk_rating_lower == "green":
+            return "A", "Green"
+        elif risk_rating_lower == "yellow":
+            return "C", "Yellow"  
+        elif risk_rating_lower == "orange":
+            return "D", "Orange"
+        elif risk_rating_lower == "red":
+            return "D", "Red"
+        else:
+            # Default fallback for unknown ratings
+            logger.warning(f"Unknown risk_rating: {risk_rating}, defaulting to C/Yellow")
+            return "C", "Yellow"
+    
+    def _generate_summary_for_grade(self, grade: str, high_risk_ingredients: List[str], moderate_risk_ingredients: List[str]) -> str:
+        """Generate appropriate summary text based on the grade."""
+        product_name = self._current_product.product.name if self._current_product else "This product"
+        
+        if grade == "A":
+            return f"{product_name} receives an A grade indicating excellent nutritional quality with minimal concerning additives. Recommended for regular consumption."
+        elif grade == "B":
+            return f"{product_name} receives a B grade with good nutritional profile and acceptable ingredient quality. Generally healthy choice."
+        elif grade == "C":
+            if high_risk_ingredients:
+                return f"{product_name} contains {high_risk_ingredients[0]} requiring caution. Moderate consumption recommended. [1][2]"
+            else:
+                return f"{product_name} contains moderate-risk additives requiring moderation. Generally acceptable with balanced diet. [3][4]"
+        elif grade == "D":
+            if len(high_risk_ingredients) >= 2:
+                return f"{product_name} receives a D grade due to multiple high-risk preservatives and additives. Regular consumption should be limited. [1][2]"
+            else:
+                return f"{product_name} receives a D grade due to concerning additives and processing. Consume sparingly. [1][2]"
+        else:
+            return f"{product_name} requires careful consideration due to ingredient profile. [1][2]"
 
 
 # Test function
