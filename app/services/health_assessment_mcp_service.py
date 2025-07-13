@@ -97,9 +97,16 @@ class HealthAssessmentMCPService:
         try:
             prompt = self._build_categorization_prompt(product)
             
-            response = genai.GenerativeModel(self.model).generate_content(
-                prompt,
-                generation_config=genai.GenerationConfig(temperature=0)
+            # Add timeout protection for AI calls
+            response = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: genai.GenerativeModel(self.model).generate_content(
+                        prompt,
+                        generation_config=genai.GenerationConfig(temperature=0)
+                    )
+                ),
+                timeout=15.0  # 15 second timeout for categorization
             )
             
             # Parse the response to extract ingredient categorizations
@@ -132,6 +139,9 @@ class HealthAssessmentMCPService:
                 'categorization_text': response_text
             }
             
+        except asyncio.TimeoutError:
+            logger.warning(f"Ingredient categorization timed out after 15 seconds")
+            return None
         except Exception as e:
             logger.error(f"Error categorizing ingredients: {e}")
             return None
@@ -153,13 +163,19 @@ class HealthAssessmentMCPService:
                 product, high_risk_ingredients, moderate_risk_ingredients
             )
             
-            # Send request to Gemini directly
-            response = genai.GenerativeModel(self.model).generate_content(
-                prompt,
-                generation_config=genai.GenerationConfig(
-                    temperature=0,
-                    max_output_tokens=4000
-                )
+            # Send request to Gemini directly with timeout protection
+            response = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: genai.GenerativeModel(self.model).generate_content(
+                        prompt,
+                        generation_config=genai.GenerationConfig(
+                            temperature=0,
+                            max_output_tokens=4000
+                        )
+                    )
+                ),
+                timeout=20.0  # 20 second timeout for full assessment
             )
             
             # Set product context for parser
@@ -176,6 +192,9 @@ class HealthAssessmentMCPService:
             else:
                 return None
                 
+        except asyncio.TimeoutError:
+            logger.warning(f"Health assessment generation timed out after 20 seconds")
+            return None
         except Exception as e:
             logger.error(f"Error in MCP evidence-based assessment: {e}")
             return None
@@ -414,8 +433,12 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
                     "citations": [1]
                 })
             
-            # Generate nutrition insights using dynamic AI method
-            assessment_data["nutrition_insights"] = await self._generate_nutrition_insights(self._current_product)
+            # Generate nutrition insights using dynamic AI method with error handling
+            try:
+                assessment_data["nutrition_insights"] = await self._generate_nutrition_insights(self._current_product)
+            except Exception as e:
+                logger.warning(f"AI nutrition generation failed, falling back to static insights: {e}")
+                assessment_data["nutrition_insights"] = self._generate_fallback_nutrition_insights(self._current_product)
             
             # Add default citations
             assessment_data["citations"] = [
@@ -768,12 +791,19 @@ Examples of good comments:
 Generate ONE concise comment:"""
 
         try:
-            response = genai.GenerativeModel(self.model).generate_content(
-                prompt,
-                generation_config=genai.GenerationConfig(
-                    temperature=0.3,  # Slight randomness for variety
-                    max_output_tokens=50  # Keep it concise
-                )
+            # Add timeout protection for AI calls
+            response = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: genai.GenerativeModel(self.model).generate_content(
+                        prompt,
+                        generation_config=genai.GenerationConfig(
+                            temperature=0.3,  # Slight randomness for variety
+                            max_output_tokens=50  # Keep it concise
+                        )
+                    )
+                ),
+                timeout=10.0  # 10 second timeout
             )
             
             # Clean and validate the response
@@ -785,6 +815,9 @@ Generate ONE concise comment:"""
             
             return commentary
             
+        except asyncio.TimeoutError:
+            logger.warning(f"AI commentary generation timed out for {nutrient} after 10 seconds")
+            return self._get_fallback_commentary(nutrient, evaluation, percent_dv)
         except Exception as e:
             logger.warning(f"Failed to generate AI commentary for {nutrient}: {e}")
             # Fallback to improved static commentary
