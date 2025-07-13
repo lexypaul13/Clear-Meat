@@ -640,10 +640,10 @@ class CitationSearchService:
             
             if key_phrases:
                 # Return the most relevant finding (usually the first one)
-                return key_phrases[0][:200] + "..." if len(key_phrases[0]) > 200 else key_phrases[0]
+                return key_phrases[0][:300] + "..." if len(key_phrases[0]) > 300 else key_phrases[0]
             else:
                 # Fallback: return first part of abstract
-                return abstract[:150] + "..." if len(abstract) > 150 else abstract
+                return abstract[:200] + "..." if len(abstract) > 200 else abstract
                 
         except Exception as e:
             logger.error(f"Error extracting key findings: {e}")

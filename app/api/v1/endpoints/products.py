@@ -71,8 +71,14 @@ def sanitize_search_query(query: str) -> str:
 def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
     """Optimize health assessment response for mobile consumption to reduce bandwidth."""
     try:
+        # Helper function to truncate text properly
+        def truncate_text(text: str, max_length: int) -> str:
+            if len(text) <= max_length:
+                return text
+            return text[:max_length - 3] + "..."
+        
         optimized = {
-            "summary": assessment.get("summary", "")[:120] + "..." if len(assessment.get("summary", "")) > 120 else assessment.get("summary", ""),
+            "summary": truncate_text(assessment.get("summary", ""), 200),
             "grade": assessment.get("risk_summary", {}).get("grade", ""),
             "color": assessment.get("risk_summary", {}).get("color", ""),
             "high_risk": [],
@@ -86,15 +92,15 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
         # High risk ingredients (max 2)
         for ingredient in ingredients.get("high_risk", [])[:2]:
             optimized["high_risk"].append({
-                "name": ingredient.get("name", "")[:30],  # Truncate long names
-                "risk": ingredient.get("micro_report", "")[:80] + "..." if len(ingredient.get("micro_report", "")) > 80 else ingredient.get("micro_report", "")
+                "name": truncate_text(ingredient.get("name", ""), 50),
+                "risk": truncate_text(ingredient.get("micro_report", ""), 150)
             })
         
         # Moderate risk ingredients (max 2)
         for ingredient in ingredients.get("moderate_risk", [])[:2]:
             optimized["moderate_risk"].append({
-                "name": ingredient.get("name", "")[:30],  # Truncate long names  
-                "risk": ingredient.get("micro_report", "")[:80] + "..." if len(ingredient.get("micro_report", "")) > 80 else ingredient.get("micro_report", "")
+                "name": truncate_text(ingredient.get("name", ""), 50),
+                "risk": truncate_text(ingredient.get("micro_report", ""), 150)
             })
         
         # Optimize nutrition insights - keep only the most important nutrients
@@ -108,7 +114,7 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
                         "nutrient": insight.get("nutrient", ""),
                         "amount": insight.get("amount_per_serving", ""),
                         "eval": insight.get("evaluation", ""),
-                        "comment": insight.get("ai_commentary", "")[:60] + "..." if len(insight.get("ai_commentary", "")) > 60 else insight.get("ai_commentary", "")
+                        "comment": truncate_text(insight.get("ai_commentary", ""), 120)
                     })
                     break
         

@@ -610,9 +610,9 @@ def transform_health_assessment_json(assessment_data: Dict[str, Any], product_da
                 else:
                     ai_commentary = "Low sodium—heart-healthy choice."
             
-            # Ensure ai_commentary is ≤ 160 chars
-            if len(ai_commentary) > 160:
-                ai_commentary = ai_commentary[:157] + "..."
+            # Ensure ai_commentary is ≤ 200 chars
+            if len(ai_commentary) > 200:
+                ai_commentary = ai_commentary[:197] + "..."
             
             transformed["nutrition_insights"].append({
                 "nutrient": nutrient_name,
@@ -948,14 +948,14 @@ def convert_to_enhanced_assessment(assessment: HealthAssessment) -> EnhancedHeal
             if isinstance(ingredient, dict) and "name" in ingredient:
                 ingredient_name = ingredient["name"]
                 
-                # Generate a micro report for the ingredient (max 200 chars)
+                # Generate a micro report for the ingredient (max 250 chars)
                 micro_report = ""
                 if assessment.ingredient_reports and ingredient_name in assessment.ingredient_reports:
                     report = assessment.ingredient_reports[ingredient_name]
                     if report.health_concerns and len(report.health_concerns) > 0:
                         micro_report = ". ".join(report.health_concerns[:2])
-                        if len(micro_report) > 200:
-                            micro_report = micro_report[:197] + "..."
+                        if len(micro_report) > 250:
+                            micro_report = micro_report[:247] + "..."
                 
                 # Find citations for this ingredient
                 ingredient_citations = []
