@@ -86,22 +86,30 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
             "color": assessment.get("risk_summary", {}).get("color", ""),
             "high_risk": [],
             "moderate_risk": [],
+            "low_risk": [],
             "nutrition": []
         }
         
         # Optimize ingredients assessment - keep only top 2 high/moderate risk
         ingredients = assessment.get("ingredients_assessment", {})
         
-        # High risk ingredients (max 2)
-        for ingredient in ingredients.get("high_risk", [])[:2]:
+        # High risk ingredients (ALL)
+        for ingredient in ingredients.get("high_risk", []):
             optimized["high_risk"].append({
                 "name": truncate_text(ingredient.get("name", ""), 50),
                 "risk": truncate_text(ingredient.get("micro_report", ""), 150)
             })
         
-        # Moderate risk ingredients (max 2)
-        for ingredient in ingredients.get("moderate_risk", [])[:2]:
+        # Moderate risk ingredients (ALL)
+        for ingredient in ingredients.get("moderate_risk", []):
             optimized["moderate_risk"].append({
+                "name": truncate_text(ingredient.get("name", ""), 50),
+                "risk": truncate_text(ingredient.get("micro_report", ""), 150)
+            })
+        
+        # Low risk ingredients (ALL)
+        for ingredient in ingredients.get("low_risk", []):
+            optimized["low_risk"].append({
                 "name": truncate_text(ingredient.get("name", ""), 50),
                 "risk": truncate_text(ingredient.get("micro_report", ""), 150)
             })
