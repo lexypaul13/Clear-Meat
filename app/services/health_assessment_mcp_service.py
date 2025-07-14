@@ -1289,12 +1289,22 @@ Generate ONE complete comment under 80 characters:"""
                     
                     if result.citations:
                         for citation in result.citations[:1]:  # Take 1 per ingredient
+                            # Format URL properly - ensure DOIs are converted to full URLs
+                            url = citation.url
+                            if not url and citation.doi:
+                                # Convert DOI to proper URL format
+                                doi = citation.doi.strip()
+                                if doi.startswith('10.'):
+                                    url = f"https://doi.org/{doi}"
+                                else:
+                                    url = doi
+                            
                             citations.append({
                                 "id": citation_id,
                                 "title": citation.title[:100] + "..." if len(citation.title) > 100 else citation.title,
                                 "source": citation.journal or "Academic Research",
                                 "year": citation.publication_date.year if citation.publication_date else 2023,
-                                "url": citation.url or citation.doi
+                                "url": url
                             })
                             citation_id += 1
                     
@@ -1318,12 +1328,22 @@ Generate ONE complete comment under 80 characters:"""
                         
                         if result.citations:
                             citation = result.citations[0]
+                            # Format URL properly - ensure DOIs are converted to full URLs
+                            url = citation.url
+                            if not url and citation.doi:
+                                # Convert DOI to proper URL format
+                                doi = citation.doi.strip()
+                                if doi.startswith('10.'):
+                                    url = f"https://doi.org/{doi}"
+                                else:
+                                    url = doi
+                            
                             citations.append({
                                 "id": citation_id,
                                 "title": citation.title[:100] + "..." if len(citation.title) > 100 else citation.title,
                                 "source": citation.journal or "Scientific Research Database",
                                 "year": citation.publication_date.year if citation.publication_date else 2024,
-                                "url": citation.url or citation.doi
+                                "url": url
                             })
                             citation_id += 1
                             
