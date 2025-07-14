@@ -71,9 +71,12 @@ def sanitize_search_query(query: str) -> str:
 def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
     """Optimize health assessment response for mobile consumption to reduce bandwidth."""
     try:
-        # Helper function to truncate text properly
-        def truncate_text(text: str, max_length: int) -> str:
+        # Helper function to truncate text properly - but don't truncate nutrition comments
+        def truncate_text(text: str, max_length: int, preserve_complete: bool = False) -> str:
             if len(text) <= max_length:
+                return text
+            if preserve_complete:
+                # For nutrition comments, don't truncate - they should be complete from backend
                 return text
             return text[:max_length - 3] + "..."
         
@@ -114,7 +117,7 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
                         "nutrient": insight.get("nutrient", ""),
                         "amount": insight.get("amount_per_serving", ""),
                         "eval": insight.get("evaluation", ""),
-                        "comment": truncate_text(insight.get("ai_commentary", ""), 120)
+                        "comment": insight.get("ai_commentary", "")  # Don't truncate - should be complete from backend
                     })
                     break
         

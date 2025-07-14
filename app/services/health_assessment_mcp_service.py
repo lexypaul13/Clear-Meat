@@ -829,7 +829,7 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
                     "nutrient": nutrient_name,
                     "amount_per_serving": display_amount,
                     "evaluation": evaluation,
-                    "ai_commentary": ai_commentary[:160]  # Ensure ≤160 chars
+                    "ai_commentary": ai_commentary[:120]  # Ensure ≤120 chars for complete display
                 })
             
             return nutrition_insights
@@ -858,19 +858,19 @@ DAILY VALUE %: {percent_dv:.1f}%
 LEVEL: {evaluation}
 
 Requirements:
-- Maximum 150 characters
+- Maximum 120 characters (strict limit)
 - Be specific to this nutrient level and product type
 - Focus on health implications 
 - Use plain language
-- Mention context (meat product implications if relevant)
+- Complete sentences only - no truncation
 - Avoid generic templates
 
 Examples of good comments:
-- "Moderate protein supports muscle health but consider pairing with vegetables for complete nutrition"
-- "High sodium may impact blood pressure; balance with low-sodium foods throughout the day"
-- "Low fat content makes this a heart-healthy choice for weight management goals"
+- "Great protein source supporting muscle health and daily nutrition goals"
+- "High sodium; balance with low-sodium foods throughout the day"
+- "Low fat content makes this heart-healthy for weight management"
 
-Generate ONE concise comment:"""
+Generate ONE complete, concise comment under 120 characters:"""
 
         try:
             # Add timeout protection for AI calls
@@ -881,7 +881,7 @@ Generate ONE concise comment:"""
                         prompt,
                         generation_config=genai.GenerationConfig(
                             temperature=0.3,  # Slight randomness for variety
-                            max_output_tokens=50  # Keep it concise
+                            max_output_tokens=100  # Increased to allow complete 120-char responses
                         )
                     )
                 ),
@@ -894,6 +894,24 @@ Generate ONE concise comment:"""
             # Remove quotes if AI added them
             if commentary.startswith('"') and commentary.endswith('"'):
                 commentary = commentary[1:-1]
+            
+            # Check for truncation indicators and reject incomplete responses
+            if commentary.endswith('...') or commentary.endswith('..') or commentary.endswith('.'):
+                # If response seems complete but is too long, truncate gracefully
+                if len(commentary) > 120:
+                    # Find last complete sentence within limit
+                    sentences = commentary.split('. ')
+                    result = ""
+                    for sentence in sentences:
+                        if len(result + sentence + '. ') <= 120:
+                            result = sentence if not result else result + '. ' + sentence
+                        else:
+                            break
+                    commentary = result + '.' if result and not result.endswith('.') else result
+            
+            # Final length check
+            if len(commentary) > 120:
+                commentary = commentary[:117] + "..."
             
             return commentary
             
