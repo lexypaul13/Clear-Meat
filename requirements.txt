@@ -8,14 +8,14 @@ python-dotenv==1.0.1
 alembic==1.12.0
 Jinja2==3.1.4
 
-# Supabase - use latest version for best httpx compatibility
-supabase==2.9.1
+# Supabase - updated for fastmcp compatibility
+supabase>=2.10.0
 
 # Database drivers
 psycopg2-binary==2.9.9
 
-# HTTP client - must be compatible with supabase 2.9.1
-httpx==0.27.0
+# HTTP client - let pip resolve compatible version
+httpx>=0.28.1
 aiohttp==3.9.5
 
 # Web scraping
