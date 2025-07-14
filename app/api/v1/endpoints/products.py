@@ -1024,7 +1024,7 @@ async def get_product_health_assessment_mcp(
             # Instead of 500 error, create a minimal assessment from available data
             if existing_risk_rating:
                 logger.info(f"Creating minimal assessment using risk_rating: {existing_risk_rating}")
-                assessment = mcp_service._create_minimal_fallback_assessment(structured_product, existing_risk_rating)
+                assessment = mcp_service.create_minimal_fallback_assessment(structured_product, existing_risk_rating)
             else:
                 raise HTTPException(status_code=404, detail="Product not found or no assessment data available")
         

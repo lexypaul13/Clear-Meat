@@ -85,7 +85,7 @@ class HealthAssessmentMCPService:
             # Step 4: If assessment generation fails, create minimal fallback assessment
             if not assessment_result and existing_risk_rating:
                 logger.warning(f"Assessment generation failed, creating minimal fallback assessment using risk_rating: {existing_risk_rating}")
-                assessment_result = self._create_minimal_fallback_assessment(product, existing_risk_rating)
+                assessment_result = self.create_minimal_fallback_assessment(product, existing_risk_rating)
             
             if assessment_result:
                 # Cache the result - assessment_result is already a dict
@@ -195,7 +195,7 @@ class HealthAssessmentMCPService:
             'categorization_text': f"Fallback categorization used due to API limits"
         }
     
-    def _create_minimal_fallback_assessment(self, product: ProductStructured, existing_risk_rating: str) -> Dict[str, Any]:
+    def create_minimal_fallback_assessment(self, product: ProductStructured, existing_risk_rating: str) -> Dict[str, Any]:
         """Create a minimal assessment when all AI processing fails, using only OpenFoodFacts risk_rating."""
         
         # Map risk rating to grade and color
