@@ -54,8 +54,8 @@ class HealthAssessmentMCPService:
             HealthAssessment with evidence-based micro-reports and real citations
         """
         try:
-            # Generate cache key with version to force refresh with real MCP citations
-            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v12_real_citations")
+            # Generate cache key with version to force refresh with real citation service
+            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v13_real_search")
             
             # Check cache first
             cached_result = cache.get(cache_key)
@@ -1260,63 +1260,75 @@ Generate ONE complete comment under 80 characters:"""
             return f"{product_name} requires careful consideration due to ingredient profile. [1][2]"
 
     async def _generate_real_citations(self, high_risk_ingredients: List[str], moderate_risk_ingredients: List[str]) -> List[Dict[str, Any]]:
-        """Generate real scientific citations using MCP research for high-risk ingredients."""
+        """Generate real scientific citations using direct citation service for high-risk ingredients."""
         try:
+            from app.services.citation_tools import CitationSearchService
+            from app.models.citation import CitationSearch
+            
             citations = []
             citation_id = 1
+            citation_service = CitationSearchService()
+            
+            logger.info(f"[Real Citations] Researching {len(high_risk_ingredients)} high-risk and {len(moderate_risk_ingredients)} moderate-risk ingredients")
             
             # Research high-risk ingredients first
-            for ingredient in high_risk_ingredients[:3]:  # Limit to top 3 high-risk
+            for ingredient in high_risk_ingredients[:2]:  # Limit to top 2 high-risk
                 try:
-                    # Use MCP to search for real research
-                    search_result = self.mcp_server.tools[0](  # search_health_citations
+                    search_params = CitationSearch(
                         ingredient=ingredient,
                         health_claim="toxicity safety health effects",
-                        max_results=2
+                        max_results=2,
+                        search_pubmed=True,
+                        search_crossref=True,
+                        search_doaj=True,
+                        search_scihub=False,  # Disable for production
+                        search_libgen=False   # Disable for production
                     )
                     
-                    if search_result and "citations found" in search_result.lower():
-                        # Parse the MCP result to extract citation info
-                        lines = search_result.split('\n')
-                        for line in lines:
-                            if line.strip().startswith(f"{citation_id}.") or line.strip().startswith("1."):
-                                # Extract title and details from MCP formatted response
-                                title = line.split('.', 1)[1].strip() if '.' in line else f"Research on {ingredient} health effects"
-                                
-                                citations.append({
-                                    "id": citation_id,
-                                    "title": title[:100] + "..." if len(title) > 100 else title,
-                                    "source": "PubMed/CrossRef Research",
-                                    "year": 2023
-                                })
-                                citation_id += 1
-                                break
+                    result = citation_service.search_citations(search_params)
+                    
+                    if result.citations:
+                        for citation in result.citations[:1]:  # Take 1 per ingredient
+                            citations.append({
+                                "id": citation_id,
+                                "title": citation.title[:100] + "..." if len(citation.title) > 100 else citation.title,
+                                "source": citation.journal or "Academic Research",
+                                "year": citation.publication_date.year if citation.publication_date else 2023,
+                                "url": citation.url or citation.doi
+                            })
+                            citation_id += 1
                     
                 except Exception as e:
-                    logger.warning(f"MCP research failed for {ingredient}: {e}")
+                    logger.warning(f"Citation search failed for {ingredient}: {e}")
                     continue
             
             # If no real citations found, research moderate-risk ingredients
             if len(citations) < 2:
-                for ingredient in moderate_risk_ingredients[:2]:  # Limit to top 2 moderate-risk
+                for ingredient in moderate_risk_ingredients[:1]:  # Limit to 1 moderate-risk
                     try:
-                        search_result = self.mcp_server.tools[0](  # search_health_citations
+                        search_params = CitationSearch(
                             ingredient=ingredient,
                             health_claim="safety assessment",
-                            max_results=1
+                            max_results=1,
+                            search_pubmed=True,
+                            search_crossref=True
                         )
                         
-                        if search_result and "citations found" in search_result.lower():
+                        result = citation_service.search_citations(search_params)
+                        
+                        if result.citations:
+                            citation = result.citations[0]
                             citations.append({
                                 "id": citation_id,
-                                "title": f"Safety assessment of {ingredient} in food products",
-                                "source": "Scientific Research Database",
-                                "year": 2024
+                                "title": citation.title[:100] + "..." if len(citation.title) > 100 else citation.title,
+                                "source": citation.journal or "Scientific Research Database",
+                                "year": citation.publication_date.year if citation.publication_date else 2024,
+                                "url": citation.url or citation.doi
                             })
                             citation_id += 1
                             
                     except Exception as e:
-                        logger.warning(f"MCP research failed for {ingredient}: {e}")
+                        logger.warning(f"Citation search failed for {ingredient}: {e}")
                         continue
             
             # Fallback if no real research found
@@ -1329,12 +1341,12 @@ Generate ONE complete comment under 80 characters:"""
                     "year": 2024
                 }]
             
-            logger.info(f"Generated {len(citations)} real citations using MCP research")
+            logger.info(f"Generated {len(citations)} real citations from scientific databases")
             return citations
             
         except Exception as e:
             logger.error(f"Real citation generation failed: {e}")
-            # Return fallback when MCP fails
+            # Return fallback when research fails
             return [{
                 "id": 1,
                 "title": "Research could not be found for the ingredients in this product",
