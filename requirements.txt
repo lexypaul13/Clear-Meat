@@ -1,9 +1,9 @@
-# Core API requirements - updated for compatibility
+# Core API requirements - letting pip resolve compatible versions
 fastapi>=0.110.0,<0.115.0
 uvicorn[standard]==0.27.1
 sqlalchemy==2.0.25
-pydantic[email]>=2.7.0,<3.0.0
-pydantic-settings>=2.5.2,<3.0.0
+pydantic[email]
+pydantic-settings
 python-dotenv>=1.1.0
 alembic==1.12.0
 Jinja2==3.1.4
@@ -42,8 +42,8 @@ pymed==0.8.9
 # newspaper3k==0.2.8  # REMOVED: incompatible with modern dependencies
 lxml>=4.9.0  # Alternative for HTML/XML parsing
 
-# MCP support for real scientific research - using compatible version
-mcp>=1.9.0,<2.0.0
+# MCP support for real scientific research - using fastmcp (original package)
+fastmcp==2.7.0
 
 # Additional dependencies - constrained for compatibility
 urllib3>=1.26.0,<3.0.0
