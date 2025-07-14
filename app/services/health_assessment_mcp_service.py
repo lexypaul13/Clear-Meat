@@ -56,11 +56,11 @@ class HealthAssessmentMCPService:
             # Generate cache key with version to force refresh
             cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v4_test")
             
-            # Check cache first
-            cached_result = cache.get(cache_key)
-            if cached_result:
-                logger.info(f"Returning cached MCP health assessment for product {product.product.code}")
-                return cached_result  # Return dict directly, not HealthAssessment object
+            # Temporarily disable cache for testing
+            # cached_result = cache.get(cache_key)
+            # if cached_result:
+            #     logger.info(f"Returning cached MCP health assessment for product {product.product.code}")
+            #     return cached_result  # Return dict directly, not HealthAssessment object
             
             logger.info(f"[MCP Health Assessment] Analyzing product: {product.product.name}")
             
