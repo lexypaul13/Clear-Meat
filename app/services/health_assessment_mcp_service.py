@@ -67,7 +67,8 @@ class HealthAssessmentMCPService:
             # Step 1: Generate basic ingredient categorization with Gemini
             basic_categorization = await self._categorize_ingredients_with_gemini(product)
             if not basic_categorization:
-                return None
+                logger.warning(f"AI categorization failed, using fallback categorization for {product.product.code}")
+                basic_categorization = self._get_fallback_categorization(product)
             
             # Step 2: Extract high and moderate risk ingredients
             high_risk_ingredients = basic_categorization.get('high_risk_ingredients', [])
@@ -80,6 +81,11 @@ class HealthAssessmentMCPService:
             assessment_result = await self._generate_evidence_based_assessment(
                 product, high_risk_ingredients, moderate_risk_ingredients, existing_risk_rating
             )
+            
+            # Step 4: If assessment generation fails, create minimal fallback assessment
+            if not assessment_result and existing_risk_rating:
+                logger.warning(f"Assessment generation failed, creating minimal fallback assessment using risk_rating: {existing_risk_rating}")
+                assessment_result = self._create_minimal_fallback_assessment(product, existing_risk_rating)
             
             if assessment_result:
                 # Cache the result - assessment_result is already a dict
@@ -188,6 +194,52 @@ class HealthAssessmentMCPService:
             'moderate_risk_ingredients': moderate_risk,
             'categorization_text': f"Fallback categorization used due to API limits"
         }
+    
+    def _create_minimal_fallback_assessment(self, product: ProductStructured, existing_risk_rating: str) -> Dict[str, Any]:
+        """Create a minimal assessment when all AI processing fails, using only OpenFoodFacts risk_rating."""
+        
+        # Map risk rating to grade and color
+        grade, color = self._map_risk_rating_to_grade_color(existing_risk_rating)
+        
+        # Create minimal assessment structure
+        assessment_data = {
+            "summary": f"Basic assessment for {product.product.name or 'this product'} based on database classification.",
+            "risk_summary": {
+                "grade": grade,
+                "color": color
+            },
+            "ingredients_assessment": {
+                "high_risk": [],
+                "moderate_risk": [],
+                "low_risk": [
+                    {
+                        "name": "Basic Ingredients",
+                        "risk_level": "low",
+                        "micro_report": "Standard product ingredients. Full analysis unavailable.",
+                        "citations": []
+                    }
+                ]
+            },
+            "nutrition_insights": self._generate_fallback_nutrition_insights(product),
+            "citations": [
+                {
+                    "id": 1,
+                    "title": "OpenFoodFacts Product Database",
+                    "source": "OpenFoodFacts",
+                    "year": 2024
+                }
+            ],
+            "metadata": {
+                "generated_at": datetime.now().isoformat(),
+                "product_code": product.product.code,
+                "product_name": product.product.name,
+                "product_brand": product.product.brand or "",
+                "ingredients": product.product.ingredients_text or "",
+                "assessment_type": "Minimal Fallback Assessment"
+            }
+        }
+        
+        return assessment_data
     
     async def _generate_evidence_based_assessment(
         self, 

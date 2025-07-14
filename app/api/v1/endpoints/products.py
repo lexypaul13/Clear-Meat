@@ -1010,14 +1010,23 @@ async def get_product_health_assessment_mcp(
         existing_risk_rating = product_data.get('risk_rating')  # e.g., "Green", "Yellow", "Red"
         logger.info(f"Using existing risk_rating from database: {existing_risk_rating}")
         
-        assessment = await mcp_service.generate_health_assessment_with_real_evidence(
-            structured_product, 
-            existing_risk_rating=existing_risk_rating
-        )
+        try:
+            assessment = await mcp_service.generate_health_assessment_with_real_evidence(
+                structured_product, 
+                existing_risk_rating=existing_risk_rating
+            )
+        except Exception as e:
+            logger.error(f"Error during health assessment generation: {e}")
+            assessment = None
         
         if not assessment:
             logger.error("Failed to generate MCP health assessment")
-            raise HTTPException(status_code=500, detail="Failed to generate evidence-based health assessment")
+            # Instead of 500 error, create a minimal assessment from available data
+            if existing_risk_rating:
+                logger.info(f"Creating minimal assessment using risk_rating: {existing_risk_rating}")
+                assessment = mcp_service._create_minimal_fallback_assessment(structured_product, existing_risk_rating)
+            else:
+                raise HTTPException(status_code=404, detail="Product not found or no assessment data available")
         
         logger.info("Step 3: MCP health assessment generated successfully")
         
