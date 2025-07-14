@@ -111,10 +111,16 @@ class CitationSearch(BaseModel):
     search_crossref: bool = True
     search_semantic_scholar: bool = True
     
-    # Web sources
+    # Official sources
     search_fda: bool = True
     search_who: bool = True
     search_harvard_health: bool = True
+    
+    # Free research databases
+    search_doaj: bool = True  # Directory of Open Access Journals
+    search_scihub: bool = True  # Sci-Hub for full text access
+    search_libgen: bool = True  # Library Genesis for academic papers
+    
     search_web: bool = False  # Keep general web search disabled for now
     
     year_range: Optional[tuple[int, int]] = None
