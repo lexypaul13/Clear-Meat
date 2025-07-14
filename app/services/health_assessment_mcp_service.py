@@ -401,11 +401,17 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
             if not product:
                 return None
                 
+            # Use database risk_rating as the authoritative source for grading
+            if existing_risk_rating:
+                grade, color = self._map_risk_rating_to_grade_color(existing_risk_rating)
+            else:
+                grade, color = "C", "Yellow"  # Minimal fallback
+            
             assessment_data = {
                 "summary": "This product contains preservatives and additives requiring moderation. High salt content may contribute to cardiovascular concerns. [1][2]",
                 "risk_summary": {
-                    "grade": "C",
-                    "color": "Yellow"
+                    "grade": grade,
+                    "color": color
                 },
                 "ingredients_assessment": {
                     "high_risk": [],
@@ -606,34 +612,15 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
                 if hasattr(nutrition, 'fat') and nutrition.fat is not None and nutrition.fat < 10:
                     nutrition_score += 1
             
-            # Use existing risk rating from OpenFoodFacts database instead of AI-generated grades
-            if existing_risk_rating:
-                logger.info(f"Using existing risk_rating from database: {existing_risk_rating}")
-                # Map OpenFoodFacts risk_rating to grade and color
-                grade, color = self._map_risk_rating_to_grade_color(existing_risk_rating)
-            else:
-                logger.warning("No existing risk_rating provided, falling back to AI grading logic")
-                # Fallback: Use ingredient-based grading for products without OpenFoodFacts data
-                high_risk_count = len(assessment_data["ingredients_assessment"]["high_risk"])
-                moderate_risk_count = len(assessment_data["ingredients_assessment"]["moderate_risk"])
-                
-                if high_risk_count == 0 and moderate_risk_count <= 1:
-                    grade, color = "A", "Green"
-                elif high_risk_count == 0 and moderate_risk_count <= 3:
-                    grade, color = "B", "Green"  
-                elif high_risk_count == 1 or moderate_risk_count > 3:
-                    grade, color = "C", "Yellow"
-                elif high_risk_count >= 2:
-                    grade, color = "D", "Orange"
-                else:
-                    grade, color = "C", "Yellow"
+            # Grade was already set at the beginning using database risk_rating
+            logger.info(f"Final grade: {assessment_data['risk_summary']['grade']} from risk_rating: {existing_risk_rating}")
             
-            # Generate appropriate summary based on grade
-            summary_template = self._generate_summary_for_grade(grade, high_risk_ingredients, moderate_risk_ingredients)
-            
-            # Update the assessment with new grade
-            assessment_data["risk_summary"]["grade"] = grade
-            assessment_data["risk_summary"]["color"] = color
+            # Generate appropriate summary based on the database-sourced grade
+            summary_template = self._generate_summary_for_grade(
+                assessment_data["risk_summary"]["grade"], 
+                high_risk_ingredients, 
+                moderate_risk_ingredients
+            )
             assessment_data["summary"] = summary_template
             
             # Update metadata with actual product information
