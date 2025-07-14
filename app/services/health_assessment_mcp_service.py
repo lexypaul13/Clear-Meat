@@ -54,7 +54,7 @@ class HealthAssessmentMCPService:
         """
         try:
             # Generate cache key with version to force refresh
-            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v3")
+            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v4_test")
             
             # Check cache first
             cached_result = cache.get(cache_key)
@@ -820,10 +820,11 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
                 else:
                     evaluation = "low"
                 
-                # Generate dynamic AI commentary
-                ai_commentary = await self._generate_dynamic_nutrition_commentary(
-                    nutrient_name, amount, percent_dv, evaluation, product_name
-                )
+                # Temporarily use fallback to test - will re-enable AI after testing
+                ai_commentary = self._get_fallback_commentary(nutrient_name, evaluation, percent_dv)
+                # ai_commentary = await self._generate_dynamic_nutrition_commentary(
+                #     nutrient_name, amount, percent_dv, evaluation, product_name
+                # )
                 
                 nutrition_insights.append({
                     "nutrient": nutrient_name,
