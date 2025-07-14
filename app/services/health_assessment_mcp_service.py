@@ -820,8 +820,9 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
                 else:
                     evaluation = "low"
                 
-                # Temporarily use fallback to test - will re-enable AI after testing
+                # Temporarily use fallback to test - will re-enable AI after testing  
                 ai_commentary = self._get_fallback_commentary(nutrient_name, evaluation, percent_dv)
+                logger.info(f"TEST: Using fallback for {nutrient_name}: '{ai_commentary}' ({len(ai_commentary)} chars)")
                 # ai_commentary = await self._generate_dynamic_nutrition_commentary(
                 #     nutrient_name, amount, percent_dv, evaluation, product_name
                 # )
