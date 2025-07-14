@@ -268,13 +268,13 @@ class SupabaseService:
             logger.error(f"Error counting products: {e}")
             return 0
     
-    def search_products(self, query: str, limit: int = 50) -> List[Dict[str, Any]]:
+    def search_products(self, query: str, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
         """Search products by name or ingredients."""
         try:
             response = (self.client.table('products')
                        .select('*')
                        .or_(f'name.ilike.%{query}%,ingredients_text.ilike.%{query}%')
-                       .limit(limit)
+                       .range(offset, offset + limit - 1)
                        .execute())
             return response.data or []
         except Exception as e:
