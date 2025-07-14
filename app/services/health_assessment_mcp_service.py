@@ -3,6 +3,7 @@ import logging
 import time
 import asyncio
 import os
+import re
 from datetime import datetime
 from typing import Dict, Any, Optional, List, Tuple
 from contextlib import AsyncExitStack
@@ -54,7 +55,7 @@ class HealthAssessmentMCPService:
         """
         try:
             # Generate cache key with version to force refresh
-            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v8_universal_fix")
+            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v10_ai_only")
             
             # Check cache first
             cached_result = cache.get(cache_key)
@@ -70,20 +71,23 @@ class HealthAssessmentMCPService:
                 logger.warning(f"AI categorization failed, using fallback categorization for {product.product.code}")
                 basic_categorization = self._get_fallback_categorization(product)
             
-            # Step 2: Extract high and moderate risk ingredients
+            # Step 2: Extract categorized ingredients and analyses
             high_risk_ingredients = basic_categorization.get('high_risk_ingredients', [])
             moderate_risk_ingredients = basic_categorization.get('moderate_risk_ingredients', [])
+            low_risk_ingredients = basic_categorization.get('low_risk_ingredients', [])
+            ingredient_analyses = basic_categorization.get('ingredient_analyses', {})
             
             # Validate and clean ingredient lists
             high_risk_ingredients = self._validate_ingredient_list(high_risk_ingredients)
             moderate_risk_ingredients = self._validate_ingredient_list(moderate_risk_ingredients)
+            low_risk_ingredients = self._validate_ingredient_list(low_risk_ingredients)
             
-            logger.info(f"[MCP Health Assessment] High-risk ingredients: {high_risk_ingredients}")
-            logger.info(f"[MCP Health Assessment] Moderate-risk ingredients: {moderate_risk_ingredients}")
+            logger.info(f"[MCP Health Assessment] High-risk: {len(high_risk_ingredients)}, Moderate: {len(moderate_risk_ingredients)}, Low: {len(low_risk_ingredients)}")
             
             # Step 3: Generate simplified evidence-based assessment (MCP features disabled)
             assessment_result = await self._generate_evidence_based_assessment(
-                product, high_risk_ingredients, moderate_risk_ingredients, existing_risk_rating
+                product, high_risk_ingredients, moderate_risk_ingredients, existing_risk_rating, 
+                low_risk_ingredients, ingredient_analyses
             )
             
             # Step 4: If assessment generation fails, create minimal fallback assessment
@@ -122,54 +126,55 @@ class HealthAssessmentMCPService:
             # Parse the response to extract ingredient categorizations
             response_text = response.text
             
-            # Simple parsing - look for ingredient lists
-            high_risk = []
-            moderate_risk = []
+            # Parse AI response to extract ingredients and their analyses
+            high_risk = {}
+            moderate_risk = {}
+            low_risk = {}
             
             lines = response_text.split('\n')
             current_category = None
             
             for line in lines:
                 line = line.strip()
-                if 'high risk' in line.lower() or 'high-risk' in line.lower():
+                if 'high risk' in line.lower():
                     current_category = 'high'
-                elif 'moderate risk' in line.lower() or 'moderate-risk' in line.lower():
+                elif 'moderate risk' in line.lower():
                     current_category = 'moderate'
+                elif 'low risk' in line.lower():
+                    current_category = 'low'
                 elif line.startswith('-') or line.startswith('•') or line.startswith('*'):
-                    # Extract ingredient name
-                    ingredient_text = line.lstrip('-•* ').split(':')[0].strip()
-                    
-                    # VALIDATION: Skip non-ingredient entries
-                    # 1. Skip empty or very short entries
-                    if len(ingredient_text) < 2:
-                        continue
+                    # Extract ingredient and analysis
+                    parts = line.lstrip('-•* ').split(':', 1)
+                    if len(parts) == 2:
+                        ingredient_name = parts[0].strip()
+                        analysis = parts[1].strip()
                         
-                    # 2. Skip explanatory text patterns
-                    skip_patterns = [
-                        'none', 'no ingredients', 'there are no', 'empty', 
-                        'n/a', 'not applicable', 'nothing', 'nil', 'not found',
-                        'does not contain', 'free from', 'without'
-                    ]
-                    if any(pattern in ingredient_text.lower() for pattern in skip_patterns):
-                        continue
+                        # Validate ingredient name
+                        if len(ingredient_name) < 2 or len(ingredient_name) > 60:
+                            continue
+                            
+                        # Skip explanatory text
+                        skip_patterns = ['none', 'no ingredients', 'empty', 'n/a']
+                        if any(pattern in ingredient_name.lower() for pattern in skip_patterns):
+                            continue
                         
-                    # 3. Skip overly long entries (likely sentences, not ingredients)
-                    if len(ingredient_text) > 60:
-                        continue
-                        
-                    # 4. Skip entries with multiple sentences (contains periods)
-                    if ingredient_text.count('.') > 1:
-                        continue
-                        
-                    # Add to appropriate category
-                    if ingredient_text and current_category == 'high':
-                        high_risk.append(ingredient_text)
-                    elif ingredient_text and current_category == 'moderate':
-                        moderate_risk.append(ingredient_text)
+                        # Store with analysis
+                        if current_category == 'high':
+                            high_risk[ingredient_name] = analysis
+                        elif current_category == 'moderate':
+                            moderate_risk[ingredient_name] = analysis
+                        elif current_category == 'low':
+                            low_risk[ingredient_name] = analysis
             
             return {
-                'high_risk_ingredients': high_risk,
-                'moderate_risk_ingredients': moderate_risk,
+                'high_risk_ingredients': list(high_risk.keys()),
+                'moderate_risk_ingredients': list(moderate_risk.keys()),
+                'low_risk_ingredients': list(low_risk.keys()),
+                'ingredient_analyses': {
+                    'high': high_risk,
+                    'moderate': moderate_risk,
+                    'low': low_risk
+                },
                 'categorization_text': response_text
             }
             
@@ -185,6 +190,90 @@ class HealthAssessmentMCPService:
                 return self._get_fallback_categorization(product)
             logger.error(f"Error categorizing ingredients: {e}")
             return None
+    
+    def _extract_all_ingredients(self, ingredients_text: str) -> List[str]:
+        """Extract ALL individual ingredients including nested ones."""
+        if not ingredients_text:
+            return []
+            
+        all_ingredients = []
+        
+        # First, handle the "contains X% or less of" pattern
+        main_part = ingredients_text
+        less_than_part = ""
+        
+        # Split on "contains X% or less"
+        contains_match = re.search(r'contains?\s*\d*%?\s*or\s*less\s*of\s*', ingredients_text, re.I)
+        if contains_match:
+            main_part = ingredients_text[:contains_match.start()].strip().rstrip(',')
+            less_than_part = ingredients_text[contains_match.end():].strip()
+        
+        # Process main ingredients (before "contains X% or less")
+        # Split by comma but handle nested brackets and parentheses
+        parts = re.split(r',(?![^[]*\]|[^(]*\))', main_part)
+        
+        for part in parts:
+            part = part.strip()
+            if not part:
+                continue
+                
+            # Extract main ingredient (before brackets/parentheses)
+            main_ingredient = re.split(r'[\[\(]', part)[0].strip()
+            if main_ingredient:
+                all_ingredients.append(main_ingredient)
+            
+            # Extract nested ingredients from brackets
+            bracket_matches = re.findall(r'\[([^\]]+)\]', part)
+            for match in bracket_matches:
+                # Split nested ingredients
+                nested_parts = re.split(r',|;', match)
+                for nested in nested_parts:
+                    nested = nested.strip()
+                    # Remove "including" and similar words
+                    nested = re.sub(r'^(including|contains?|with)\s+', '', nested, flags=re.I)
+                    if nested:
+                        all_ingredients.append(nested)
+            
+            # Extract from parentheses (but skip if it's just a description)
+            paren_matches = re.findall(r'\(([^)]+)\)', part)
+            for match in paren_matches:
+                # Check if it's an ingredient list (has commas) or just a description
+                if ',' in match:
+                    nested_parts = match.split(',')
+                    for nested in nested_parts:
+                        nested = nested.strip()
+                        if nested and not any(skip in nested.lower() for skip in ['organic', 'natural', 'artificial']):
+                            all_ingredients.append(nested)
+        
+        # Process "contains X% or less" ingredients
+        if less_than_part:
+            # These are typically listed simply with commas
+            less_parts = re.split(r',|;', less_than_part)
+            for part in less_parts:
+                part = part.strip().rstrip('.')
+                if part:
+                    all_ingredients.append(part)
+        
+        # Clean and deduplicate ingredients
+        cleaned = []
+        seen = set()
+        
+        for ing in all_ingredients:
+            # Remove common non-ingredient text
+            ing = re.sub(r'\b(and|or|from|derived from|extract of)\b', ' ', ing, flags=re.I)
+            ing = re.sub(r'\s+', ' ', ing).strip()
+            
+            # Skip empty or very short entries
+            if len(ing) < 2:
+                continue
+                
+            # Normalize and deduplicate
+            ing_lower = ing.lower()
+            if ing_lower not in seen and ing:
+                seen.add(ing_lower)
+                cleaned.append(ing)
+        
+        return cleaned
     
     def _validate_ingredient_list(self, ingredients: List[str]) -> List[str]:
         """Validate and clean an ingredient list, removing non-ingredient entries."""
@@ -222,64 +311,18 @@ class HealthAssessmentMCPService:
         ingredients_text = product.product.ingredients_text or ""
         ingredients_lower = ingredients_text.lower()
         
-        high_risk = []
-        moderate_risk = []
+        # Extract all ingredients for logging
+        all_ingredients = self._extract_all_ingredients(ingredients_text)
         
-        # Common high-risk patterns
-        high_risk_patterns = [
-            "bha", "bht", "tbhq", "potassium bromate", "propyl gallate",
-            "sodium benzoate", "potassium sorbate", "sulfur dioxide",
-            "high fructose corn syrup", "trans fat", "hydrogenated", "partially hydrogenated"
-        ]
+        logger.warning(f"AI categorization unavailable. Found {len(all_ingredients)} ingredients but cannot categorize without AI.")
         
-        # Common moderate-risk patterns  
-        moderate_risk_patterns = [
-            "sodium nitrite", "e250", "caramel color", "msg", "monosodium glutamate",
-            "phosphate", "carrageenan", "xanthan gum", "modified starch",
-            "natural flavor", "artificial flavor", "sugar", "soy sauce", "chili garlic sauce",
-            "corn starch", "potato starch", "salt"
-        ]
-        
-        # Parse actual ingredients from the text
-        actual_ingredients = []
-        if ", " in ingredients_text:
-            actual_ingredients = [ing.strip() for ing in ingredients_text.split(", ")]
-        elif "," in ingredients_text:
-            actual_ingredients = [ing.strip() for ing in ingredients_text.split(",")]
-        else:
-            actual_ingredients = [ingredients_text.strip()]
-        
-        # Handle complex ingredients with brackets
-        simplified_ingredients = []
-        for ingredient in actual_ingredients:
-            # Extract main ingredient name before brackets
-            main_ingredient = ingredient.split('[')[0].split('(')[0].strip()
-            if main_ingredient:
-                simplified_ingredients.append(main_ingredient)
-        
-        # Check for high-risk ingredients
-        for ingredient in simplified_ingredients:
-            ingredient_lower = ingredient.lower()
-            for pattern in high_risk_patterns:
-                if pattern in ingredient_lower and ingredient not in high_risk:
-                    high_risk.append(ingredient)
-                    break
-        
-        # Check for moderate-risk ingredients  
-        for ingredient in simplified_ingredients:
-            ingredient_lower = ingredient.lower()
-            # Skip if already in high risk
-            if ingredient in high_risk:
-                continue
-            for pattern in moderate_risk_patterns:
-                if pattern in ingredient_lower and ingredient not in moderate_risk:
-                    moderate_risk.append(ingredient)
-                    break
-        
+        # Return empty categorization - no hardcoded assumptions
         return {
-            'high_risk_ingredients': high_risk,
-            'moderate_risk_ingredients': moderate_risk,
-            'categorization_text': f"Fallback categorization used due to API limits"
+            'high_risk_ingredients': [],
+            'moderate_risk_ingredients': [],
+            'low_risk_ingredients': all_ingredients,  # Default all to low risk when AI unavailable
+            'ingredient_analyses': {},
+            'categorization_text': "AI categorization unavailable"
         }
     
     def create_minimal_fallback_assessment(self, product: ProductStructured, existing_risk_rating: str) -> Dict[str, Any]:
@@ -333,7 +376,9 @@ class HealthAssessmentMCPService:
         product: ProductStructured,
         high_risk_ingredients: List[str],
         moderate_risk_ingredients: List[str],
-        existing_risk_rating: Optional[str] = None
+        existing_risk_rating: Optional[str] = None,
+        low_risk_ingredients: List[str] = None,
+        ingredient_analyses: Dict[str, Dict[str, str]] = None
     ) -> Optional[HealthAssessment]:
         """Generate evidence-based assessment using MCP tools."""
         try:
@@ -365,7 +410,8 @@ class HealthAssessmentMCPService:
             
             # Parse the structured response into HealthAssessment
             assessment_data = await self._parse_assessment_response(
-                response.text, high_risk_ingredients, moderate_risk_ingredients, existing_risk_rating
+                response.text, high_risk_ingredients, moderate_risk_ingredients, existing_risk_rating,
+                low_risk_ingredients, ingredient_analyses
             )
             
             if assessment_data:
@@ -386,50 +432,49 @@ class HealthAssessmentMCPService:
         ingredients_text = product.product.ingredients_text or "Ingredients not available"
         product_name = product.product.name or "Unknown product"
         
-        return f"""You are a food safety expert analyzing meat product ingredients with a balanced perspective.
+        # First extract ALL ingredients
+        all_ingredients = self._extract_all_ingredients(ingredients_text)
+        ingredients_list = ", ".join(all_ingredients)
+        
+        return f"""You are a food safety expert analyzing this specific {product_name}.
 
-PRODUCT TO ANALYZE:
-Name: {product_name}
-Ingredients: {ingredients_text}
+COMPLETE INGREDIENT LIST TO ANALYZE:
+{ingredients_list}
 
-IMPORTANT CONTEXT:
-- Consider the product type and quality indicators (organic, grass-fed, natural, etc.)
-- Some preservatives are necessary for food safety and preventing foodborne illness
-- Natural doesn't always mean safer, and synthetic doesn't always mean harmful
-- Consider typical consumption amounts and frequency
+CRITICAL TASK: Analyze EVERY SINGLE ingredient listed above. Do not skip any ingredient.
 
-TASK: Categorize each ingredient by actual health risk level based on scientific evidence.
+For EACH ingredient, determine its risk level based on:
+1. Scientific evidence of health effects
+2. Concentration in this specific product type ({product_name})
+3. Cumulative effects when combined with other ingredients
+4. Typical consumption patterns for this product
 
 CATEGORIES:
-- HIGH RISK: Only ingredients with strong scientific evidence of serious health risks at typical consumption levels (e.g., known carcinogens, severe allergens for general population)
-- MODERATE RISK: Ingredients that may have some concerns but are generally safe in moderation (e.g., high sodium, some preservatives, common allergens)
-- LOW RISK: Generally recognized as safe (GRAS) ingredients, natural components of meat, basic seasonings
+- HIGH RISK: Ingredients with strong scientific evidence of serious health risks (e.g., known carcinogens, ingredients that significantly increase disease risk)
+- MODERATE RISK: Ingredients with some health concerns that require moderation (e.g., high sodium/sugar content, common allergens, some preservatives)
+- LOW RISK: Generally recognized as safe (GRAS) ingredients with minimal health concerns
 
-GUIDELINES:
-- Sodium nitrite/E250: Consider it MODERATE risk unless present in very high amounts
-- Natural preservatives (salt, vinegar, celery powder): Usually LOW risk
-- Basic meat (beef, pork, chicken, turkey): Always LOW risk
-- Water, spices, herbs: Always LOW risk
-- Consider organic/natural products may use celery powder instead of sodium nitrite (similar function)
+For EACH ingredient provide a specific health analysis (max 180 characters) based on:
+- Its specific health effects
+- Why it's concerning/safe in this product context
+- Relevant scientific evidence
 
-FORMAT YOUR RESPONSE EXACTLY AS FOLLOWS:
+FORMAT YOUR RESPONSE EXACTLY:
 
 HIGH RISK INGREDIENTS:
-[If there are high-risk ingredients, list each on a new line with - prefix and brief reason after colon]
-[If there are NO high-risk ingredients, leave this section completely empty - do not write any text]
+- [Ingredient name]: [Specific health analysis, max 180 chars]
 
 MODERATE RISK INGREDIENTS:
-[If there are moderate-risk ingredients, list each on a new line with - prefix and brief reason after colon]
-[If there are NO moderate-risk ingredients, leave this section completely empty - do not write any text]
+- [Ingredient name]: [Specific health analysis, max 180 chars]
 
 LOW RISK INGREDIENTS:
-[List remaining safe ingredients with - prefix, or leave empty if none]
+- [Ingredient name]: [Specific health analysis, max 180 chars]
 
 CRITICAL RULES:
-1. Never write explanatory text like "None", "There are no ingredients", "Empty", etc.
-2. If a category has no ingredients, leave it completely blank under the heading
-3. Only list actual ingredient names from the product, not explanations
-4. Be balanced and scientific. Don't categorize ingredients as high-risk without strong evidence."""
+1. You MUST categorize ALL {len(all_ingredients)} ingredients listed above
+2. Base categorization on this specific product context, not general rules
+3. Provide unique, specific analysis for each ingredient
+4. Never use generic statements - be specific to the ingredient and product"""
     
     def _build_evidence_assessment_prompt(
         self, 
@@ -482,7 +527,9 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
         response_text: str,
         high_risk_ingredients: List[str],
         moderate_risk_ingredients: List[str],
-        existing_risk_rating: Optional[str] = None
+        existing_risk_rating: Optional[str] = None,
+        low_risk_ingredients: List[str] = None,
+        ingredient_analyses: Dict[str, Dict[str, str]] = None
     ) -> Optional[Dict[str, Any]]:
         """Parse Gemini's structured response into HealthAssessment format."""
         try:
@@ -523,126 +570,78 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
                 }
             }
             
-            # Check for specific high-risk ingredients that should be categorized as high-risk
-            # Only truly dangerous additives at typical consumption levels
-            high_risk_additives = ["BHA", "BHT", "TBHQ", "Potassium bromate", "Propyl gallate"]
+            # Trust AI categorization completely - no re-categorization
+            actual_high_risk = high_risk_ingredients
+            actual_moderate_risk = moderate_risk_ingredients
             
-            # Ingredients that are often flagged but should be moderate risk
-            moderate_risk_additives = ["E250", "Sodium nitrite", "sodium nitrite", "caramel color", "MSG", "monosodium glutamate"]
+            logger.info(f"Using AI categorization as-is: {len(actual_high_risk)} high risk, {len(actual_moderate_risk)} moderate risk")
             
-            # Re-categorize ingredients based on scientific evidence
-            actual_high_risk = []
-            actual_moderate_risk = []
-            
-            # First, check high-risk ingredients from Gemini and re-categorize if needed
-            for ingredient in high_risk_ingredients:
-                ingredient_lower = ingredient.lower()
-                # Check if this should actually be moderate risk
-                if any(mod_additive.lower() in ingredient_lower for mod_additive in moderate_risk_additives):
-                    actual_moderate_risk.append(ingredient)
-                # Check if it's truly high risk
-                elif any(high_additive.lower() in ingredient_lower for high_additive in high_risk_additives):
-                    actual_high_risk.append(ingredient)
-                else:
-                    # If Gemini marked it as high-risk but it's not in our lists, 
-                    # trust Gemini but log it
-                    logger.info(f"Gemini marked '{ingredient}' as high-risk, keeping classification")
-                    actual_high_risk.append(ingredient)
-            
-            # Then check moderate-risk ingredients and promote to high if needed
-            for ingredient in moderate_risk_ingredients:
-                ingredient_lower = ingredient.lower()
-                if any(high_additive.lower() in ingredient_lower for high_additive in high_risk_additives):
-                    actual_high_risk.append(ingredient)
-                else:
-                    actual_moderate_risk.append(ingredient)
-            
-            # Process high-risk ingredients with specific analysis for each
-            high_risk_analysis = {
-                "sugar": "High sugar content contributes to insulin resistance, obesity, and dental problems. Regular consumption linked to metabolic dysfunction. [1][2]",
-                "salt": "Excessive sodium intake raises blood pressure and increases cardiovascular disease risk. Limit consumption for heart health. [1][2]", 
-                "sodium": "High sodium content may contribute to hypertension and kidney strain. Monitor daily intake carefully. [1][2]",
-                "preservative": "Chemical preservatives may cause allergic reactions and have potential long-term health implications with regular consumption. [1][2]",
-                "bha": "Butylated hydroxyanisole (BHA) is a potential carcinogen that may disrupt hormones and cause liver damage. [1][2]",
-                "bht": "Butylated hydroxytoluene (BHT) may cause liver damage and is linked to cancer risk in animal studies. [1][2]",
-                "default": "This ingredient has potential health concerns and should be consumed in moderation. [1][2]"
-            }
-            
-            for ingredient in actual_high_risk[:3]:  # Limit to 3
-                ingredient_lower = ingredient.lower()
-                micro_report = high_risk_analysis.get("default", high_risk_analysis["default"])
+            # Use AI-generated micro-reports for high-risk ingredients
+            for ingredient in actual_high_risk:
+                # Get AI's analysis or use fallback
+                micro_report = ""
+                if ingredient_analyses and 'high' in ingredient_analyses:
+                    micro_report = ingredient_analyses['high'].get(ingredient, "")
                 
-                # Match specific ingredients to their analysis
-                for key, analysis in high_risk_analysis.items():
-                    if key != "default" and key in ingredient_lower:
-                        micro_report = analysis
-                        break
+                if not micro_report:
+                    micro_report = f"{ingredient} has been identified as high-risk based on scientific evidence. Limit consumption. [1][2]"
                 
                 assessment_data["ingredients_assessment"]["high_risk"].append({
                     "name": ingredient,
                     "risk_level": "high",
-                    "micro_report": micro_report,
+                    "micro_report": micro_report[:180],  # Ensure max 180 chars
                     "citations": [1, 2]
                 })
             
-            # Process moderate-risk ingredients with specific hazards
-            moderate_reports = {
-                "soy sauce": "Fermented soy products are generally safe but high in sodium. Choose gluten-free versions to avoid wheat allergens. [3][4]",
-                "gluten free soy sauce": "Lower sodium alternative to regular soy sauce, but still contains significant amounts that may affect blood pressure. [3][4]",
-                "chili garlic sauce": "Contains added sugars and sodium. Spicy ingredients may irritate digestive system in sensitive individuals. [3][5]",
-                "natural flavor": "Natural flavors can contain allergens and are processed additives. Generally safe but may cause reactions in sensitive people. [4][5]",
-                "corn starch": "Modified starches may cause blood glucose spikes and digestive irritation in some consumers. [5][6]",
-                "potato starch": "May cause blood glucose spikes and digestive issues in sensitive individuals when consumed regularly. [5][6]",
-                "starch": "Modified starches may cause blood glucose spikes and digestive irritation in some consumers. [5][6]",
-                "stabilizer": "Stabilizers can cause gastrointestinal bloating and alter gut microbiome balance when consumed regularly. [3][5]",
-                "gum": "Gums may trigger digestive discomfort and interfere with nutrient absorption in sensitive individuals. [4][5]", 
-                "sugar": "Added sugars increase insulin resistance and promote dental decay with frequent consumption. [3][6]",
-                "oil": "Processed oils can raise LDL cholesterol and increase inflammation markers when consumed often. [4][6]",
-                "chili powder": "Spicy seasonings can irritate digestive tract and may cause discomfort in sensitive individuals. [3][5]",
-                "paprika": "Generally safe spice but may cause allergic reactions in sensitive individuals with nightshade allergies. [4][5]",
-                "turmeric": "Natural anti-inflammatory spice but may interact with blood thinners and cause stomach upset in large amounts. [4][5]",
-                "default": "This ingredient may contribute to digestive issues and metabolic disruption with frequent consumption. [3][4]"
-            }
-            
-            for i, ingredient in enumerate(actual_moderate_risk[:3]):  # Limit to 3
-                # Find appropriate micro-report based on ingredient type
-                micro_report = moderate_reports["default"]
-                ingredient_lower = ingredient.lower()
+            # Use AI-generated micro-reports for moderate-risk ingredients
+            for ingredient in actual_moderate_risk:
+                # Get AI's analysis or use fallback
+                micro_report = ""
+                if ingredient_analyses and 'moderate' in ingredient_analyses:
+                    micro_report = ingredient_analyses['moderate'].get(ingredient, "")
                 
-                for key, report in moderate_reports.items():
-                    if key != "default" and key in ingredient_lower:
-                        micro_report = report
-                        break
-                
-                # Extract citations from micro_report
-                if "[3][5]" in micro_report:
-                    citations = [3, 5]
-                elif "[4][5]" in micro_report:
-                    citations = [4, 5]  
-                elif "[3][6]" in micro_report:
-                    citations = [3, 6]
-                elif "[4][6]" in micro_report:
-                    citations = [4, 6]
-                elif "[5][6]" in micro_report:
-                    citations = [5, 6]
-                else:
-                    citations = [3, 4]
+                if not micro_report:
+                    micro_report = f"{ingredient} may have moderate health concerns. Consume in moderation. [3][4]"
                 
                 assessment_data["ingredients_assessment"]["moderate_risk"].append({
                     "name": ingredient,
-                    "risk_level": "moderate", 
-                    "micro_report": micro_report,
-                    "citations": citations
+                    "risk_level": "moderate",
+                    "micro_report": micro_report[:180],
+                    "citations": [3, 4]
                 })
             
-            # Add some low-risk ingredients
-            safe_ingredients = ["Water", "Natural Flavoring", "Spices"]
-            for ingredient in safe_ingredients[:2]:
+            # Extract ALL ingredients from the product
+            all_product_ingredients = self._extract_all_ingredients(
+                product.product.ingredients_text or ""
+            )
+            
+            # Create sets for easy lookup
+            high_risk_set = {ing.lower() for ing in actual_high_risk}
+            moderate_risk_set = {ing.lower() for ing in actual_moderate_risk}
+            
+            # Add remaining ingredients as low-risk
+            low_risk_ingredients = []
+            for ingredient in all_product_ingredients:
+                ing_lower = ingredient.lower()
+                # Skip if already in high or moderate risk
+                if ing_lower not in high_risk_set and ing_lower not in moderate_risk_set:
+                    low_risk_ingredients.append(ingredient)
+            
+            # Process low-risk ingredients with AI analyses
+            for ingredient in low_risk_ingredients:
+                # Get AI's analysis or use fallback
+                micro_report = ""
+                if ingredient_analyses and 'low' in ingredient_analyses:
+                    micro_report = ingredient_analyses['low'].get(ingredient, "")
+                
+                if not micro_report:
+                    micro_report = f"{ingredient} is generally recognized as safe for consumption. [7]"
+                
                 assessment_data["ingredients_assessment"]["low_risk"].append({
                     "name": ingredient,
                     "risk_level": "low",
-                    "micro_report": "No known health concerns at typical amounts.",
-                    "citations": []
+                    "micro_report": micro_report[:180],
+                    "citations": [7]
                 })
             
             # Ensure we have at least one ingredient in each category for validation
