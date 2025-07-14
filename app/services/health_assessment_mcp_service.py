@@ -54,7 +54,7 @@ class HealthAssessmentMCPService:
         """
         try:
             # Generate cache key with version to force refresh
-            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v6_ingredient_fix")
+            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v8_universal_fix")
             
             # Check cache first
             cached_result = cache.get(cache_key)
@@ -73,6 +73,10 @@ class HealthAssessmentMCPService:
             # Step 2: Extract high and moderate risk ingredients
             high_risk_ingredients = basic_categorization.get('high_risk_ingredients', [])
             moderate_risk_ingredients = basic_categorization.get('moderate_risk_ingredients', [])
+            
+            # Validate and clean ingredient lists
+            high_risk_ingredients = self._validate_ingredient_list(high_risk_ingredients)
+            moderate_risk_ingredients = self._validate_ingredient_list(moderate_risk_ingredients)
             
             logger.info(f"[MCP Health Assessment] High-risk ingredients: {high_risk_ingredients}")
             logger.info(f"[MCP Health Assessment] Moderate-risk ingredients: {moderate_risk_ingredients}")
@@ -133,11 +137,35 @@ class HealthAssessmentMCPService:
                     current_category = 'moderate'
                 elif line.startswith('-') or line.startswith('•') or line.startswith('*'):
                     # Extract ingredient name
-                    ingredient = line.lstrip('-•* ').split(':')[0].strip()
-                    if ingredient and current_category == 'high':
-                        high_risk.append(ingredient)
-                    elif ingredient and current_category == 'moderate':
-                        moderate_risk.append(ingredient)
+                    ingredient_text = line.lstrip('-•* ').split(':')[0].strip()
+                    
+                    # VALIDATION: Skip non-ingredient entries
+                    # 1. Skip empty or very short entries
+                    if len(ingredient_text) < 2:
+                        continue
+                        
+                    # 2. Skip explanatory text patterns
+                    skip_patterns = [
+                        'none', 'no ingredients', 'there are no', 'empty', 
+                        'n/a', 'not applicable', 'nothing', 'nil', 'not found',
+                        'does not contain', 'free from', 'without'
+                    ]
+                    if any(pattern in ingredient_text.lower() for pattern in skip_patterns):
+                        continue
+                        
+                    # 3. Skip overly long entries (likely sentences, not ingredients)
+                    if len(ingredient_text) > 60:
+                        continue
+                        
+                    # 4. Skip entries with multiple sentences (contains periods)
+                    if ingredient_text.count('.') > 1:
+                        continue
+                        
+                    # Add to appropriate category
+                    if ingredient_text and current_category == 'high':
+                        high_risk.append(ingredient_text)
+                    elif ingredient_text and current_category == 'moderate':
+                        moderate_risk.append(ingredient_text)
             
             return {
                 'high_risk_ingredients': high_risk,
@@ -157,6 +185,37 @@ class HealthAssessmentMCPService:
                 return self._get_fallback_categorization(product)
             logger.error(f"Error categorizing ingredients: {e}")
             return None
+    
+    def _validate_ingredient_list(self, ingredients: List[str]) -> List[str]:
+        """Validate and clean an ingredient list, removing non-ingredient entries."""
+        validated = []
+        
+        skip_patterns = [
+            'none', 'no ingredients', 'there are no', 'empty', 
+            'n/a', 'not applicable', 'nothing', 'nil', 'not found',
+            'does not contain', 'free from', 'without'
+        ]
+        
+        for ingredient in ingredients:
+            # Skip empty or very short
+            if len(ingredient) < 2:
+                continue
+                
+            # Skip explanatory text
+            if any(pattern in ingredient.lower() for pattern in skip_patterns):
+                continue
+                
+            # Skip overly long (likely sentences)
+            if len(ingredient) > 60:
+                continue
+                
+            # Skip entries with multiple sentences
+            if ingredient.count('.') > 1:
+                continue
+                
+            validated.append(ingredient)
+            
+        return validated
     
     def _get_fallback_categorization(self, product: ProductStructured) -> Dict[str, Any]:
         """Provide fallback ingredient categorization when AI is unavailable."""
@@ -353,18 +412,24 @@ GUIDELINES:
 - Water, spices, herbs: Always LOW risk
 - Consider organic/natural products may use celery powder instead of sodium nitrite (similar function)
 
-FORMAT YOUR RESPONSE AS:
+FORMAT YOUR RESPONSE EXACTLY AS FOLLOWS:
 
 HIGH RISK INGREDIENTS:
-- [Ingredient name]: [Brief reason]
+[If there are high-risk ingredients, list each on a new line with - prefix and brief reason after colon]
+[If there are NO high-risk ingredients, leave this section completely empty - do not write any text]
 
-MODERATE RISK INGREDIENTS:  
-- [Ingredient name]: [Brief reason]
+MODERATE RISK INGREDIENTS:
+[If there are moderate-risk ingredients, list each on a new line with - prefix and brief reason after colon]
+[If there are NO moderate-risk ingredients, leave this section completely empty - do not write any text]
 
 LOW RISK INGREDIENTS:
-- [List remaining ingredients]
+[List remaining safe ingredients with - prefix, or leave empty if none]
 
-Be balanced and scientific. Don't categorize ingredients as high-risk without strong evidence."""
+CRITICAL RULES:
+1. Never write explanatory text like "None", "There are no ingredients", "Empty", etc.
+2. If a category has no ingredients, leave it completely blank under the heading
+3. Only list actual ingredient names from the product, not explanations
+4. Be balanced and scientific. Don't categorize ingredients as high-risk without strong evidence."""
     
     def _build_evidence_assessment_prompt(
         self, 
