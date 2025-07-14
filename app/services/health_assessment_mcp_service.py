@@ -54,7 +54,7 @@ class HealthAssessmentMCPService:
         """
         try:
             # Generate cache key with version to force refresh
-            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v5_final")
+            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v6_ingredient_fix")
             
             # Check cache first
             cached_result = cache.get(cache_key)
