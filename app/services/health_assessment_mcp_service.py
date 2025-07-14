@@ -55,7 +55,7 @@ class HealthAssessmentMCPService:
         """
         try:
             # Generate cache key with version to force refresh
-            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v10_ai_only")
+            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v11_ios_model_fix")
             
             # Check cache first
             cached_result = cache.get(cache_key)
@@ -131,40 +131,63 @@ class HealthAssessmentMCPService:
             moderate_risk = {}
             low_risk = {}
             
-            lines = response_text.split('\n')
-            current_category = None
-            
-            for line in lines:
-                line = line.strip()
-                if 'high risk' in line.lower():
-                    current_category = 'high'
-                elif 'moderate risk' in line.lower():
-                    current_category = 'moderate'
-                elif 'low risk' in line.lower():
-                    current_category = 'low'
-                elif line.startswith('-') or line.startswith('•') or line.startswith('*'):
-                    # Extract ingredient and analysis
-                    parts = line.lstrip('-•* ').split(':', 1)
-                    if len(parts) == 2:
-                        ingredient_name = parts[0].strip()
-                        analysis = parts[1].strip()
-                        
-                        # Validate ingredient name
-                        if len(ingredient_name) < 2 or len(ingredient_name) > 60:
-                            continue
+            # More robust parsing that handles various AI response formats
+            parsed_data = self._parse_ai_categorization_response(response_text)
+            if parsed_data:
+                high_risk = parsed_data.get('high_risk_analyses', {})
+                moderate_risk = parsed_data.get('moderate_risk_analyses', {})
+                low_risk = parsed_data.get('low_risk_analyses', {})
+                
+                logger.info(f"AI categorization parsed: {len(high_risk)} high-risk, {len(moderate_risk)} moderate-risk, {len(low_risk)} low-risk ingredients")
+                
+                # Log sample analyses for debugging
+                if high_risk:
+                    sample_high = next(iter(high_risk.items()))
+                    logger.debug(f"Sample high-risk analysis: {sample_high[0]} -> {sample_high[1][:50]}...")
+                if moderate_risk:
+                    sample_moderate = next(iter(moderate_risk.items()))
+                    logger.debug(f"Sample moderate-risk analysis: {sample_moderate[0]} -> {sample_moderate[1][:50]}...")
+                if low_risk:
+                    sample_low = next(iter(low_risk.items()))
+                    logger.debug(f"Sample low-risk analysis: {sample_low[0]} -> {sample_low[1][:50]}...")
+            else:
+                logger.warning("Failed to parse AI categorization response, using fallback parsing")
+                logger.debug(f"AI response text for debugging: {response_text[:500]}...")
+                # Fallback to original parsing logic
+                lines = response_text.split('\n')
+                current_category = None
+                
+                for line in lines:
+                    line = line.strip()
+                    if 'high risk' in line.lower():
+                        current_category = 'high'
+                    elif 'moderate risk' in line.lower():
+                        current_category = 'moderate'
+                    elif 'low risk' in line.lower():
+                        current_category = 'low'
+                    elif line.startswith('-') or line.startswith('•') or line.startswith('*'):
+                        # Extract ingredient and analysis
+                        parts = line.lstrip('-•* ').split(':', 1)
+                        if len(parts) == 2:
+                            ingredient_name = parts[0].strip()
+                            analysis = parts[1].strip()
                             
-                        # Skip explanatory text
-                        skip_patterns = ['none', 'no ingredients', 'empty', 'n/a']
-                        if any(pattern in ingredient_name.lower() for pattern in skip_patterns):
-                            continue
-                        
-                        # Store with analysis
-                        if current_category == 'high':
-                            high_risk[ingredient_name] = analysis
-                        elif current_category == 'moderate':
-                            moderate_risk[ingredient_name] = analysis
-                        elif current_category == 'low':
-                            low_risk[ingredient_name] = analysis
+                            # Validate ingredient name
+                            if len(ingredient_name) < 2 or len(ingredient_name) > 60:
+                                continue
+                                
+                            # Skip explanatory text
+                            skip_patterns = ['none', 'no ingredients', 'empty', 'n/a']
+                            if any(pattern in ingredient_name.lower() for pattern in skip_patterns):
+                                continue
+                            
+                            # Store with analysis
+                            if current_category == 'high':
+                                high_risk[ingredient_name] = analysis
+                            elif current_category == 'moderate':
+                                moderate_risk[ingredient_name] = analysis
+                            elif current_category == 'low':
+                                low_risk[ingredient_name] = analysis
             
             return {
                 'high_risk_ingredients': list(high_risk.keys()),
@@ -179,16 +202,96 @@ class HealthAssessmentMCPService:
             }
             
         except asyncio.TimeoutError:
-            logger.warning(f"Ingredient categorization timed out after 15 seconds")
+            logger.warning(f"Ingredient categorization timed out after 15 seconds for product {product.product.code}")
             return None
         except Exception as e:
             error_message = str(e)
             # Handle quota exceeded error gracefully
             if "quota" in error_message.lower() or "429" in error_message:
-                logger.warning(f"Gemini API quota exceeded, using fallback categorization")
+                logger.warning(f"Gemini API quota exceeded for product {product.product.code}, using fallback categorization")
                 # Return a basic categorization based on common ingredient patterns
                 return self._get_fallback_categorization(product)
-            logger.error(f"Error categorizing ingredients: {e}")
+            logger.error(f"Error categorizing ingredients for product {product.product.code}: {e}")
+            logger.debug(f"AI model: {self.model}, Product ingredients: {product.product.ingredients_text[:200]}...")
+            return None
+    
+    def _parse_ai_categorization_response(self, response_text: str) -> Optional[Dict[str, Any]]:
+        """Enhanced parsing of AI categorization response with multiple format support."""
+        try:
+            import re
+            
+            high_risk_analyses = {}
+            moderate_risk_analyses = {}
+            low_risk_analyses = {}
+            
+            # Split response into sections
+            sections = re.split(r'(HIGH RISK INGREDIENTS:|MODERATE RISK INGREDIENTS:|LOW RISK INGREDIENTS:)', response_text, flags=re.IGNORECASE)
+            
+            current_section = None
+            for i, section in enumerate(sections):
+                section = section.strip()
+                
+                if 'HIGH RISK INGREDIENTS:' in section.upper():
+                    current_section = 'high'
+                elif 'MODERATE RISK INGREDIENTS:' in section.upper():
+                    current_section = 'moderate'
+                elif 'LOW RISK INGREDIENTS:' in section.upper():
+                    current_section = 'low'
+                elif current_section and section:
+                    # Parse ingredient lines in this section
+                    ingredient_lines = [line.strip() for line in section.split('\\n') if line.strip()]
+                    
+                    for line in ingredient_lines:
+                        # Multiple formats: \"- Ingredient: analysis\" or \"Ingredient: analysis\" or \"- Ingredient - analysis\"
+                        patterns = [
+                            r'^-\\s*([^:]+):\\s*(.+)$',  # - Ingredient: analysis
+                            r'^\\*\\s*([^:]+):\\s*(.+)$',  # * Ingredient: analysis  
+                            r'^([^:]+):\\s*(.+)$',      # Ingredient: analysis
+                            r'^-\\s*([^-]+)\\s*-\\s*(.+)$'  # - Ingredient - analysis
+                        ]
+                        
+                        parsed = False
+                        for pattern in patterns:
+                            match = re.match(pattern, line)
+                            if match:
+                                ingredient_name = match.group(1).strip()
+                                analysis = match.group(2).strip()
+                                
+                                # Validate ingredient name
+                                if len(ingredient_name) < 2 or len(ingredient_name) > 60:
+                                    continue
+                                    
+                                # Skip explanatory text
+                                skip_patterns = ['none', 'no ingredients', 'empty', 'n/a', 'not applicable']
+                                if any(pattern in ingredient_name.lower() for pattern in skip_patterns):
+                                    continue
+                                
+                                # Store analysis
+                                if current_section == 'high':
+                                    high_risk_analyses[ingredient_name] = analysis
+                                elif current_section == 'moderate':
+                                    moderate_risk_analyses[ingredient_name] = analysis
+                                elif current_section == 'low':
+                                    low_risk_analyses[ingredient_name] = analysis
+                                
+                                parsed = True
+                                break
+                        
+                        if not parsed and line and not line.startswith('---'):
+                            logger.debug(f"Could not parse ingredient line: {line}")
+            
+            # Return parsed data if we found any ingredients
+            if high_risk_analyses or moderate_risk_analyses or low_risk_analyses:
+                return {
+                    'high_risk_analyses': high_risk_analyses,
+                    'moderate_risk_analyses': moderate_risk_analyses,
+                    'low_risk_analyses': low_risk_analyses
+                }
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error parsing AI categorization response: {e}")
             return None
     
     def _extract_all_ingredients(self, ingredients_text: str) -> List[str]:
@@ -421,10 +524,11 @@ class HealthAssessmentMCPService:
                 return None
                 
         except asyncio.TimeoutError:
-            logger.warning(f"Health assessment generation timed out after 20 seconds")
+            logger.warning(f"Health assessment generation timed out after 20 seconds for product {product.product.code}")
             return None
         except Exception as e:
-            logger.error(f"Error in MCP evidence-based assessment: {e}")
+            logger.error(f"Error in MCP evidence-based assessment for product {product.product.code}: {e}")
+            logger.debug(f"High-risk ingredients: {len(high_risk_ingredients)}, Moderate-risk: {len(moderate_risk_ingredients)}")
             return None
     
     def _build_categorization_prompt(self, product: ProductStructured) -> str:
@@ -582,9 +686,12 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
                 micro_report = ""
                 if ingredient_analyses and 'high' in ingredient_analyses:
                     micro_report = ingredient_analyses['high'].get(ingredient, "")
+                    if micro_report:
+                        logger.debug(f"Using AI analysis for high-risk ingredient '{ingredient}': {micro_report[:50]}...")
                 
                 if not micro_report:
-                    micro_report = f"{ingredient} has been identified as high-risk based on scientific evidence. Limit consumption. [1][2]"
+                    micro_report = self._generate_ingredient_specific_fallback(ingredient, "high")
+                    logger.debug(f"Using fallback analysis for high-risk ingredient '{ingredient}': {micro_report[:50]}...")
                 
                 assessment_data["ingredients_assessment"]["high_risk"].append({
                     "name": ingredient,
@@ -599,9 +706,12 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
                 micro_report = ""
                 if ingredient_analyses and 'moderate' in ingredient_analyses:
                     micro_report = ingredient_analyses['moderate'].get(ingredient, "")
+                    if micro_report:
+                        logger.debug(f"Using AI analysis for moderate-risk ingredient '{ingredient}': {micro_report[:50]}...")
                 
                 if not micro_report:
-                    micro_report = f"{ingredient} may have moderate health concerns. Consume in moderation. [3][4]"
+                    micro_report = self._generate_ingredient_specific_fallback(ingredient, "moderate")
+                    logger.debug(f"Using fallback analysis for moderate-risk ingredient '{ingredient}': {micro_report[:50]}...")
                 
                 assessment_data["ingredients_assessment"]["moderate_risk"].append({
                     "name": ingredient,
@@ -633,9 +743,12 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
                 micro_report = ""
                 if ingredient_analyses and 'low' in ingredient_analyses:
                     micro_report = ingredient_analyses['low'].get(ingredient, "")
+                    if micro_report:
+                        logger.debug(f"Using AI analysis for low-risk ingredient '{ingredient}': {micro_report[:50]}...")
                 
                 if not micro_report:
-                    micro_report = f"{ingredient} is generally recognized as safe for consumption. [7]"
+                    micro_report = self._generate_ingredient_specific_fallback(ingredient, "low")
+                    logger.debug(f"Using fallback analysis for low-risk ingredient '{ingredient}': {micro_report[:50]}...")
                 
                 assessment_data["ingredients_assessment"]["low_risk"].append({
                     "name": ingredient,
@@ -1061,6 +1174,53 @@ Generate ONE complete comment under 80 characters:"""
         }
         
         return fallback_templates.get(nutrient, {}).get(evaluation, "Nutrient content within normal range")
+    
+    def _generate_ingredient_specific_fallback(self, ingredient: str, risk_level: str) -> str:
+        """Generate ingredient-specific fallback analysis instead of generic templates."""
+        ingredient_lower = ingredient.lower()
+        
+        # High-risk ingredient fallbacks
+        if risk_level == "high":
+            if any(word in ingredient_lower for word in ['nitrite', 'nitrate', 'sodium nitrite']):
+                return "Preservative linked to cancer risk and cardiovascular issues. Limit processed meat consumption. [1][2]"
+            elif any(word in ingredient_lower for word in ['bha', 'bht', 'butylated hydroxyanisole']):
+                return "Synthetic antioxidant with potential carcinogenic properties. Avoid regular consumption. [1][2]"
+            elif any(word in ingredient_lower for word in ['msg', 'monosodium glutamate']):
+                return "Flavor enhancer that may cause headaches and reactions in sensitive individuals. [1][2]"
+            elif any(word in ingredient_lower for word in ['artificial color', 'red dye', 'yellow dye']):
+                return "Synthetic coloring linked to hyperactivity and allergic reactions. Minimize intake. [1][2]"
+            else:
+                return f"{ingredient} identified as high-risk based on scientific evidence. Limit consumption. [1][2]"
+        
+        # Moderate-risk ingredient fallbacks  
+        elif risk_level == "moderate":
+            if any(word in ingredient_lower for word in ['sodium', 'salt']):
+                return "High sodium content may contribute to hypertension and cardiovascular strain. [3][4]"
+            elif any(word in ingredient_lower for word in ['sugar', 'corn syrup', 'glucose']):
+                return "Added sugar increases caloric content and may impact blood glucose levels. [3][4]"
+            elif any(word in ingredient_lower for word in ['phosphate', 'sodium phosphate']):
+                return "Food additive that may affect calcium absorption and kidney function. [3][4]"
+            elif any(word in ingredient_lower for word in ['carrageenan', 'guar gum']):
+                return "Thickening agent that may cause digestive discomfort in sensitive individuals. [3][4]"
+            else:
+                return f"{ingredient} may have moderate health concerns. Consume in moderation. [3][4]"
+        
+        # Low-risk ingredient fallbacks
+        else:  # risk_level == "low"
+            if any(word in ingredient_lower for word in ['pork', 'beef', 'chicken', 'turkey']):
+                return "High-quality protein source with essential amino acids. Choose lean cuts when possible. [7]"
+            elif any(word in ingredient_lower for word in ['water', 'h2o']):
+                return "Essential for hydration and food texture. No health concerns for consumption. [7]"
+            elif any(word in ingredient_lower for word in ['natural flavor', 'natural flavoring']):
+                return "Flavor compounds derived from natural sources. Generally safe but may contain allergens. [7]"
+            elif any(word in ingredient_lower for word in ['vinegar', 'acetic acid']):
+                return "Natural preservative and flavoring agent. May support digestive health. [7]"
+            elif any(word in ingredient_lower for word in ['celery', 'celery powder']):
+                return "Natural nitrite source used for curing. Safer alternative to synthetic nitrites. [7]"
+            elif any(word in ingredient_lower for word in ['garlic', 'onion', 'spice']):
+                return "Natural flavoring with potential antioxidant and anti-inflammatory properties. [7]"
+            else:
+                return f"{ingredient} is generally recognized as safe for consumption. [7]"
     
     def _generate_fallback_nutrition_insights(self, product: ProductStructured) -> List[Dict[str, Any]]:
         """Generate basic nutrition insights when AI fails."""
