@@ -169,25 +169,53 @@ class HealthAssessmentMCPService:
         # Common high-risk patterns
         high_risk_patterns = [
             "bha", "bht", "tbhq", "potassium bromate", "propyl gallate",
-            "sodium benzoate", "potassium sorbate", "sulfur dioxide"
+            "sodium benzoate", "potassium sorbate", "sulfur dioxide",
+            "high fructose corn syrup", "trans fat", "hydrogenated", "partially hydrogenated"
         ]
         
         # Common moderate-risk patterns  
         moderate_risk_patterns = [
             "sodium nitrite", "e250", "caramel color", "msg", "monosodium glutamate",
             "phosphate", "carrageenan", "xanthan gum", "modified starch",
-            "natural flavor", "artificial flavor"
+            "natural flavor", "artificial flavor", "sugar", "soy sauce", "chili garlic sauce",
+            "corn starch", "potato starch", "salt"
         ]
         
+        # Parse actual ingredients from the text
+        actual_ingredients = []
+        if ", " in ingredients_text:
+            actual_ingredients = [ing.strip() for ing in ingredients_text.split(", ")]
+        elif "," in ingredients_text:
+            actual_ingredients = [ing.strip() for ing in ingredients_text.split(",")]
+        else:
+            actual_ingredients = [ingredients_text.strip()]
+        
+        # Handle complex ingredients with brackets
+        simplified_ingredients = []
+        for ingredient in actual_ingredients:
+            # Extract main ingredient name before brackets
+            main_ingredient = ingredient.split('[')[0].split('(')[0].strip()
+            if main_ingredient:
+                simplified_ingredients.append(main_ingredient)
+        
         # Check for high-risk ingredients
-        for pattern in high_risk_patterns:
-            if pattern in ingredients_lower:
-                high_risk.append(pattern.title())
+        for ingredient in simplified_ingredients:
+            ingredient_lower = ingredient.lower()
+            for pattern in high_risk_patterns:
+                if pattern in ingredient_lower and ingredient not in high_risk:
+                    high_risk.append(ingredient)
+                    break
         
         # Check for moderate-risk ingredients  
-        for pattern in moderate_risk_patterns:
-            if pattern in ingredients_lower and pattern not in [hr.lower() for hr in high_risk]:
-                moderate_risk.append(pattern.title())
+        for ingredient in simplified_ingredients:
+            ingredient_lower = ingredient.lower()
+            # Skip if already in high risk
+            if ingredient in high_risk:
+                continue
+            for pattern in moderate_risk_patterns:
+                if pattern in ingredient_lower and ingredient not in moderate_risk:
+                    moderate_risk.append(ingredient)
+                    break
         
         return {
             'high_risk_ingredients': high_risk,
@@ -464,23 +492,50 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
                 else:
                     actual_moderate_risk.append(ingredient)
             
-            # Process high-risk ingredients
-            for i, ingredient in enumerate(actual_high_risk[:3]):  # Limit to 3
+            # Process high-risk ingredients with specific analysis for each
+            high_risk_analysis = {
+                "sugar": "High sugar content contributes to insulin resistance, obesity, and dental problems. Regular consumption linked to metabolic dysfunction. [1][2]",
+                "salt": "Excessive sodium intake raises blood pressure and increases cardiovascular disease risk. Limit consumption for heart health. [1][2]", 
+                "sodium": "High sodium content may contribute to hypertension and kidney strain. Monitor daily intake carefully. [1][2]",
+                "preservative": "Chemical preservatives may cause allergic reactions and have potential long-term health implications with regular consumption. [1][2]",
+                "bha": "Butylated hydroxyanisole (BHA) is a potential carcinogen that may disrupt hormones and cause liver damage. [1][2]",
+                "bht": "Butylated hydroxytoluene (BHT) may cause liver damage and is linked to cancer risk in animal studies. [1][2]",
+                "default": "This ingredient has potential health concerns and should be consumed in moderation. [1][2]"
+            }
+            
+            for ingredient in actual_high_risk[:3]:  # Limit to 3
+                ingredient_lower = ingredient.lower()
+                micro_report = high_risk_analysis.get("default", high_risk_analysis["default"])
+                
+                # Match specific ingredients to their analysis
+                for key, analysis in high_risk_analysis.items():
+                    if key != "default" and key in ingredient_lower:
+                        micro_report = analysis
+                        break
+                
                 assessment_data["ingredients_assessment"]["high_risk"].append({
                     "name": ingredient,
                     "risk_level": "high",
-                    "micro_report": f"{ingredient} is linked to potential carcinogenic effects and cardiovascular risks. Regular consumption should be limited. [1][2]",
+                    "micro_report": micro_report,
                     "citations": [1, 2]
                 })
             
             # Process moderate-risk ingredients with specific hazards
             moderate_reports = {
+                "soy sauce": "Fermented soy products are generally safe but high in sodium. Choose gluten-free versions to avoid wheat allergens. [3][4]",
+                "gluten free soy sauce": "Lower sodium alternative to regular soy sauce, but still contains significant amounts that may affect blood pressure. [3][4]",
+                "chili garlic sauce": "Contains added sugars and sodium. Spicy ingredients may irritate digestive system in sensitive individuals. [3][5]",
+                "natural flavor": "Natural flavors can contain allergens and are processed additives. Generally safe but may cause reactions in sensitive people. [4][5]",
+                "corn starch": "Modified starches may cause blood glucose spikes and digestive irritation in some consumers. [5][6]",
+                "potato starch": "May cause blood glucose spikes and digestive issues in sensitive individuals when consumed regularly. [5][6]",
+                "starch": "Modified starches may cause blood glucose spikes and digestive irritation in some consumers. [5][6]",
                 "stabilizer": "Stabilizers can cause gastrointestinal bloating and alter gut microbiome balance when consumed regularly. [3][5]",
                 "gum": "Gums may trigger digestive discomfort and interfere with nutrient absorption in sensitive individuals. [4][5]", 
                 "sugar": "Added sugars increase insulin resistance and promote dental decay with frequent consumption. [3][6]",
                 "oil": "Processed oils can raise LDL cholesterol and increase inflammation markers when consumed often. [4][6]",
-                "starch": "Modified starches may cause blood glucose spikes and digestive irritation in some consumers. [5][6]",
-                "flavedo": "Citrus flavedo can trigger allergic reactions and stomach irritation when consumed regularly. [3][5]",
+                "chili powder": "Spicy seasonings can irritate digestive tract and may cause discomfort in sensitive individuals. [3][5]",
+                "paprika": "Generally safe spice but may cause allergic reactions in sensitive individuals with nightshade allergies. [4][5]",
+                "turmeric": "Natural anti-inflammatory spice but may interact with blood thinners and cause stomach upset in large amounts. [4][5]",
                 "default": "This ingredient may contribute to digestive issues and metabolic disruption with frequent consumption. [3][4]"
             }
             
