@@ -41,7 +41,7 @@ pymed==0.8.9
 newspaper3k==0.2.8
 
 # MCP support for real scientific research
-fastmcp>=2.7.0
+fastmcp==2.7.0
 
 # Additional dependencies
 urllib3>=2.0.0

@@ -54,8 +54,8 @@ class HealthAssessmentMCPService:
             HealthAssessment with evidence-based micro-reports and real citations
         """
         try:
-            # Generate cache key with version to force refresh
-            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v11_ios_model_fix")
+            # Generate cache key with version to force refresh with real MCP citations
+            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v12_real_citations")
             
             # Check cache first
             cached_result = cache.get(cache_key)
