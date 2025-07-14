@@ -8,19 +8,20 @@ python-dotenv==1.0.1
 alembic==1.12.0
 Jinja2==3.1.4
 
-# Supabase - updated for fastmcp compatibility
-supabase>=2.10.0
-
 # Database drivers
 psycopg2-binary==2.9.9
 
-# HTTP client - let pip resolve compatible version
-httpx>=0.28.1
-aiohttp==3.9.5
+# HTTP client - precise version for compatibility
+httpx>=0.28.1,<0.29.0
 
-# Web scraping
+# Web scraping - modern alternatives to newspaper3k
 requests==2.31.0
 beautifulsoup4==4.12.3
+trafilatura>=1.12.0
+aiohttp==3.9.5
+
+# Supabase - compatible with httpx version range
+supabase>=2.10.0,<3.0.0
 
 # Auth and security
 python-jose[cryptography]==3.3.0
@@ -38,10 +39,11 @@ pillow>=10.0.0
 # Citation and research tools (required by citation_tools.py)
 crossref-commons==0.0.7
 pymed==0.8.9
-newspaper3k==0.2.8
+# newspaper3k==0.2.8  # REMOVED: incompatible with modern dependencies
+lxml>=4.9.0  # Alternative for HTML/XML parsing
 
 # MCP support for real scientific research
 fastmcp==2.7.0
 
-# Additional dependencies
-urllib3>=2.0.0
+# Additional dependencies - constrained for compatibility
+urllib3>=1.26.0,<3.0.0
