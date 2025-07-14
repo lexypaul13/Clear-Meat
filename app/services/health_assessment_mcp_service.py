@@ -829,7 +829,7 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
                     "nutrient": nutrient_name,
                     "amount_per_serving": display_amount,
                     "evaluation": evaluation,
-                    "ai_commentary": ai_commentary[:120]  # Ensure ≤120 chars for complete display
+                    "ai_commentary": ai_commentary  # Should already be ≤80 chars from validation
                 })
             
             return nutrition_insights
@@ -858,19 +858,19 @@ DAILY VALUE %: {percent_dv:.1f}%
 LEVEL: {evaluation}
 
 Requirements:
-- Maximum 120 characters (strict limit)
+- STRICT MAXIMUM: 80 characters (will be rejected if longer)
 - Be specific to this nutrient level and product type
 - Focus on health implications 
 - Use plain language
 - Complete sentences only - no truncation
 - Avoid generic templates
 
-Examples of good comments:
-- "Great protein source supporting muscle health and daily nutrition goals"
-- "High sodium; balance with low-sodium foods throughout the day"
-- "Low fat content makes this heart-healthy for weight management"
+Examples of good comments (all under 80 chars):
+- "Great protein source supporting muscle health goals"
+- "High sodium; balance with low-sodium foods daily"
+- "Low fat content makes this heart-healthy choice"
 
-Generate ONE complete, concise comment under 120 characters:"""
+Generate ONE complete comment under 80 characters:"""
 
         try:
             # Add timeout protection for AI calls
@@ -895,23 +895,15 @@ Generate ONE complete, concise comment under 120 characters:"""
             if commentary.startswith('"') and commentary.endswith('"'):
                 commentary = commentary[1:-1]
             
-            # Check for truncation indicators and reject incomplete responses
-            if commentary.endswith('...') or commentary.endswith('..') or commentary.endswith('.'):
-                # If response seems complete but is too long, truncate gracefully
-                if len(commentary) > 120:
-                    # Find last complete sentence within limit
-                    sentences = commentary.split('. ')
-                    result = ""
-                    for sentence in sentences:
-                        if len(result + sentence + '. ') <= 120:
-                            result = sentence if not result else result + '. ' + sentence
-                        else:
-                            break
-                    commentary = result + '.' if result and not result.endswith('.') else result
+            # Strict validation - reject responses over 80 characters or with truncation
+            if len(commentary) > 80 or commentary.endswith('...') or commentary.endswith('..'):
+                logger.warning(f"AI response too long ({len(commentary)} chars) or truncated, using fallback for {nutrient}")
+                return self._get_fallback_commentary(nutrient, evaluation, percent_dv)
             
-            # Final length check
-            if len(commentary) > 120:
-                commentary = commentary[:117] + "..."
+            # Check for incomplete sentences (no period at end for complete sentences)
+            if len(commentary) > 20 and not commentary.endswith('.') and not commentary.endswith('!'):
+                logger.warning(f"AI response appears incomplete (no proper ending), using fallback for {nutrient}")
+                return self._get_fallback_commentary(nutrient, evaluation, percent_dv)
             
             return commentary
             
