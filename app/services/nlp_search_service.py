@@ -16,11 +16,20 @@ logger = logging.getLogger(__name__)
 class NLPSearchService:
     def __init__(self):
         """Initialize the NLP search service with Gemini AI."""
+        self.model = None
+        self._initialized = False
+    
+    def _ensure_initialized(self):
+        """Lazy initialization of Gemini AI service."""
+        if self._initialized:
+            return
+        
         if not settings.GEMINI_API_KEY:
             raise ValueError("GEMINI_API_KEY is required for NLP search")
         
         genai.configure(api_key=settings.GEMINI_API_KEY)
         self.model = genai.GenerativeModel('gemini-pro')
+        self._initialized = True
     
     async def parse_search_query(self, query: str) -> Dict[str, Any]:
         """
@@ -33,21 +42,36 @@ class NLPSearchService:
             Dict containing parsed search parameters
         """
         try:
+            # Try to initialize Gemini service
+            self._ensure_initialized()
+            
             prompt = self._build_parsing_prompt(query)
             response = await self._call_gemini(prompt)
             return self._parse_gemini_response(response)
         
+        except ValueError as ve:
+            if "GEMINI_API_KEY" in str(ve):
+                logger.warning(f"Gemini API key not configured: {ve}")
+                # Return fallback parsing without AI
+                return self._fallback_parse_query(query)
+            else:
+                raise ve
+        
         except Exception as e:
             logger.error(f"Error parsing search query '{query}': {e}")
             # Fallback to basic text search
-            return {
-                "keywords": [query.lower()],
-                "meat_types": [],
-                "nutrition_filters": {},
-                "quality_preferences": [],
-                "health_intent": "balanced",
-                "confidence": 0.1
-            }
+            return self._fallback_parse_query(query)
+    
+    def _fallback_parse_query(self, query: str) -> Dict[str, Any]:
+        """Fallback query parsing without AI."""
+        return {
+            "keywords": [query.lower()],
+            "meat_types": [],
+            "nutrition_filters": {},
+            "quality_preferences": [],
+            "health_intent": "balanced",
+            "confidence": 0.1
+        }
     
     def _build_parsing_prompt(self, query: str) -> str:
         """Build the prompt for Gemini to parse the search query."""
@@ -263,9 +287,12 @@ Return ONLY the JSON, no explanation.
         return min(score, 1.0)  # Cap at 1.0
 
 
-# Global instance
-nlp_search_service = NLPSearchService()
+# Global instance - lazy initialization
+_nlp_search_service = None
 
 def get_nlp_search_service() -> NLPSearchService:
     """Dependency to get NLP search service."""
-    return nlp_search_service
+    global _nlp_search_service
+    if _nlp_search_service is None:
+        _nlp_search_service = NLPSearchService()
+    return _nlp_search_service
