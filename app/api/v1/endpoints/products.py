@@ -233,9 +233,15 @@ def natural_language_search(
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
+        # Log the actual error for debugging
+        logger.error(f"Search error for query '{q}': {e}")
+        logger.error(f"Error type: {type(e).__name__}")
+        logger.error(f"Sanitized query: '{sanitized_query}'")
+        logger.error(f"Limit: {limit}, Skip: {skip}")
+        
         raise HTTPException(
             status_code=500,
-            detail="An error occurred while searching products"  # Generic error message
+            detail=f"Search failed: {str(e)}"  # Include error details for debugging
         )
 
 @router.get("/count", 
