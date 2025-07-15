@@ -269,7 +269,7 @@ class SupabaseService:
             return 0
     
     def search_products(self, query: str, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
-        """Search products by name or ingredients."""
+        """Search products by name or ingredients with pagination support."""
         try:
             response = (self.client.table('products')
                        .select('*')
