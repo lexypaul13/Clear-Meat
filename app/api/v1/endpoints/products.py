@@ -283,22 +283,58 @@ async def natural_language_search(
                 detail="Search service temporarily unavailable"
             )
 
-@router.get("/search-test",
+@router.get("/search-debug",
     response_model=Dict[str, Any],
-    summary="Test Search Deployment",
-    description="Test endpoint to verify search deployment",
+    summary="Debug Search Issues",
+    description="Debug endpoint to test search functionality step by step",
     tags=["Products"]
 )
-async def test_search_deployment() -> Dict[str, Any]:
-    """Test endpoint to verify our changes are deployed."""
+async def debug_search_endpoint(
+    q: str = Query("chicken", description="Test query"),
+    supabase_service = Depends(get_supabase_service)
+) -> Dict[str, Any]:
+    """Debug search functionality step by step."""
     from app.core.config import settings
+    import traceback
     
-    return {
-        "message": "Search endpoint deployment test",
+    debug_info = {
         "timestamp": datetime.datetime.now().isoformat(),
+        "query": q,
         "gemini_api_key_configured": bool(settings.GEMINI_API_KEY),
-        "gemini_key_length": len(settings.GEMINI_API_KEY) if settings.GEMINI_API_KEY else 0
+        "gemini_key_length": len(settings.GEMINI_API_KEY) if settings.GEMINI_API_KEY else 0,
+        "steps": []
     }
+    
+    try:
+        # Step 1: Check API key
+        debug_info["steps"].append("1. Checking Gemini API key")
+        if not settings.GEMINI_API_KEY:
+            debug_info["steps"].append("1a. No API key found, would use fallback")
+            debug_info["fallback_triggered"] = True
+            
+            # Test fallback search
+            debug_info["steps"].append("2. Testing fallback search")
+            try:
+                fallback_result = await _fallback_search(q, 5, 0, supabase_service)
+                debug_info["steps"].append("2a. Fallback search succeeded")
+                debug_info["fallback_result_count"] = len(fallback_result.get("products", []))
+                debug_info["fallback_working"] = True
+                return debug_info
+            except Exception as e:
+                debug_info["steps"].append(f"2a. Fallback search failed: {str(e)}")
+                debug_info["fallback_error"] = str(e)
+                debug_info["fallback_traceback"] = traceback.format_exc()
+        else:
+            debug_info["steps"].append("1a. API key found, would use NLP search")
+            debug_info["fallback_triggered"] = False
+            
+        debug_info["test_completed"] = True
+        return debug_info
+        
+    except Exception as e:
+        debug_info["error"] = str(e)
+        debug_info["traceback"] = traceback.format_exc()
+        return debug_info
 
 @router.get("/count", 
     response_model=Dict[str, int],
