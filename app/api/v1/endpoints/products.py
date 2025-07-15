@@ -283,6 +283,23 @@ async def natural_language_search(
                 detail="Search service temporarily unavailable"
             )
 
+@router.get("/search-test",
+    response_model=Dict[str, Any],
+    summary="Test Search Deployment",
+    description="Test endpoint to verify search deployment",
+    tags=["Products"]
+)
+async def test_search_deployment() -> Dict[str, Any]:
+    """Test endpoint to verify our changes are deployed."""
+    from app.core.config import settings
+    
+    return {
+        "message": "Search endpoint deployment test",
+        "timestamp": datetime.datetime.now().isoformat(),
+        "gemini_api_key_configured": bool(settings.GEMINI_API_KEY),
+        "gemini_key_length": len(settings.GEMINI_API_KEY) if settings.GEMINI_API_KEY else 0
+    }
+
 @router.get("/count", 
     response_model=Dict[str, int],
     summary="Get Product Count",
