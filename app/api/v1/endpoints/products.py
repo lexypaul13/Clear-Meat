@@ -32,41 +32,7 @@ logger.setLevel(logging.INFO)
 
 router = APIRouter()
 
-# Input validation patterns  
-SAFE_QUERY_PATTERN = re.compile(r'^[a-zA-Z0-9\s\-_,.\'"()]+$')
-MAX_QUERY_LENGTH = 200
-
-def sanitize_search_query(query: str) -> str:
-    """Sanitize user input to prevent XSS and injection attacks"""
-    if not query:
-        return ""
-    
-    # Limit query length
-    if len(query) > MAX_QUERY_LENGTH:
-        query = query[:MAX_QUERY_LENGTH]
-    
-    # HTML escape to prevent XSS
-    query = html.escape(query)
-    
-    # Remove any remaining HTML tags
-    query = re.sub(r'<[^>]*>', '', query)
-    
-    # Remove script-related keywords
-    dangerous_patterns = [
-        r'javascript:',
-        r'data:',
-        r'vbscript:',
-        r'on\w+\s*=',
-        r'<script',
-        r'</script>',
-        r'eval\s*\(',
-        r'expression\s*\('
-    ]
-    
-    for pattern in dangerous_patterns:
-        query = re.sub(pattern, '', query, flags=re.IGNORECASE)
-    
-    return query.strip()
+# Old text search patterns removed - now using AI-powered NLP search
 
 def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
     """Optimize health assessment response for mobile consumption to reduce bandwidth."""
@@ -142,19 +108,24 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
         # Return original if optimization fails
         return assessment
 
-# NEW: Dedicated natural language search endpoint - placed at the top to avoid conflicts
+# AI-Powered Natural Language Search endpoint
 @router.get("/nlp-search", 
     response_model=Dict[str, Any],
-    summary="Natural Language Product Search",
-    description="Search for products using natural language queries with AI-powered understanding",
+    summary="AI-Powered Natural Language Product Search",
+    description="Search for products using natural language with AI understanding of context and intent",
     responses={
         200: {
-            "description": "Search results found",
+            "description": "Search results found with AI ranking",
             "content": {
                 "application/json": {
                     "example": {
-                        "query": "low sodium chicken",
-                        "total_results": 3,
+                        "query": "healthy low sodium chicken",
+                        "parsed_intent": {
+                            "meat_types": ["chicken"],
+                            "nutrition_filters": {"max_sodium": 500},
+                            "health_intent": "healthy"
+                        },
+                        "total_results": 5,
                         "limit": 20,
                         "skip": 0,
                         "products": [
@@ -163,8 +134,9 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
                                 "name": "Organic Chicken Breast",
                                 "brand": "HealthyMeat Co",
                                 "risk_rating": "Green",
-                                "salt": 0.5,
-                                "protein": 25.0
+                                "salt": 0.3,
+                                "protein": 25.0,
+                                "_relevance_score": 0.92
                             }
                         ]
                     }
@@ -172,76 +144,73 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
             }
         },
         400: {"description": "Invalid search query"},
-        500: {"description": "Internal server error"}
+        500: {"description": "AI search service error"}
     },
     tags=["Products"]
 )
-def natural_language_search(
-    q: str = Query(..., description="Natural language search query", example="low sodium chicken snacks"),
+async def natural_language_search(
+    q: str = Query(..., description="Natural language search query", example="healthy chicken options"),
     limit: int = Query(20, ge=1, le=100, description="Maximum number of results to return"),
     skip: int = Query(0, ge=0, description="Number of results to skip for pagination"),
     supabase_service = Depends(get_supabase_service),
 ) -> Dict[str, Any]:
     """
-    Search for products using natural language queries.
+    AI-powered natural language search for products with contextual understanding.
     
     Examples:
-    - "Low sodium chicken snacks"
-    - "High protein beef jerky with no sugar"  
-    - "Healthy turkey-based alternatives"
-    - "Organic grass-fed beef"
-    - "Antibiotic-free chicken breast"
+    - "healthy chicken options" → Finds chicken with good health ratings
+    - "low sodium beef for dinner" → Beef with <500mg sodium
+    - "organic grass-fed options" → Products with organic/grass-fed ingredients
+    - "something clean and natural" → Products with minimal processing
+    - "high protein snacks" → Products with >20g protein
     
     Args:
         q: Natural language search query
         limit: Maximum number of results to return (1-100, default 20)
         skip: Number of results to skip for pagination
-        db: Database session
         
     Returns:
-        Dict containing search results and metadata
+        Dict containing AI-parsed intent, ranked results, and metadata
     """
     try:
-        # Sanitize the search query to prevent XSS and injection attacks
-        sanitized_query = sanitize_search_query(q)
+        from app.services.nlp_search_service import get_nlp_search_service
+        nlp_service = get_nlp_search_service()
         
-        # Validate query format
-        if not sanitized_query:
-            raise HTTPException(
-                status_code=400,
-                detail="Search query cannot be empty after sanitization"
-            )
+        # Parse the natural language query using AI
+        parsed_query = await nlp_service.parse_search_query(q)
         
-        if not SAFE_QUERY_PATTERN.match(sanitized_query):
-            raise HTTPException(
-                status_code=400,
-                detail="Search query contains invalid characters"
-            )
+        # Build and execute the database query
+        query = nlp_service.build_database_query(parsed_query, supabase_service.client)
+        query = query.range(skip, skip + limit - 1)
         
-        # Perform the search using Supabase service
-        results = supabase_service.search_products(sanitized_query, limit=limit, offset=skip)
+        response = query.execute()
+        results = response.data or []
+        
+        # Rank results by relevance using AI scoring
+        ranked_results = nlp_service.rank_results(results, parsed_query)
         
         return {
-            "query": sanitized_query,  # Return sanitized query
-            "total_results": len(results),
+            "query": q,
+            "parsed_intent": {
+                "meat_types": parsed_query.get("meat_types", []),
+                "nutrition_filters": parsed_query.get("nutrition_filters", {}),
+                "quality_preferences": parsed_query.get("quality_preferences", []),
+                "health_intent": parsed_query.get("health_intent", "balanced"),
+                "confidence": parsed_query.get("confidence", 0.5)
+            },
+            "total_results": len(ranked_results),
             "limit": limit,
             "skip": skip,
-            "products": results
+            "products": ranked_results
         }
         
-    except HTTPException:
-        # Re-raise HTTP exceptions
-        raise
     except Exception as e:
-        # Log the actual error for debugging
-        logger.error(f"Search error for query '{q}': {e}")
+        logger.error(f"NLP search error for query '{q}': {e}")
         logger.error(f"Error type: {type(e).__name__}")
-        logger.error(f"Sanitized query: '{sanitized_query}'")
-        logger.error(f"Limit: {limit}, Skip: {skip}")
         
         raise HTTPException(
             status_code=500,
-            detail=f"Search failed: {str(e)}"  # Include error details for debugging
+            detail=f"AI search failed: {str(e)}"
         )
 
 @router.get("/count", 

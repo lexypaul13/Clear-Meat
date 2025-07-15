@@ -268,23 +268,7 @@ class SupabaseService:
             logger.error(f"Error counting products: {e}")
             return 0
     
-    def search_products(self, query: str, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
-        """Search products by name or ingredients with pagination support."""
-        try:
-            # Use safe parameterized query instead of f-string interpolation
-            search_pattern = f'%{query}%'
-            
-            response = (self.client.table('products')
-                       .select('*')
-                       .or_(f'name.ilike."{search_pattern}",ingredients_text.ilike."{search_pattern}"')
-                       .range(offset, offset + limit - 1)
-                       .execute())
-            return response.data or []
-        except Exception as e:
-            logger.error(f"Error searching products with query '{query}': {e}")
-            logger.error(f"Error type: {type(e).__name__}")
-            logger.error(f"Error details: {str(e)}")
-            return []
+    # Old text search method removed - now using AI-powered NLP search service
     
     # User operations
     def get_user_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
