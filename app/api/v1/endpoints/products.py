@@ -108,6 +108,54 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
         # Return original if optimization fails
         return assessment
 
+async def _fallback_search(query: str, limit: int, skip: int, supabase_service) -> Dict[str, Any]:
+    """
+    Fallback search function using basic text matching when AI is not available.
+    """
+    try:
+        # Basic text search on multiple fields
+        search_query = supabase_service.client.table('products').select('*')
+        
+        # Create OR conditions for text search
+        conditions = []
+        search_terms = query.lower().split()
+        
+        for term in search_terms:
+            conditions.extend([
+                f'name.ilike.%{term}%',
+                f'brand.ilike.%{term}%',
+                f'ingredients_text.ilike.%{term}%'
+            ])
+        
+        if conditions:
+            search_query = search_query.or_(','.join(conditions))
+        
+        # Apply pagination
+        search_query = search_query.range(skip, skip + limit - 1)
+        
+        response = search_query.execute()
+        results = response.data or []
+        
+        return {
+            "query": query,
+            "parsed_intent": {
+                "meat_types": [],
+                "nutrition_filters": {},
+                "quality_preferences": [],
+                "health_intent": "balanced",
+                "confidence": 0.3
+            },
+            "total_results": len(results),
+            "limit": limit,
+            "skip": skip,
+            "products": results,
+            "fallback_mode": True
+        }
+        
+    except Exception as e:
+        logger.error(f"Fallback search failed: {e}")
+        raise
+
 # AI-Powered Natural Language Search endpoint
 @router.get("/nlp-search", 
     response_model=Dict[str, Any],
@@ -174,44 +222,66 @@ async def natural_language_search(
     """
     try:
         from app.services.nlp_search_service import get_nlp_search_service
-        nlp_service = get_nlp_search_service()
+        from app.core.config import settings
         
-        # Parse the natural language query using AI
-        parsed_query = await nlp_service.parse_search_query(q)
+        # Check if Gemini API key is available
+        if not settings.GEMINI_API_KEY:
+            logger.warning("GEMINI_API_KEY not configured, falling back to basic search")
+            return await _fallback_search(q, limit, skip, supabase_service)
         
-        # Build and execute the database query
-        query = nlp_service.build_database_query(parsed_query, supabase_service.client)
-        query = query.range(skip, skip + limit - 1)
-        
-        response = query.execute()
-        results = response.data or []
-        
-        # Rank results by relevance using AI scoring
-        ranked_results = nlp_service.rank_results(results, parsed_query)
-        
-        return {
-            "query": q,
-            "parsed_intent": {
-                "meat_types": parsed_query.get("meat_types", []),
-                "nutrition_filters": parsed_query.get("nutrition_filters", {}),
-                "quality_preferences": parsed_query.get("quality_preferences", []),
-                "health_intent": parsed_query.get("health_intent", "balanced"),
-                "confidence": parsed_query.get("confidence", 0.5)
-            },
-            "total_results": len(ranked_results),
-            "limit": limit,
-            "skip": skip,
-            "products": ranked_results
-        }
+        try:
+            nlp_service = get_nlp_search_service()
+            
+            # Parse the natural language query using AI
+            parsed_query = await nlp_service.parse_search_query(q)
+            
+            # Build and execute the database query
+            query = nlp_service.build_database_query(parsed_query, supabase_service.client)
+            query = query.range(skip, skip + limit - 1)
+            
+            response = query.execute()
+            results = response.data or []
+            
+            # Rank results by relevance using AI scoring
+            ranked_results = nlp_service.rank_results(results, parsed_query)
+            
+            return {
+                "query": q,
+                "parsed_intent": {
+                    "meat_types": parsed_query.get("meat_types", []),
+                    "nutrition_filters": parsed_query.get("nutrition_filters", {}),
+                    "quality_preferences": parsed_query.get("quality_preferences", []),
+                    "health_intent": parsed_query.get("health_intent", "balanced"),
+                    "confidence": parsed_query.get("confidence", 0.5)
+                },
+                "total_results": len(ranked_results),
+                "limit": limit,
+                "skip": skip,
+                "products": ranked_results
+            }
+            
+        except ValueError as ve:
+            if "GEMINI_API_KEY" in str(ve):
+                logger.warning(f"Gemini API key error: {ve}, falling back to basic search")
+                return await _fallback_search(q, limit, skip, supabase_service)
+            else:
+                raise ve
         
     except Exception as e:
         logger.error(f"NLP search error for query '{q}': {e}")
         logger.error(f"Error type: {type(e).__name__}")
         
-        raise HTTPException(
-            status_code=500,
-            detail=f"AI search failed: {str(e)}"
-        )
+        # Try fallback search as last resort
+        try:
+            logger.info("Attempting fallback search after NLP failure")
+            return await _fallback_search(q, limit, skip, supabase_service)
+        except Exception as fallback_error:
+            logger.error(f"Fallback search also failed: {fallback_error}")
+            
+            raise HTTPException(
+                status_code=500,
+                detail="Search service temporarily unavailable"
+            )
 
 @router.get("/count", 
     response_model=Dict[str, int],
