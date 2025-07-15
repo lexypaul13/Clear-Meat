@@ -1,5 +1,5 @@
 """
-Main application module for the MeatWise API.
+Main application module for the MeatWise API with NLP search.
 """
 
 import sys
