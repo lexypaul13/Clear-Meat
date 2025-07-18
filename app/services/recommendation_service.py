@@ -28,21 +28,23 @@ _MAX_VALUES_CACHE_TTL = 1800
 # Recommendations cache to store recent results
 # Structure: {"cache_key": {"recommendations": [...], "timestamp": time}}
 _recommendations_cache = {}
-# Cache TTL for recommendations (5 minutes for faster user experience)
-_RECOMMENDATIONS_CACHE_TTL = 300
+# Cache TTL for recommendations (1 minute for fresher content)
+_RECOMMENDATIONS_CACHE_TTL = 60
 
 def get_personalized_recommendations(
     supabase_service, 
     user_preferences: Dict[str, Any],
-    limit: int = 30
+    limit: int = 10,
+    skip: int = 0
 ) -> List[Dict[str, Any]]:
     """
-    Generate personalized product recommendations based on user preferences.
+    Generate personalized product recommendations with pagination support.
     
     Args:
         supabase_service: Supabase service instance
         user_preferences: User preferences dictionary from profile
-        limit: Maximum number of products to return
+        limit: Number of products per page (default 10)
+        skip: Number of products to skip for pagination (default 0)
         
     Returns:
         List of product dictionaries that best match the user preferences
@@ -51,7 +53,7 @@ def get_personalized_recommendations(
         start_time = time.time()
         
         # Check cache first
-        cache_key = _generate_cache_key(user_preferences, limit)
+        cache_key = _generate_cache_key(user_preferences, limit, skip)
         cached_result = _get_cached_recommendations(cache_key)
         if cached_result:
             logger.info(f"Returning cached recommendations in {(time.time() - start_time):.3f}s")
@@ -60,7 +62,7 @@ def get_personalized_recommendations(
         logger.info(f"Generating personalized recommendations using optimized query")
         
         # Get optimized recommendations using SQL-based filtering and scoring
-        recommendations = _get_optimized_recommendations(supabase_service, user_preferences, limit)
+        recommendations = _get_optimized_recommendations(supabase_service, user_preferences, limit, skip)
         
         # Cache the results
         _cache_recommendations(cache_key, recommendations)
@@ -74,7 +76,7 @@ def get_personalized_recommendations(
         logger.error(f"Error generating personalized recommendations: {str(e)}")
         # Fallback to original method if optimized method fails
         logger.info("Falling back to original recommendation method")
-        return _get_personalized_recommendations_fallback(supabase_service, user_preferences, limit)
+        return _get_personalized_recommendations_fallback(supabase_service, user_preferences, limit, skip)
         
 def analyze_product_match(
     product: Dict[str, Any], 
@@ -164,7 +166,8 @@ def analyze_product_match(
 def _get_optimized_recommendations(
     supabase_service,
     user_preferences: Dict[str, Any],
-    limit: int = 30
+    limit: int = 10,
+    skip: int = 0
 ) -> List[Dict[str, Any]]:
     """
     Get personalized recommendations using optimized SQL queries.
@@ -176,6 +179,7 @@ def _get_optimized_recommendations(
         supabase_service: Supabase service instance
         user_preferences: User preferences dictionary
         limit: Maximum number of recommendations to return
+        skip: Number of products to skip for pagination
         
     Returns:
         List of recommended product dictionaries
@@ -220,10 +224,12 @@ def _get_optimized_recommendations(
             # Default ordering: prefer green rating, then high protein, then low sodium
             query = query.order('risk_rating', desc=False).order('protein', desc=True).order('salt', desc=False)
         
-        # Limit results to reduce data transfer
-        # Request slightly more than needed for diversity algorithm
-        fetch_limit = min(limit * 3, 150)  # Cap at 150 to prevent large fetches
-        query = query.limit(fetch_limit)
+        # Calculate fetch parameters for pagination with randomization
+        # Fetch more items to enable randomization and diversity
+        fetch_limit = min((limit + skip) * 2, 300)  # Allow for wider selection
+        
+        # Add offset for pagination
+        query = query.range(skip, skip + fetch_limit - 1)
         
         # Execute the optimized query
         response = query.execute()
@@ -233,7 +239,7 @@ def _get_optimized_recommendations(
         
         # Apply final diversity and ranking if we have results
         if products:
-            return _apply_final_selection(products, user_preferences, limit)
+            return _apply_final_selection_with_randomization(products, user_preferences, limit, skip)
         else:
             return []
             
@@ -297,13 +303,156 @@ def _apply_final_selection(
     return selected[:limit]
 
 
-def _generate_cache_key(user_preferences: Dict[str, Any], limit: int) -> str:
+def _apply_final_selection_with_randomization(
+    products: List[Dict[str, Any]],
+    user_preferences: Dict[str, Any], 
+    limit: int,
+    skip: int
+) -> List[Dict[str, Any]]:
     """
-    Generate a cache key based on user preferences and limit.
+    Apply final selection logic with randomization to prevent static recommendations.
+    
+    Args:
+        products: Pre-filtered products from database
+        user_preferences: User preferences
+        limit: Target number of recommendations
+        skip: Number of products to skip for pagination
+        
+    Returns:
+        Final list of recommended products with randomization
+    """
+    import random
+    
+    if not products:
+        return []
+    
+    preferred_types = _get_preferred_meat_types(user_preferences)
+    
+    # If we have multiple meat types, apply diversity
+    if preferred_types and len(preferred_types) > 1:
+        return _apply_diversity_with_randomization(products, user_preferences, limit, preferred_types)
+    
+    # For single meat type or no preference, add some randomization
+    # Take top products but add some variety
+    if len(products) <= limit:
+        return products
+    
+    # Use weighted random selection - give higher probability to earlier (better) products
+    # but still allow some randomization to prevent static results
+    weights = [1.0 / (i + 1) for i in range(len(products))]  # Decreasing weights
+    
+    try:
+        # Select with weighted randomization
+        selected_indices = set()
+        selected = []
+        
+        # Ensure we get the top few products (maintain quality)
+        guaranteed_top = min(limit // 2, len(products))
+        selected.extend(products[:guaranteed_top])
+        selected_indices.update(range(guaranteed_top))
+        
+        # Fill remaining slots with weighted random selection
+        remaining_slots = limit - len(selected)
+        if remaining_slots > 0:
+            available_indices = [i for i in range(guaranteed_top, len(products)) if i not in selected_indices]
+            if available_indices:
+                available_weights = [weights[i] for i in available_indices]
+                
+                # Select remaining items with weighted randomization
+                num_to_select = min(remaining_slots, len(available_indices))
+                if num_to_select > 0:
+                    selected_random_indices = random.choices(
+                        available_indices, 
+                        weights=available_weights, 
+                        k=num_to_select
+                    )
+                    for idx in selected_random_indices:
+                        if idx not in selected_indices:
+                            selected.append(products[idx])
+                            selected_indices.add(idx)
+        
+        return selected[:limit]
+        
+    except Exception as e:
+        logger.warning(f"Error in randomization, falling back to simple selection: {e}")
+        return products[:limit]
+
+
+def _apply_diversity_with_randomization(
+    products: List[Dict[str, Any]],
+    user_preferences: Dict[str, Any],
+    limit: int,
+    preferred_types: Set[str]
+) -> List[Dict[str, Any]]:
+    """
+    Apply diversity algorithm with randomization for multiple meat types.
+    
+    Args:
+        products: Pre-filtered products from database
+        user_preferences: User preferences
+        limit: Target number of recommendations
+        preferred_types: Set of preferred meat types
+        
+    Returns:
+        Diversified and randomized list of products
+    """
+    import random
+    
+    # Group products by meat type
+    type_products = {}
+    for product in products:
+        meat_type = product.get('meat_type')
+        if meat_type in preferred_types:
+            if meat_type not in type_products:
+                type_products[meat_type] = []
+            type_products[meat_type].append(product)
+    
+    # Calculate slots per type
+    available_types = len(type_products)
+    if available_types == 0:
+        return products[:limit]
+    
+    slots_per_type = max(1, limit // available_types)
+    
+    selected = []
+    
+    # First pass: get guaranteed slots per type with some randomization
+    for meat_type in preferred_types:
+        if meat_type in type_products and type_products[meat_type]:
+            type_list = type_products[meat_type]
+            
+            # Take top products but add some randomization
+            guaranteed = min(slots_per_type // 2, len(type_list))
+            selected.extend(type_list[:guaranteed])
+            
+            # Add some randomized selection from remaining
+            remaining_slots = slots_per_type - guaranteed
+            if remaining_slots > 0 and len(type_list) > guaranteed:
+                remaining_products = type_list[guaranteed:]
+                random_count = min(remaining_slots, len(remaining_products))
+                if random_count > 0:
+                    selected.extend(random.sample(remaining_products, random_count))
+    
+    # Fill any remaining slots with best remaining products
+    if len(selected) < limit:
+        used_products = set(p.get('code') for p in selected if p.get('code'))
+        remaining_products = [p for p in products if p.get('code') not in used_products]
+        
+        additional_needed = limit - len(selected)
+        if remaining_products and additional_needed > 0:
+            selected.extend(remaining_products[:additional_needed])
+    
+    return selected[:limit]
+
+
+def _generate_cache_key(user_preferences: Dict[str, Any], limit: int, skip: int) -> str:
+    """
+    Generate a cache key based on user preferences, limit, and skip.
     
     Args:
         user_preferences: User preferences dictionary
         limit: Number of recommendations requested
+        skip: Number of recommendations to skip
         
     Returns:
         String cache key
@@ -317,7 +466,8 @@ def _generate_cache_key(user_preferences: Dict[str, Any], limit: int) -> str:
         "prefer_organic_or_grass_fed": user_preferences.get("prefer_organic_or_grass_fed", False),
         "avoid_high_sodium": user_preferences.get("avoid_high_sodium", False),
         "prefer_low_risk": user_preferences.get("prefer_low_risk", True),
-        "limit": limit
+        "limit": limit,
+        "skip": skip
     }
     
     # Create hash of the cache data
@@ -396,7 +546,8 @@ def _cleanup_expired_cache() -> None:
 def _get_personalized_recommendations_fallback(
     supabase_service, 
     user_preferences: Dict[str, Any],
-    limit: int = 30
+    limit: int = 10,
+    skip: int = 0
 ) -> List[Dict[str, Any]]:
     """
     Fallback method using the original algorithm but with optimizations.
@@ -405,6 +556,7 @@ def _get_personalized_recommendations_fallback(
         supabase_service: Supabase service instance
         user_preferences: User preferences dictionary from profile
         limit: Maximum number of products to return
+        skip: Number of products to skip for pagination
         
     Returns:
         List of product dictionaries that best match the user preferences
@@ -437,13 +589,16 @@ def _get_personalized_recommendations_fallback(
         
         # Apply diversity factor to ensure representation of different meat types
         preferred_types = _get_preferred_meat_types(user_preferences)
-        diverse_products = _apply_diversity_factor(scored_products, limit, preferred_types)
+        diverse_products = _apply_diversity_factor(scored_products, limit + skip, preferred_types)
+        
+        # Apply pagination to the results
+        paginated_products = diverse_products[skip:skip + limit]
         
         # Log performance
         duration = time.time() - start_time
-        logger.info(f"Generated {len(diverse_products)} recommendations (fallback) in {duration:.2f}s")
+        logger.info(f"Generated {len(paginated_products)} recommendations (fallback) in {duration:.2f}s")
         
-        return diverse_products
+        return paginated_products
     except Exception as e:
         logger.error(f"Error in fallback recommendation method: {str(e)}")
         return []
