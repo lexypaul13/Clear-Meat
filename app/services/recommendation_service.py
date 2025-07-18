@@ -192,29 +192,38 @@ def _get_optimized_recommendations(
         # Start with base query
         query = supabase_service.client.table('products').select('*')
         
-        # Apply meat type filter at database level
-        if preferred_types:
-            meat_types_list = list(preferred_types)
-            logger.info(f"🥩 Filtering by meat types: {meat_types_list}")
+        # Apply meat type filter with page-based expansion
+        page_num = offset // page_size
+        expanded_types = _get_expanded_meat_types(preferred_types, page_num)
+        
+        if expanded_types:
+            meat_types_list = list(expanded_types)
+            logger.info(f"🥩 Filtering by meat types: {meat_types_list} (page {page_num})")
             query = query.in_('meat_type', meat_types_list)
         else:
             logger.info("🥩 No meat type filter applied - showing all types")
         
-        # Apply nutritional filters based on preferences
-        if nutrition_focus == "salt" and user_preferences.get("avoid_high_sodium"):
-            # Filter for products with salt < 1.5g per 100g
-            query = query.lt('salt', 1.5)
-        elif nutrition_focus == "protein":
-            # Prefer high protein products (>15g per 100g)
-            query = query.gte('protein', 15)
-        elif nutrition_focus == "fat":
-            # Prefer lower fat products (<20g per 100g)
-            query = query.lt('fat', 20)
+        # Apply nutritional filters with page-based flexibility
+        nutrition_thresholds = _get_flexible_nutrition_thresholds(nutrition_focus, user_preferences, page_num)
         
-        # Apply risk rating preference
-        if user_preferences.get("prefer_low_risk", True):
-            # Prefer Green and Yellow over Red
-            query = query.in_('risk_rating', ['Green', 'Yellow'])
+        if nutrition_focus == "salt" and user_preferences.get("avoid_high_sodium"):
+            salt_threshold = nutrition_thresholds.get("salt", 1.5)
+            query = query.lt('salt', salt_threshold)
+            logger.info(f"🧂 Salt threshold: <{salt_threshold}g (page {page_num})")
+        elif nutrition_focus == "protein":
+            protein_threshold = nutrition_thresholds.get("protein", 15)
+            query = query.gte('protein', protein_threshold)
+            logger.info(f"💪 Protein threshold: >={protein_threshold}g (page {page_num})")
+        elif nutrition_focus == "fat":
+            fat_threshold = nutrition_thresholds.get("fat", 20)
+            query = query.lt('fat', fat_threshold)
+            logger.info(f"🥑 Fat threshold: <{fat_threshold}g (page {page_num})")
+        
+        # Apply risk rating preference with page-based flexibility
+        risk_ratings = _get_flexible_risk_ratings(user_preferences, page_num)
+        if risk_ratings:
+            query = query.in_('risk_rating', risk_ratings)
+            logger.info(f"🚦 Risk ratings: {risk_ratings} (page {page_num})")
         
         # Order by multiple factors for better recommendations
         if nutrition_focus == "protein":
@@ -242,10 +251,11 @@ def _get_optimized_recommendations(
         logger.info(f"   - Nutrition focus: {user_preferences.get('nutrition_focus', 'protein')}")
         logger.debug(f"Optimized query returned {len(products)} products")
         
-        # Return products directly for strict pagination
+        # Apply preference-based variety for better content discovery
         if products:
-            logger.info(f"📦 Returning {len(products)} products (strict pagination)")
-            return products
+            varied_products = _apply_preference_variety(products, user_preferences, page_size, offset)
+            logger.info(f"📦 Returning {len(varied_products)} products with preference variety")
+            return varied_products
         else:
             logger.warning("⚠️  No products returned from database query")
             return []
@@ -390,6 +400,176 @@ def _apply_final_selection_with_randomization(
         fallback_result = products[:limit]
         logger.info(f"🎲 Fallback returning {len(fallback_result)} products")
         return fallback_result
+
+
+def _apply_preference_variety(
+    products: List[Dict[str, Any]], 
+    user_preferences: Dict[str, Any], 
+    page_size: int, 
+    offset: int
+) -> List[Dict[str, Any]]:
+    """
+    Apply preference-based variety to ensure diverse content discovery.
+    
+    Uses a tiered approach:
+    - Page 1: 100% strict preferences (10 items)
+    - Page 2+: Mix of strict + adjacent preferences for variety
+    
+    Args:
+        products: Products returned from database query
+        user_preferences: User preferences dictionary
+        page_size: Number of products per page
+        offset: Current offset for pagination
+        
+    Returns:
+        List of products with preference variety applied
+    """
+    import random
+    
+    if not products:
+        return []
+        
+    page_num = offset // page_size
+    logger.info(f"🎯 Applying preference variety for page {page_num}")
+    
+    # Page 1: Strict preferences only
+    if page_num == 0:
+        return _apply_strict_preferences(products, user_preferences, page_size)
+    
+    # Page 2+: Mix strict + adjacent preferences
+    else:
+        return _apply_mixed_preferences(products, user_preferences, page_size, page_num)
+
+
+def _apply_strict_preferences(
+    products: List[Dict[str, Any]], 
+    user_preferences: Dict[str, Any], 
+    page_size: int
+) -> List[Dict[str, Any]]:
+    """Apply strict preference filtering for first page."""
+    logger.info("📋 Applying strict preferences (Page 1)")
+    
+    # Add some randomization to prevent always showing same products
+    random.shuffle(products)
+    
+    return products[:page_size]
+
+
+def _apply_mixed_preferences(
+    products: List[Dict[str, Any]], 
+    user_preferences: Dict[str, Any], 
+    page_size: int, 
+    page_num: int
+) -> List[Dict[str, Any]]:
+    """Apply mixed preference filtering for subsequent pages."""
+    logger.info(f"🎨 Applying mixed preferences (Page {page_num})")
+    
+    # For pages 2+, we need to fetch adjacent preferences too
+    # Since we already have strict preference products, we need to expand the query
+    # This will be handled by modifying the query logic above
+    
+    # For now, add randomization to current products
+    random.shuffle(products)
+    
+    return products[:page_size]
+
+
+def _get_expanded_meat_types(preferred_types: Set[str], page_num: int) -> Set[str]:
+    """
+    Expand meat types based on page number for content variety.
+    
+    Args:
+        preferred_types: User's preferred meat types
+        page_num: Current page number (0, 1, 2, ...)
+        
+    Returns:
+        Expanded set of meat types
+    """
+    if not preferred_types:
+        return set()
+    
+    # Page 1: Strict preferences only
+    if page_num == 0:
+        return preferred_types
+    
+    # Define adjacent meat types for expansion
+    adjacent_types = {
+        'chicken': ['turkey'],
+        'turkey': ['chicken'],
+        'beef': ['lamb'],
+        'lamb': ['beef'],
+        'pork': ['beef'],  # Pork users might like beef
+        'fish': ['chicken']  # Fish users might like lean chicken
+    }
+    
+    expanded = set(preferred_types)
+    
+    # Page 2+: Add adjacent types
+    if page_num >= 1:
+        for meat_type in preferred_types:
+            if meat_type in adjacent_types:
+                expanded.update(adjacent_types[meat_type])
+        
+        logger.info(f"🔄 Expanded meat types from {list(preferred_types)} to {list(expanded)}")
+    
+    return expanded
+
+
+def _get_flexible_nutrition_thresholds(nutrition_focus: str, user_preferences: Dict[str, Any], page_num: int) -> Dict[str, float]:
+    """
+    Get flexible nutrition thresholds based on page number for content variety.
+    
+    Args:
+        nutrition_focus: User's nutrition focus
+        user_preferences: User preferences dictionary
+        page_num: Current page number
+        
+    Returns:
+        Dictionary of nutrition thresholds
+    """
+    # Base thresholds (strict)
+    base_thresholds = {
+        "salt": 1.5,
+        "protein": 15,
+        "fat": 20
+    }
+    
+    # Page 1: Strict thresholds
+    if page_num == 0:
+        return base_thresholds
+    
+    # Page 2+: More flexible thresholds
+    flexible_thresholds = {
+        "salt": 2.0,      # Allow slightly more salt
+        "protein": 12,    # Accept lower protein  
+        "fat": 25         # Allow slightly more fat
+    }
+    
+    logger.info(f"🎛️  Using flexible nutrition thresholds for page {page_num}")
+    return flexible_thresholds
+
+
+def _get_flexible_risk_ratings(user_preferences: Dict[str, Any], page_num: int) -> List[str]:
+    """
+    Get flexible risk ratings based on page number and user preferences.
+    
+    Args:
+        user_preferences: User preferences dictionary
+        page_num: Current page number
+        
+    Returns:
+        List of acceptable risk ratings
+    """
+    if not user_preferences.get("prefer_low_risk", True):
+        return []  # No risk filtering
+    
+    # Page 1: Strict (Green and Yellow only)
+    if page_num == 0:
+        return ['Green', 'Yellow']
+    
+    # Page 2+: Allow some high-quality Red items
+    logger.info(f"🔓 Including Red risk ratings for variety (page {page_num})")
+    return ['Green', 'Yellow', 'Red']
 
 
 def _create_relaxed_preferences(user_preferences: Dict[str, Any]) -> Dict[str, Any]:
