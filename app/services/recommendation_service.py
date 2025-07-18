@@ -34,8 +34,8 @@ _RECOMMENDATIONS_CACHE_TTL = 60
 def get_personalized_recommendations(
     supabase_service, 
     user_preferences: Dict[str, Any],
-    limit: int = 10,
-    skip: int = 0
+    page_size: int = 10,
+    offset: int = 0
 ) -> List[Dict[str, Any]]:
     """
     Generate personalized product recommendations with pagination support.
@@ -43,8 +43,8 @@ def get_personalized_recommendations(
     Args:
         supabase_service: Supabase service instance
         user_preferences: User preferences dictionary from profile
-        limit: Number of products per page (default 10)
-        skip: Number of products to skip for pagination (default 0)
+        page_size: Number of products per page (default 10)
+        offset: Number of products to skip for pagination (default 0)
         
     Returns:
         List of product dictionaries that best match the user preferences
@@ -53,7 +53,7 @@ def get_personalized_recommendations(
         start_time = time.time()
         
         # Check cache first
-        cache_key = _generate_cache_key(user_preferences, limit, skip)
+        cache_key = _generate_cache_key(user_preferences, page_size, offset)
         cached_result = _get_cached_recommendations(cache_key)
         if cached_result:
             logger.info(f"Returning cached recommendations in {(time.time() - start_time):.3f}s")
@@ -62,18 +62,7 @@ def get_personalized_recommendations(
         logger.info(f"Generating personalized recommendations using optimized query")
         
         # Get optimized recommendations using SQL-based filtering and scoring
-        recommendations = _get_optimized_recommendations(supabase_service, user_preferences, limit, skip)
-        
-        # If we get very few results and it's the first page, try with relaxed filters
-        if len(recommendations) < limit and skip == 0:
-            logger.info(f"🔄 Only {len(recommendations)} results with strict filters, trying relaxed criteria")
-            relaxed_preferences = _create_relaxed_preferences(user_preferences)
-            logger.info(f"🔄 Relaxed preferences: {relaxed_preferences}")
-            
-            relaxed_recommendations = _get_optimized_recommendations(supabase_service, relaxed_preferences, limit * 3, skip)
-            if len(relaxed_recommendations) > len(recommendations):
-                logger.info(f"🔄 Relaxed search found {len(relaxed_recommendations)} vs {len(recommendations)} with strict filters")
-                recommendations = relaxed_recommendations
+        recommendations = _get_optimized_recommendations(supabase_service, user_preferences, page_size, offset)
         
         # Cache the results
         _cache_recommendations(cache_key, recommendations)
@@ -87,7 +76,7 @@ def get_personalized_recommendations(
         logger.error(f"Error generating personalized recommendations: {str(e)}")
         # Fallback to original method if optimized method fails
         logger.info("Falling back to original recommendation method")
-        return _get_personalized_recommendations_fallback(supabase_service, user_preferences, limit, skip)
+        return _get_personalized_recommendations_fallback(supabase_service, user_preferences, page_size, offset)
         
 def analyze_product_match(
     product: Dict[str, Any], 
@@ -177,8 +166,8 @@ def analyze_product_match(
 def _get_optimized_recommendations(
     supabase_service,
     user_preferences: Dict[str, Any],
-    limit: int = 10,
-    skip: int = 0
+    page_size: int = 10,
+    offset: int = 0
 ) -> List[Dict[str, Any]]:
     """
     Get personalized recommendations using optimized SQL queries.
@@ -189,8 +178,8 @@ def _get_optimized_recommendations(
     Args:
         supabase_service: Supabase service instance
         user_preferences: User preferences dictionary
-        limit: Maximum number of recommendations to return
-        skip: Number of products to skip for pagination
+        page_size: Maximum number of recommendations to return per page
+        offset: Number of products to skip for pagination
         
     Returns:
         List of recommended product dictionaries
@@ -238,30 +227,25 @@ def _get_optimized_recommendations(
             # Default ordering: prefer green rating, then high protein, then low sodium
             query = query.order('risk_rating', desc=False).order('protein', desc=True).order('salt', desc=False)
         
-        # Calculate fetch parameters for pagination with randomization
-        # Fetch more items to enable randomization and diversity
-        fetch_limit = min((limit + skip) * 2, 300)  # Allow for wider selection
-        
-        # Add offset for pagination
-        query = query.range(skip, skip + fetch_limit - 1)
+        # Use strict pagination - fetch exactly what we need
+        # Add offset and limit for true pagination
+        query = query.range(offset, offset + page_size - 1)
         
         # Execute the optimized query
         response = query.execute()
         products = response.data or []
         
         logger.info(f"🔍 Backend query details:")
-        logger.info(f"   - Requested limit: {limit}, skip: {skip}")
+        logger.info(f"   - Requested page_size: {page_size}, offset: {offset}")
         logger.info(f"   - User preferences: {user_preferences}")
         logger.info(f"   - Preferred meat types: {_get_preferred_meat_types(user_preferences)}")
         logger.info(f"   - Nutrition focus: {user_preferences.get('nutrition_focus', 'protein')}")
-        logger.info(f"   - Fetch limit used: {fetch_limit}")
         logger.debug(f"Optimized query returned {len(products)} products")
         
-        # Apply final diversity and ranking if we have results
+        # Return products directly for strict pagination
         if products:
-            final_results = _apply_final_selection_with_randomization(products, user_preferences, limit, skip)
-            logger.info(f"📦 Final selection returned {len(final_results)} products")
-            return final_results
+            logger.info(f"📦 Returning {len(products)} products (strict pagination)")
+            return products
         else:
             logger.warning("⚠️  No products returned from database query")
             return []
@@ -521,14 +505,14 @@ def _apply_diversity_with_randomization(
     return selected[:limit]
 
 
-def _generate_cache_key(user_preferences: Dict[str, Any], limit: int, skip: int) -> str:
+def _generate_cache_key(user_preferences: Dict[str, Any], page_size: int, offset: int) -> str:
     """
     Generate a cache key based on user preferences, limit, and skip.
     
     Args:
         user_preferences: User preferences dictionary
-        limit: Number of recommendations requested
-        skip: Number of recommendations to skip
+        page_size: Number of recommendations requested
+        offset: Number of recommendations to skip
         
     Returns:
         String cache key
@@ -542,8 +526,8 @@ def _generate_cache_key(user_preferences: Dict[str, Any], limit: int, skip: int)
         "prefer_organic_or_grass_fed": user_preferences.get("prefer_organic_or_grass_fed", False),
         "avoid_high_sodium": user_preferences.get("avoid_high_sodium", False),
         "prefer_low_risk": user_preferences.get("prefer_low_risk", True),
-        "limit": limit,
-        "skip": skip
+        "page_size": page_size,
+        "offset": offset
     }
     
     # Create hash of the cache data
@@ -622,8 +606,8 @@ def _cleanup_expired_cache() -> None:
 def _get_personalized_recommendations_fallback(
     supabase_service, 
     user_preferences: Dict[str, Any],
-    limit: int = 10,
-    skip: int = 0
+    page_size: int = 10,
+    offset: int = 0
 ) -> List[Dict[str, Any]]:
     """
     Fallback method using the original algorithm but with optimizations.
@@ -631,8 +615,8 @@ def _get_personalized_recommendations_fallback(
     Args:
         supabase_service: Supabase service instance
         user_preferences: User preferences dictionary from profile
-        limit: Maximum number of products to return
-        skip: Number of products to skip for pagination
+        page_size: Maximum number of products to return
+        offset: Number of products to skip for pagination
         
     Returns:
         List of product dictionaries that best match the user preferences
@@ -665,10 +649,10 @@ def _get_personalized_recommendations_fallback(
         
         # Apply diversity factor to ensure representation of different meat types
         preferred_types = _get_preferred_meat_types(user_preferences)
-        diverse_products = _apply_diversity_factor(scored_products, limit + skip, preferred_types)
+        diverse_products = _apply_diversity_factor(scored_products, page_size + offset, preferred_types)
         
         # Apply pagination to the results
-        paginated_products = diverse_products[skip:skip + limit]
+        paginated_products = diverse_products[offset:offset + page_size]
         
         # Log performance
         duration = time.time() - start_time

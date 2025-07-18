@@ -595,8 +595,8 @@ def get_product_recommendations(
     db: Session = Depends(get_db),
     supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user),
-    limit: int = Query(10, ge=1, le=50, description="Number of recommendations per page", example=10),
-    skip: int = Query(0, ge=0, description="Number of recommendations to skip (for pagination)", example=0),
+    page_size: int = Query(10, ge=1, le=20, description="Number of recommendations per page", example=10),
+    offset: int = Query(0, ge=0, description="Number of recommendations to skip (for pagination)", example=0),
 ) -> models.RecommendationResponse:
     """
     Get personalized product recommendations with pagination support.
@@ -607,8 +607,8 @@ def get_product_recommendations(
     Args:
         db: Database session
         current_user: Current active user
-        limit: Number of recommendations per page (1-50, default 10)
-        skip: Number of recommendations to skip for pagination (default 0)
+        page_size: Number of recommendations per page (1-20, default 10)
+        offset: Number of recommendations to skip for pagination (default 0)
         
     Returns:
         RecommendationResponse: List of recommended products with match details and pagination info
@@ -639,7 +639,7 @@ def get_product_recommendations(
         logger.info(f"🎯 User {current_user.id} preferences: {preferences}")
         
         # Get personalized recommendations using Supabase with pagination
-        recommended_products = get_personalized_recommendations(supabase_service, preferences, limit, skip)
+        recommended_products = get_personalized_recommendations(supabase_service, preferences, page_size, offset)
         
         if not recommended_products:
             return models.RecommendationResponse(
