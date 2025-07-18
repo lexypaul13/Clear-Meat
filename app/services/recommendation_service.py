@@ -8,6 +8,8 @@ from typing import Dict, List, Any, Optional, Tuple, Set
 import logging
 from functools import lru_cache
 import time
+import hashlib
+import json
 
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import text
@@ -22,6 +24,12 @@ logger = logging.getLogger(__name__)
 _max_values_cache = {}
 # Cache TTL in seconds (30 minutes)
 _MAX_VALUES_CACHE_TTL = 1800
+
+# Recommendations cache to store recent results
+# Structure: {"cache_key": {"recommendations": [...], "timestamp": time}}
+_recommendations_cache = {}
+# Cache TTL for recommendations (5 minutes for faster user experience)
+_RECOMMENDATIONS_CACHE_TTL = 300
 
 def get_personalized_recommendations(
     supabase_service, 
@@ -41,42 +49,32 @@ def get_personalized_recommendations(
     """
     try:
         start_time = time.time()
-        logger.info(f"Generating personalized recommendations using Supabase")
         
-        # Get available products from Supabase
-        products = _get_products_from_supabase(supabase_service)
-        if not products:
-            logger.warning("No products found in database")
-            return []
-            
-        # Filter by meat type preferences if specified
-        filtered_products = _filter_by_meat_types(products, user_preferences)
-        logger.debug(f"Filtered to {len(filtered_products)} products by meat type")
+        # Check cache first
+        cache_key = _generate_cache_key(user_preferences, limit)
+        cached_result = _get_cached_recommendations(cache_key)
+        if cached_result:
+            logger.info(f"Returning cached recommendations in {(time.time() - start_time):.3f}s")
+            return cached_result
         
-        # Calculate maximum values for normalization
-        max_values = _get_max_nutritional_values_from_products(filtered_products)
+        logger.info(f"Generating personalized recommendations using optimized query")
         
-        # Score products based on user preferences
-        scored_products = []
-        for product in filtered_products:
-            score = _calculate_product_score(product, user_preferences, max_values)
-            scored_products.append((product, score))
-            
-        # Sort by score (highest first)
-        scored_products.sort(key=lambda x: x[1], reverse=True)
+        # Get optimized recommendations using SQL-based filtering and scoring
+        recommendations = _get_optimized_recommendations(supabase_service, user_preferences, limit)
         
-        # Apply diversity factor to ensure representation of different meat types
-        preferred_types = _get_preferred_meat_types(user_preferences)
-        diverse_products = _apply_diversity_factor(scored_products, limit, preferred_types)
+        # Cache the results
+        _cache_recommendations(cache_key, recommendations)
         
         # Log performance
         duration = time.time() - start_time
-        logger.info(f"Generated {len(diverse_products)} recommendations in {duration:.2f}s")
+        logger.info(f"Generated {len(recommendations)} recommendations in {duration:.2f}s")
         
-        return diverse_products
+        return recommendations
     except Exception as e:
         logger.error(f"Error generating personalized recommendations: {str(e)}")
-        return []
+        # Fallback to original method if optimized method fails
+        logger.info("Falling back to original recommendation method")
+        return _get_personalized_recommendations_fallback(supabase_service, user_preferences, limit)
         
 def analyze_product_match(
     product: Dict[str, Any], 
@@ -163,6 +161,315 @@ def analyze_product_match(
     
     return matches, concerns
 
+def _get_optimized_recommendations(
+    supabase_service,
+    user_preferences: Dict[str, Any],
+    limit: int = 30
+) -> List[Dict[str, Any]]:
+    """
+    Get personalized recommendations using optimized SQL queries.
+    
+    This method uses database-level filtering and scoring to dramatically
+    improve performance by reducing data transfer and processing time.
+    
+    Args:
+        supabase_service: Supabase service instance
+        user_preferences: User preferences dictionary
+        limit: Maximum number of recommendations to return
+        
+    Returns:
+        List of recommended product dictionaries
+    """
+    try:
+        # Build optimized query based on user preferences
+        preferred_types = _get_preferred_meat_types(user_preferences)
+        nutrition_focus = user_preferences.get("nutrition_focus", "protein")
+        
+        # Start with base query
+        query = supabase_service.client.table('products').select('*')
+        
+        # Apply meat type filter at database level
+        if preferred_types:
+            meat_types_list = list(preferred_types)
+            query = query.in_('meat_type', meat_types_list)
+        
+        # Apply nutritional filters based on preferences
+        if nutrition_focus == "salt" and user_preferences.get("avoid_high_sodium"):
+            # Filter for products with salt < 1.5g per 100g
+            query = query.lt('salt', 1.5)
+        elif nutrition_focus == "protein":
+            # Prefer high protein products (>15g per 100g)
+            query = query.gte('protein', 15)
+        elif nutrition_focus == "fat":
+            # Prefer lower fat products (<20g per 100g)
+            query = query.lt('fat', 20)
+        
+        # Apply risk rating preference
+        if user_preferences.get("prefer_low_risk", True):
+            # Prefer Green and Yellow over Red
+            query = query.in_('risk_rating', ['Green', 'Yellow'])
+        
+        # Order by multiple factors for better recommendations
+        if nutrition_focus == "protein":
+            query = query.order('protein', desc=True).order('salt', desc=False)
+        elif nutrition_focus == "salt":
+            query = query.order('salt', desc=False).order('protein', desc=True)
+        elif nutrition_focus == "fat":
+            query = query.order('fat', desc=False).order('protein', desc=True)
+        else:
+            # Default ordering: prefer green rating, then high protein, then low sodium
+            query = query.order('risk_rating', desc=False).order('protein', desc=True).order('salt', desc=False)
+        
+        # Limit results to reduce data transfer
+        # Request slightly more than needed for diversity algorithm
+        fetch_limit = min(limit * 3, 150)  # Cap at 150 to prevent large fetches
+        query = query.limit(fetch_limit)
+        
+        # Execute the optimized query
+        response = query.execute()
+        products = response.data or []
+        
+        logger.debug(f"Optimized query returned {len(products)} products")
+        
+        # Apply final diversity and ranking if we have results
+        if products:
+            return _apply_final_selection(products, user_preferences, limit)
+        else:
+            return []
+            
+    except Exception as e:
+        logger.error(f"Error in optimized recommendations query: {str(e)}")
+        raise
+
+
+def _apply_final_selection(
+    products: List[Dict[str, Any]],
+    user_preferences: Dict[str, Any], 
+    limit: int
+) -> List[Dict[str, Any]]:
+    """
+    Apply final selection logic to ensure diversity and quality.
+    
+    Args:
+        products: Pre-filtered products from database
+        user_preferences: User preferences
+        limit: Target number of recommendations
+        
+    Returns:
+        Final list of recommended products
+    """
+    preferred_types = _get_preferred_meat_types(user_preferences)
+    
+    if not preferred_types or len(preferred_types) == 1:
+        # Single meat type or no preference - just return top products
+        return products[:limit]
+    
+    # Apply diversity algorithm for multiple meat types
+    type_products = {}
+    for product in products:
+        meat_type = product.get('meat_type')
+        if meat_type in preferred_types:
+            if meat_type not in type_products:
+                type_products[meat_type] = []
+            type_products[meat_type].append(product)
+    
+    # Distribute slots across meat types
+    selected = []
+    slots_per_type = max(1, limit // len(preferred_types))
+    
+    # First pass: ensure each type gets representation
+    for meat_type in preferred_types:
+        if meat_type in type_products:
+            count = min(slots_per_type, len(type_products[meat_type]))
+            selected.extend(type_products[meat_type][:count])
+            type_products[meat_type] = type_products[meat_type][count:]
+    
+    # Second pass: fill remaining slots with best remaining products
+    remaining_slots = limit - len(selected)
+    if remaining_slots > 0:
+        remaining_products = []
+        for meat_type in preferred_types:
+            if meat_type in type_products:
+                remaining_products.extend(type_products[meat_type])
+        
+        selected.extend(remaining_products[:remaining_slots])
+    
+    return selected[:limit]
+
+
+def _generate_cache_key(user_preferences: Dict[str, Any], limit: int) -> str:
+    """
+    Generate a cache key based on user preferences and limit.
+    
+    Args:
+        user_preferences: User preferences dictionary
+        limit: Number of recommendations requested
+        
+    Returns:
+        String cache key
+    """
+    # Create a stable representation of preferences for caching
+    cache_data = {
+        "nutrition_focus": user_preferences.get("nutrition_focus", "protein"),
+        "meat_preferences": sorted(list(_get_preferred_meat_types(user_preferences))),
+        "avoid_preservatives": user_preferences.get("avoid_preservatives", False),
+        "prefer_antibiotic_free": user_preferences.get("prefer_antibiotic_free", False),
+        "prefer_organic_or_grass_fed": user_preferences.get("prefer_organic_or_grass_fed", False),
+        "avoid_high_sodium": user_preferences.get("avoid_high_sodium", False),
+        "prefer_low_risk": user_preferences.get("prefer_low_risk", True),
+        "limit": limit
+    }
+    
+    # Create hash of the cache data
+    cache_str = json.dumps(cache_data, sort_keys=True)
+    return hashlib.md5(cache_str.encode()).hexdigest()
+
+
+def _get_cached_recommendations(cache_key: str) -> Optional[List[Dict[str, Any]]]:
+    """
+    Get cached recommendations if available and not expired.
+    
+    Args:
+        cache_key: Cache key to look up
+        
+    Returns:
+        Cached recommendations or None if not found/expired
+    """
+    global _recommendations_cache
+    
+    if cache_key not in _recommendations_cache:
+        return None
+    
+    cached_data = _recommendations_cache[cache_key]
+    cache_time = cached_data.get("timestamp", 0)
+    
+    # Check if cache is expired
+    if time.time() - cache_time > _RECOMMENDATIONS_CACHE_TTL:
+        # Remove expired cache entry
+        del _recommendations_cache[cache_key]
+        return None
+    
+    return cached_data.get("recommendations", [])
+
+
+def _cache_recommendations(cache_key: str, recommendations: List[Dict[str, Any]]) -> None:
+    """
+    Cache recommendations with timestamp.
+    
+    Args:
+        cache_key: Cache key to store under
+        recommendations: Recommendations to cache
+    """
+    global _recommendations_cache
+    
+    # Clean up expired entries periodically (every 10 cache operations)
+    if len(_recommendations_cache) % 10 == 0:
+        _cleanup_expired_cache()
+    
+    _recommendations_cache[cache_key] = {
+        "recommendations": recommendations,
+        "timestamp": time.time()
+    }
+    
+    logger.debug(f"Cached {len(recommendations)} recommendations with key {cache_key}")
+
+
+def _cleanup_expired_cache() -> None:
+    """
+    Remove expired entries from the recommendations cache.
+    """
+    global _recommendations_cache
+    
+    current_time = time.time()
+    expired_keys = [
+        key for key, data in _recommendations_cache.items()
+        if current_time - data.get("timestamp", 0) > _RECOMMENDATIONS_CACHE_TTL
+    ]
+    
+    for key in expired_keys:
+        del _recommendations_cache[key]
+    
+    if expired_keys:
+        logger.debug(f"Cleaned up {len(expired_keys)} expired cache entries")
+
+
+def _get_personalized_recommendations_fallback(
+    supabase_service, 
+    user_preferences: Dict[str, Any],
+    limit: int = 30
+) -> List[Dict[str, Any]]:
+    """
+    Fallback method using the original algorithm but with optimizations.
+    
+    Args:
+        supabase_service: Supabase service instance
+        user_preferences: User preferences dictionary from profile
+        limit: Maximum number of products to return
+        
+    Returns:
+        List of product dictionaries that best match the user preferences
+    """
+    try:
+        start_time = time.time()
+        logger.info(f"Using fallback recommendation method")
+        
+        # Get products with reduced limit for fallback
+        products = _get_products_from_supabase_limited(supabase_service, limit * 10)
+        if not products:
+            logger.warning("No products found in database")
+            return []
+            
+        # Filter by meat type preferences if specified
+        filtered_products = _filter_by_meat_types(products, user_preferences)
+        logger.debug(f"Filtered to {len(filtered_products)} products by meat type")
+        
+        # Calculate maximum values for normalization
+        max_values = _get_max_nutritional_values_from_products(filtered_products)
+        
+        # Score products based on user preferences
+        scored_products = []
+        for product in filtered_products:
+            score = _calculate_product_score(product, user_preferences, max_values)
+            scored_products.append((product, score))
+            
+        # Sort by score (highest first)
+        scored_products.sort(key=lambda x: x[1], reverse=True)
+        
+        # Apply diversity factor to ensure representation of different meat types
+        preferred_types = _get_preferred_meat_types(user_preferences)
+        diverse_products = _apply_diversity_factor(scored_products, limit, preferred_types)
+        
+        # Log performance
+        duration = time.time() - start_time
+        logger.info(f"Generated {len(diverse_products)} recommendations (fallback) in {duration:.2f}s")
+        
+        return diverse_products
+    except Exception as e:
+        logger.error(f"Error in fallback recommendation method: {str(e)}")
+        return []
+
+
+def _get_products_from_supabase_limited(supabase_service, limit: int = 300) -> List[Dict[str, Any]]:
+    """
+    Get products from Supabase with limited fetch size for better performance.
+    
+    Args:
+        supabase_service: Supabase service instance
+        limit: Maximum number of products to fetch
+        
+    Returns:
+        List of product dictionaries
+    """
+    try:
+        # Reduced limit for better performance
+        products = supabase_service.get_products(limit=limit, offset=0)
+        logger.debug(f"Retrieved {len(products)} products from Supabase (limited)")
+        return products
+    except Exception as e:
+        logger.error(f"Failed to get products from Supabase: {str(e)}")
+        return []
+
+
 def _get_products_from_supabase(supabase_service) -> List[Dict[str, Any]]:
     """
     Get products from Supabase with error handling and fallback strategies.
@@ -173,14 +480,8 @@ def _get_products_from_supabase(supabase_service) -> List[Dict[str, Any]]:
     Returns:
         List of product dictionaries
     """
-    try:
-        # Get products from Supabase (limit to reasonable amount for recommendations)
-        products = supabase_service.get_products(limit=1000, offset=0)
-        logger.debug(f"Retrieved {len(products)} products from Supabase")
-        return products
-    except Exception as e:
-        logger.error(f"Failed to get products from Supabase: {str(e)}")
-        return []
+    # Redirect to limited version for performance
+    return _get_products_from_supabase_limited(supabase_service, 300)
 
 def _filter_by_meat_types(
     products: List[Dict[str, Any]], 
