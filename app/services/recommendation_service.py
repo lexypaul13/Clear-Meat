@@ -10,6 +10,7 @@ from functools import lru_cache
 import time
 import hashlib
 import json
+import random
 
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import text
@@ -424,8 +425,6 @@ def _apply_preference_variety(
     Returns:
         List of products with preference variety applied
     """
-    import random
-    
     if not products:
         return []
         
@@ -636,8 +635,6 @@ def _apply_diversity_with_randomization(
     Returns:
         Diversified and randomized list of products
     """
-    import random
-    
     # Group products by meat type
     type_products = {}
     for product in products:
@@ -805,8 +802,8 @@ def _get_personalized_recommendations_fallback(
         start_time = time.time()
         logger.info(f"Using fallback recommendation method")
         
-        # Get products with reduced limit for fallback
-        products = _get_products_from_supabase_limited(supabase_service, limit * 10)
+        # Get products with reduced page_size for fallback
+        products = _get_products_from_supabase_limited(supabase_service, page_size * 10)
         if not products:
             logger.warning("No products found in database")
             return []
