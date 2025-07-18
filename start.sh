@@ -1,5 +1,5 @@
 #!/bin/bash
-echo "🚀 Starting Clear-Meat API on Railway..."
+echo "🚀 Starting Clear-Meat API on Railway with Performance Optimizations..."
 echo "PORT: $PORT"
 echo "ENVIRONMENT: $ENVIRONMENT"
 echo "Python version: $(python --version)"
