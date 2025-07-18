@@ -64,6 +64,17 @@ def get_personalized_recommendations(
         # Get optimized recommendations using SQL-based filtering and scoring
         recommendations = _get_optimized_recommendations(supabase_service, user_preferences, limit, skip)
         
+        # If we get very few results and it's the first page, try with relaxed filters
+        if len(recommendations) < limit and skip == 0:
+            logger.info(f"🔄 Only {len(recommendations)} results with strict filters, trying relaxed criteria")
+            relaxed_preferences = _create_relaxed_preferences(user_preferences)
+            logger.info(f"🔄 Relaxed preferences: {relaxed_preferences}")
+            
+            relaxed_recommendations = _get_optimized_recommendations(supabase_service, relaxed_preferences, limit * 3, skip)
+            if len(relaxed_recommendations) > len(recommendations):
+                logger.info(f"🔄 Relaxed search found {len(relaxed_recommendations)} vs {len(recommendations)} with strict filters")
+                recommendations = relaxed_recommendations
+        
         # Cache the results
         _cache_recommendations(cache_key, recommendations)
         
@@ -395,6 +406,52 @@ def _apply_final_selection_with_randomization(
         fallback_result = products[:limit]
         logger.info(f"🎲 Fallback returning {len(fallback_result)} products")
         return fallback_result
+
+
+def _create_relaxed_preferences(user_preferences: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Create relaxed preferences to find more products when strict filtering yields few results.
+    
+    Args:
+        user_preferences: Original user preferences
+        
+    Returns:
+        Relaxed preferences dictionary
+    """
+    relaxed = user_preferences.copy()
+    
+    # Keep meat preferences but relax other filters
+    relaxed_changes = []
+    
+    # Relax preservative requirements
+    if relaxed.get("avoid_preservatives"):
+        relaxed["avoid_preservatives"] = False
+        relaxed_changes.append("preservatives")
+    
+    # Relax antibiotic requirements
+    if relaxed.get("prefer_antibiotic_free"):
+        relaxed["prefer_antibiotic_free"] = False
+        relaxed_changes.append("antibiotic-free")
+    
+    # Relax organic/grass-fed requirements
+    if relaxed.get("prefer_organic_or_grass_fed"):
+        relaxed["prefer_organic_or_grass_fed"] = False
+        relaxed_changes.append("organic/grass-fed")
+    
+    # Relax sodium requirements
+    if relaxed.get("avoid_high_sodium"):
+        relaxed["avoid_high_sodium"] = False
+        relaxed_changes.append("sodium")
+    
+    # Keep nutrition focus but don't make it as strict
+    if relaxed.get("nutrition_focus") == "salt":
+        relaxed["nutrition_focus"] = "protein"  # More products available
+        relaxed_changes.append("nutrition focus")
+    
+    if relaxed_changes:
+        logger.info(f"🔧 Relaxed filters: {', '.join(relaxed_changes)}")
+    
+    return relaxed
 
 
 def _apply_diversity_with_randomization(
