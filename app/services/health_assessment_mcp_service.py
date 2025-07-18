@@ -4,6 +4,7 @@ import time
 import asyncio
 import os
 import re
+import hashlib
 from datetime import datetime
 from typing import Dict, Any, Optional, List, Tuple
 from contextlib import AsyncExitStack
@@ -14,6 +15,7 @@ from fastapi import HTTPException
 from app.core.config import settings
 from app.core.cache import cache
 from app.models.product import HealthAssessment, ProductStructured
+from app.models.citation import CitationSearch, CitationResult, Citation
 # MCP functionality for real scientific research
 from app.services.citation_mcp_server import get_citation_server
 from fastmcp.client.transports import FastMCPTransport
@@ -68,7 +70,23 @@ class HealthAssessmentMCPService:
             # Steps 1-3: Run ingredient categorization and health assessment in parallel
             logger.info(f"[Parallel Processing] Starting categorization and assessment simultaneously")
             
-            categorization_task = self._categorize_ingredients_with_gemini(product)
+            # Check for cached ingredient categorization first
+            ingredients_hash = hashlib.md5(
+                (product.product.ingredients_text or "").encode()
+            ).hexdigest()[:12]
+            categorization_cache_key = cache.generate_key(
+                ingredients_hash, prefix="ingredient_categorization_v1"
+            )
+            
+            cached_categorization = cache.get(categorization_cache_key)
+            if cached_categorization:
+                logger.info(f"[Cache Hit] Using cached ingredient categorization")
+                categorization_task = asyncio.create_task(
+                    self._return_cached_result(cached_categorization)
+                )
+            else:
+                categorization_task = self._categorize_ingredients_with_gemini(product)
+            
             assessment_task = self._generate_evidence_based_assessment_with_fallback(product, existing_risk_rating)
             
             # Execute both AI tasks in parallel
@@ -78,10 +96,15 @@ class HealthAssessmentMCPService:
                 return_exceptions=True
             )
             
-            # Handle categorization result
+            # Handle categorization result and cache if successful
             if isinstance(basic_categorization, Exception) or not basic_categorization:
                 logger.warning(f"AI categorization failed: {basic_categorization if isinstance(basic_categorization, Exception) else 'No result'}")
                 basic_categorization = self._get_fallback_categorization(product)
+            else:
+                # Cache successful categorization for 7 days
+                if not cached_categorization:
+                    cache.set(categorization_cache_key, basic_categorization, ttl=604800)  # 7 days
+                    logger.info(f"[Cache Store] Cached ingredient categorization for 7 days")
             
             # Extract categorized ingredients and analyses
             high_risk_ingredients = basic_categorization.get('high_risk_ingredients', [])
@@ -141,7 +164,7 @@ class HealthAssessmentMCPService:
                         generation_config=genai.GenerationConfig(temperature=0)
                     )
                 ),
-                timeout=15.0  # 15 second timeout for categorization
+                timeout=10.0  # 10 second timeout for categorization (optimized)
             )
             
             # Parse the response to extract ingredient categorizations
@@ -526,7 +549,7 @@ class HealthAssessmentMCPService:
                         )
                     )
                 ),
-                timeout=20.0  # 20 second timeout for full assessment
+                timeout=15.0  # 15 second timeout for full assessment (optimized)
             )
             
             # Set product context for parser
@@ -583,7 +606,7 @@ class HealthAssessmentMCPService:
                         )
                     )
                 ),
-                timeout=20.0  # 20 second timeout for parallel assessment
+                timeout=15.0  # 15 second timeout for parallel assessment (optimized)
             )
             
             # Set product context for parser
@@ -1242,7 +1265,7 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
                         )
                     )
                 ),
-                timeout=10.0  # Single 10 second timeout for all nutrients
+                timeout=8.0  # Single 8 second timeout for all nutrients (optimized)
             )
             
             # Parse the batched response
@@ -1443,84 +1466,54 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
             
             logger.info(f"[Real Citations] Researching {len(high_risk_ingredients)} high-risk and {len(moderate_risk_ingredients)} moderate-risk ingredients")
             
-            # Research high-risk ingredients first
-            for ingredient in high_risk_ingredients[:7]:  # Limit to top 7 high-risk
-                try:
-                    search_params = CitationSearch(
-                        ingredient=ingredient,
-                        health_claim="toxicity safety health effects",
-                        max_results=2,
-                        search_pubmed=True,
-                        search_crossref=True,
-                        search_doaj=True,
-                        search_scihub=False,  # Disable for production
-                        search_libgen=False   # Disable for production
-                    )
-                    
-                    result = citation_service.search_citations(search_params)
-                    
-                    if result.citations:
-                        for citation in result.citations[:1]:  # Take 1 per ingredient
-                            # Format URL properly - ensure DOIs are converted to full URLs
-                            url = citation.url
-                            if not url and citation.doi:
-                                # Convert DOI to proper URL format
-                                doi = citation.doi.strip()
-                                if doi.startswith('10.'):
-                                    url = f"https://doi.org/{doi}"
-                                else:
-                                    url = doi
-                            
-                            citations.append({
-                                "id": citation_id,
-                                "title": citation.title[:100] + "..." if len(citation.title) > 100 else citation.title,
-                                "source": citation.journal or "Academic Research",
-                                "year": citation.publication_date.year if citation.publication_date else 2023,
-                                "url": url
-                            })
-                            citation_id += 1
-                    
-                except Exception as e:
-                    logger.warning(f"Citation search failed for {ingredient}: {e}")
-                    continue
+            # Research all ingredients in parallel for maximum efficiency
+            citation_tasks = []
             
-            # Research moderate-risk ingredients
-            for ingredient in moderate_risk_ingredients[:7]:  # Limit to top 7 moderate-risk
-                try:
-                    search_params = CitationSearch(
-                        ingredient=ingredient,
-                        health_claim="safety assessment",
-                        max_results=1,
-                        search_pubmed=True,
-                        search_crossref=True
-                    )
-                    
-                    result = citation_service.search_citations(search_params)
-                    
-                    if result.citations:
-                        citation = result.citations[0]
-                        # Format URL properly - ensure DOIs are converted to full URLs
-                        url = citation.url
-                        if not url and citation.doi:
-                            # Convert DOI to proper URL format
-                            doi = citation.doi.strip()
-                            if doi.startswith('10.'):
-                                url = f"https://doi.org/{doi}"
-                            else:
-                                url = doi
-                        
+            # Create parallel tasks for high-risk ingredients
+            for ingredient in high_risk_ingredients[:7]:
+                search_params = CitationSearch(
+                    ingredient=ingredient,
+                    health_claim="toxicity safety health effects",
+                    max_results=2,
+                    search_pubmed=True,
+                    search_crossref=True,
+                    search_doaj=True,
+                    search_scihub=False,  # Disable for production
+                    search_libgen=False   # Disable for production
+                )
+                citation_tasks.append(self._search_citations_async(search_params, "high"))
+            
+            # Create parallel tasks for moderate-risk ingredients  
+            for ingredient in moderate_risk_ingredients[:7]:
+                search_params = CitationSearch(
+                    ingredient=ingredient,
+                    health_claim="safety assessment",
+                    max_results=1,
+                    search_pubmed=True,
+                    search_crossref=True
+                )
+                citation_tasks.append(self._search_citations_async(search_params, "moderate"))
+            
+            # Execute all citation searches in parallel
+            logger.info(f"[Parallel Citations] Starting {len(citation_tasks)} citation searches simultaneously")
+            citation_results = await asyncio.gather(*citation_tasks, return_exceptions=True)
+            
+            # Process results and build citations list
+            for result in citation_results:
+                if isinstance(result, Exception):
+                    logger.warning(f"Citation search failed: {result}")
+                    continue
+                
+                if result and result.get('citations'):
+                    for citation_data in result['citations']:
                         citations.append({
                             "id": citation_id,
-                            "title": citation.title[:100] + "..." if len(citation.title) > 100 else citation.title,
-                            "source": citation.journal or "Scientific Research Database",
-                            "year": citation.publication_date.year if citation.publication_date else 2024,
-                            "url": url
+                            "title": citation_data['title'],
+                            "source": citation_data['source'],
+                            "year": citation_data['year'],
+                            "url": citation_data.get('url')
                         })
                         citation_id += 1
-                        
-                except Exception as e:
-                    logger.warning(f"Citation search failed for {ingredient}: {e}")
-                    continue
             
             # Fallback if no real research found
             if not citations:
@@ -1544,6 +1537,53 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
                 "source": "Research Database Search", 
                 "year": 2024
             }]
+    
+    async def _search_citations_async(self, search_params: CitationSearch, risk_level: str) -> Optional[Dict[str, Any]]:
+        """Search citations asynchronously using executor to avoid blocking."""
+        try:
+            # Run the synchronous citation search in a thread executor
+            result = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: self._search_citations_sync(search_params)
+            )
+            
+            if result and result.citations:
+                citations_data = []
+                for citation in result.citations[:1]:  # Take 1 per ingredient
+                    # Format URL properly - ensure DOIs are converted to full URLs
+                    url = citation.url
+                    if not url and citation.doi:
+                        # Convert DOI to proper URL format
+                        doi = citation.doi.strip()
+                        if doi.startswith('10.'):
+                            url = f"https://doi.org/{doi}"
+                        else:
+                            url = doi
+                    
+                    citations_data.append({
+                        "title": citation.title[:100] + "..." if len(citation.title) > 100 else citation.title,
+                        "source": citation.journal or ("Academic Research" if risk_level == "high" else "Scientific Research Database"),
+                        "year": citation.publication_date.year if citation.publication_date else (2023 if risk_level == "high" else 2024),
+                        "url": url
+                    })
+                
+                return {"citations": citations_data}
+            
+            return None
+            
+        except Exception as e:
+            logger.warning(f"Async citation search failed for {search_params.ingredient}: {e}")
+            return None
+    
+    def _search_citations_sync(self, search_params: CitationSearch):
+        """Synchronous citation search wrapper for executor."""
+        from app.services.citation_tools import CitationSearchService
+        citation_service = CitationSearchService()
+        return citation_service.search_citations(search_params)
+    
+    async def _return_cached_result(self, cached_result):
+        """Helper to return cached result as an awaitable."""
+        return cached_result
 
 
 # Test function

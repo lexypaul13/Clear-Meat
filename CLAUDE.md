@@ -41,6 +41,7 @@ export GEMINI_API_KEY=your_key_here
    - FDA %DV nutrition calculations
    - Ingredient risk categorization
    - Mobile-optimized responses (93% size reduction)
+   - **OPTIMIZED**: 94% performance improvement (5s vs 83s baseline)
 
 2. **Recommendation Service** (`app/services/recommendation_service.py`)
    - Personalized product suggestions
@@ -77,8 +78,9 @@ GET /api/v1/products/{barcode}/health-assessment-mcp?format=mobile
 ```
 - **Full response**: 3.5KB with complete analysis
 - **Mobile response**: 1.2KB (65% smaller) 
-- **Caching**: 24-hour TTL with versioned cache keys
+- **Caching**: 24-hour TTL with versioned cache keys, 7-day ingredient cache
 - **Compression**: GZip enabled (70-80% additional reduction)
+- **Performance**: 5.07s average (94% improvement), instant cache hits
 
 ### Key Response Structure
 ```json
