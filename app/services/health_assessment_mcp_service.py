@@ -65,13 +65,25 @@ class HealthAssessmentMCPService:
             
             logger.info(f"[MCP Health Assessment] Analyzing product: {product.product.name}")
             
-            # Step 1: Generate basic ingredient categorization with Gemini
-            basic_categorization = await self._categorize_ingredients_with_gemini(product)
-            if not basic_categorization:
-                logger.warning(f"AI categorization failed, using fallback categorization for {product.product.code}")
+            # Steps 1-3: Run ingredient categorization and health assessment in parallel
+            logger.info(f"[Parallel Processing] Starting categorization and assessment simultaneously")
+            
+            categorization_task = self._categorize_ingredients_with_gemini(product)
+            assessment_task = self._generate_evidence_based_assessment_with_fallback(product, existing_risk_rating)
+            
+            # Execute both AI tasks in parallel
+            basic_categorization, preliminary_assessment = await asyncio.gather(
+                categorization_task, 
+                assessment_task,
+                return_exceptions=True
+            )
+            
+            # Handle categorization result
+            if isinstance(basic_categorization, Exception) or not basic_categorization:
+                logger.warning(f"AI categorization failed: {basic_categorization if isinstance(basic_categorization, Exception) else 'No result'}")
                 basic_categorization = self._get_fallback_categorization(product)
             
-            # Step 2: Extract categorized ingredients and analyses
+            # Extract categorized ingredients and analyses
             high_risk_ingredients = basic_categorization.get('high_risk_ingredients', [])
             moderate_risk_ingredients = basic_categorization.get('moderate_risk_ingredients', [])
             low_risk_ingredients = basic_categorization.get('low_risk_ingredients', [])
@@ -84,11 +96,20 @@ class HealthAssessmentMCPService:
             
             logger.info(f"[MCP Health Assessment] High-risk: {len(high_risk_ingredients)}, Moderate: {len(moderate_risk_ingredients)}, Low: {len(low_risk_ingredients)}")
             
-            # Step 3: Generate simplified evidence-based assessment (MCP features disabled)
-            assessment_result = await self._generate_evidence_based_assessment(
-                product, high_risk_ingredients, moderate_risk_ingredients, existing_risk_rating, 
-                low_risk_ingredients, ingredient_analyses
-            )
+            # Handle assessment result and merge with categorization
+            if isinstance(preliminary_assessment, Exception) or not preliminary_assessment:
+                logger.warning(f"Parallel assessment failed: {preliminary_assessment if isinstance(preliminary_assessment, Exception) else 'No result'}")
+                # Fallback to sequential assessment with categorization data
+                assessment_result = await self._generate_evidence_based_assessment(
+                    product, high_risk_ingredients, moderate_risk_ingredients, existing_risk_rating, 
+                    low_risk_ingredients, ingredient_analyses
+                )
+            else:
+                # Merge categorization results with preliminary assessment
+                assessment_result = self._merge_categorization_with_assessment(
+                    preliminary_assessment, basic_categorization, high_risk_ingredients, moderate_risk_ingredients
+                )
+                logger.info(f"[Parallel Processing] Successfully merged categorization with assessment")
             
             # Step 4: If assessment generation fails, create minimal fallback assessment
             if not assessment_result and existing_risk_rating:
@@ -530,6 +551,135 @@ class HealthAssessmentMCPService:
             logger.error(f"Error in MCP evidence-based assessment for product {product.product.code}: {e}")
             logger.debug(f"High-risk ingredients: {len(high_risk_ingredients)}, Moderate-risk: {len(moderate_risk_ingredients)}")
             return None
+    
+    async def _generate_evidence_based_assessment_with_fallback(
+        self, 
+        product: ProductStructured,
+        existing_risk_rating: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """Generate health assessment that can work without ingredient categorization data."""
+        try:
+            logger.info(f"[Parallel Assessment] Starting health analysis without categorization")
+            
+            # Build prompt using fallback categorization for structure
+            fallback_categorization = self._get_fallback_categorization(product)
+            high_risk_ingredients = fallback_categorization.get('high_risk_ingredients', [])
+            moderate_risk_ingredients = fallback_categorization.get('moderate_risk_ingredients', [])
+            
+            # Build the evidence-based assessment prompt
+            prompt = self._build_evidence_assessment_prompt(
+                product, high_risk_ingredients, moderate_risk_ingredients
+            )
+            
+            # Send request to Gemini directly with timeout protection
+            response = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: genai.GenerativeModel(self.model).generate_content(
+                        prompt,
+                        generation_config=genai.GenerationConfig(
+                            temperature=0,
+                            max_output_tokens=4000
+                        )
+                    )
+                ),
+                timeout=20.0  # 20 second timeout for parallel assessment
+            )
+            
+            # Set product context for parser
+            self._current_product = product
+            
+            # Parse the structured response - this will be updated with real categorization later
+            assessment_data = await self._parse_assessment_response(
+                response.text, high_risk_ingredients, moderate_risk_ingredients, existing_risk_rating,
+                fallback_categorization.get('low_risk_ingredients', []), 
+                fallback_categorization.get('ingredient_analyses', {})
+            )
+            
+            if assessment_data:
+                logger.info(f"[Parallel Assessment] Preliminary assessment generated successfully")
+                return assessment_data
+            else:
+                return None
+                
+        except asyncio.TimeoutError:
+            logger.warning(f"Parallel health assessment generation timed out after 20 seconds")
+            return None
+        except Exception as e:
+            logger.error(f"Error in parallel evidence-based assessment: {e}")
+            return None
+    
+    def _merge_categorization_with_assessment(
+        self,
+        preliminary_assessment: Dict[str, Any],
+        actual_categorization: Dict[str, Any],
+        high_risk_ingredients: List[str],
+        moderate_risk_ingredients: List[str]
+    ) -> Dict[str, Any]:
+        """Merge real categorization results with preliminary assessment."""
+        try:
+            logger.info(f"[Merge] Updating assessment with real categorization data")
+            
+            # Update ingredient assessment with real categorization
+            ingredient_analyses = actual_categorization.get('ingredient_analyses', {})
+            
+            # Build updated ingredients assessment using real categorization
+            updated_ingredients_assessment = {
+                "high_risk": [],
+                "moderate_risk": [],
+                "low_risk": []
+            }
+            
+            # Process high-risk ingredients with real analyses
+            for ingredient in high_risk_ingredients:
+                ingredient_data = {
+                    "name": ingredient,
+                    "micro_report": ingredient_analyses.get('high', {}).get(ingredient, 
+                        self._get_fallback_ingredient_analysis(ingredient, 'high'))
+                }
+                updated_ingredients_assessment["high_risk"].append(ingredient_data)
+            
+            # Process moderate-risk ingredients with real analyses
+            for ingredient in moderate_risk_ingredients:
+                ingredient_data = {
+                    "name": ingredient,
+                    "micro_report": ingredient_analyses.get('moderate', {}).get(ingredient,
+                        self._get_fallback_ingredient_analysis(ingredient, 'moderate'))
+                }
+                updated_ingredients_assessment["moderate_risk"].append(ingredient_data)
+            
+            # Update the assessment with real ingredient data
+            preliminary_assessment["ingredients_assessment"] = updated_ingredients_assessment
+            
+            # Update citations with real ingredient data
+            preliminary_assessment["citations"] = self._update_citations_for_ingredients(
+                high_risk_ingredients, moderate_risk_ingredients
+            )
+            
+            logger.info(f"[Merge] Successfully merged {len(high_risk_ingredients)} high-risk and {len(moderate_risk_ingredients)} moderate-risk ingredients")
+            return preliminary_assessment
+            
+        except Exception as e:
+            logger.error(f"Error merging categorization with assessment: {e}")
+            # Return preliminary assessment as fallback
+            return preliminary_assessment
+    
+    def _update_citations_for_ingredients(
+        self,
+        high_risk_ingredients: List[str],
+        moderate_risk_ingredients: List[str]
+    ) -> List[Dict[str, Any]]:
+        """Generate appropriate citations for the real ingredients (placeholder for now)."""
+        # This will be populated by the actual citation generation process later
+        # For now, return generic citations that will be replaced by real citation search
+        return [
+            {
+                "id": 1,
+                "title": "Scientific research will be updated with real ingredient data",
+                "source": "Research Database",
+                "year": 2024
+            }
+        ]
     
     def _build_categorization_prompt(self, product: ProductStructured) -> str:
         """Build prompt for ingredient categorization."""
@@ -986,7 +1136,7 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
             logger.warning(f"No nutrition data available for product {product.product.code}")
             return []
         
-        # Generate AI commentary for each nutrient using Gemini
+        # Generate AI commentary for all nutrients in a single batched call
         try:
             nutrients_to_analyze = [
                 ("Protein", nutrition.protein, 50.0, "g"),
@@ -995,6 +1145,8 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
                 ("Salt", nutrition.salt, 2.3, "mg")  # Will convert to mg for display
             ]
             
+            # Prepare nutrition data for batched AI processing
+            nutrition_data = []
             for nutrient_name, amount, daily_value, unit in nutrients_to_analyze:
                 if amount is None:
                     continue
@@ -1015,16 +1167,27 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
                 else:
                     evaluation = "low"
                 
-                # Generate dynamic AI commentary with strict validation
-                ai_commentary = await self._generate_dynamic_nutrition_commentary(
-                    nutrient_name, amount, percent_dv, evaluation, product_name
-                )
-                
-                nutrition_insights.append({
+                nutrition_data.append({
                     "nutrient": nutrient_name,
-                    "amount_per_serving": display_amount,
-                    "evaluation": evaluation,
-                    "ai_commentary": ai_commentary  # Should already be ≤80 chars from validation
+                    "amount": amount,
+                    "display_amount": display_amount,
+                    "percent_dv": percent_dv,
+                    "evaluation": evaluation
+                })
+            
+            # Generate all nutrition commentaries in a single AI call
+            ai_commentaries = await self._generate_batched_nutrition_commentary(
+                nutrition_data, product_name
+            )
+            
+            # Build nutrition insights with AI commentaries
+            for data in nutrition_data:
+                nutrition_insights.append({
+                    "nutrient": data["nutrient"],
+                    "amount_per_serving": data["display_amount"],
+                    "evaluation": data["evaluation"],
+                    "ai_commentary": ai_commentaries.get(data["nutrient"], 
+                        self._get_fallback_commentary(data["nutrient"], data["evaluation"], data["percent_dv"]))
                 })
             
             return nutrition_insights
@@ -1034,81 +1197,86 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
             # Fallback to simplified static data if AI fails
             return self._generate_fallback_nutrition_insights(product)
     
-    async def _generate_dynamic_nutrition_commentary(
+    async def _generate_batched_nutrition_commentary(
         self, 
-        nutrient: str, 
-        amount: float, 
-        percent_dv: float, 
-        evaluation: str, 
+        nutrition_data: List[Dict],
         product_name: str
-    ) -> str:
-        """Generate dynamic AI commentary for a specific nutrient."""
+    ) -> Dict[str, str]:
+        """Generate AI commentary for all nutrients in a single batched call."""
         
-        # Create context-aware prompt for nutrition commentary
-        prompt = f"""Generate a concise, informative comment about {nutrient} content in {product_name}.
+        # Build comprehensive prompt for all nutrients
+        nutrients_info = "\n".join([
+            f"- {data['nutrient']}: {data['amount']} ({data['percent_dv']:.1f}% DV, {data['evaluation']} level)"
+            for data in nutrition_data
+        ])
+        
+        prompt = f"""Generate concise nutrition comments for {product_name}.
 
-NUTRIENT: {nutrient}
-AMOUNT: {amount}
-DAILY VALUE %: {percent_dv:.1f}%
-LEVEL: {evaluation}
+NUTRIENTS:
+{nutrients_info}
 
 Requirements:
-- STRICT MAXIMUM: 80 characters (will be rejected if longer)
-- Be specific to this nutrient level and product type
-- Focus on health implications 
-- Use plain language
-- Complete sentences only - no truncation
-- Avoid generic templates
+- Generate ONE comment per nutrient (exactly {len(nutrition_data)} comments)
+- Each comment: MAXIMUM 80 characters
+- Focus on health implications for each nutrient level
+- Use plain language, complete sentences
+- Format: "NUTRIENT: comment text"
 
-Examples of good comments (all under 80 chars):
-- "Great protein source supporting muscle health goals"
-- "High sodium; balance with low-sodium foods daily"
-- "Low fat content makes this heart-healthy choice"
+Examples:
+Protein: Great protein source supporting muscle health goals
+Salt: High sodium; balance with low-sodium foods daily
+Fat: Low fat content makes this heart-healthy choice
 
-Generate ONE complete comment under 80 characters:"""
+Generate {len(nutrition_data)} comments in the exact format above:"""
 
         try:
-            # Add timeout protection for AI calls
+            # Single AI call for all nutrition insights
             response = await asyncio.wait_for(
                 asyncio.get_event_loop().run_in_executor(
                     None,
                     lambda: genai.GenerativeModel(self.model).generate_content(
                         prompt,
                         generation_config=genai.GenerationConfig(
-                            temperature=0.3,  # Slight randomness for variety
-                            max_output_tokens=100  # Increased to allow complete 120-char responses
+                            temperature=0.3,
+                            max_output_tokens=400  # Allow space for multiple comments
                         )
                     )
                 ),
-                timeout=10.0  # 10 second timeout
+                timeout=10.0  # Single 10 second timeout for all nutrients
             )
             
-            # Clean and validate the response
-            commentary = response.text.strip()
+            # Parse the batched response
+            response_text = response.text.strip()
+            commentaries = {}
             
-            # Remove quotes if AI added them
-            if commentary.startswith('"') and commentary.endswith('"'):
-                commentary = commentary[1:-1]
+            # Parse AI response line by line
+            for line in response_text.split('\n'):
+                line = line.strip()
+                if ':' in line:
+                    parts = line.split(':', 1)
+                    if len(parts) == 2:
+                        nutrient = parts[0].strip()
+                        comment = parts[1].strip()
+                        
+                        # Remove quotes if AI added them
+                        if comment.startswith('"') and comment.endswith('"'):
+                            comment = comment[1:-1]
+                        
+                        # Validate comment length
+                        if len(comment) <= 80 and not comment.endswith('...') and not comment.endswith('..'):
+                            commentaries[nutrient] = comment
+                        else:
+                            logger.warning(f"AI response too long for {nutrient}, will use fallback")
             
-            # Strict validation - reject responses over 80 characters or with truncation
-            if len(commentary) > 80 or commentary.endswith('...') or commentary.endswith('..'):
-                logger.warning(f"AI response too long ({len(commentary)} chars) or truncated, using fallback for {nutrient}")
-                return self._get_fallback_commentary(nutrient, evaluation, percent_dv)
-            
-            # Check for incomplete sentences (no period at end for complete sentences)
-            if len(commentary) > 20 and not commentary.endswith('.') and not commentary.endswith('!'):
-                logger.warning(f"AI response appears incomplete (no proper ending), using fallback for {nutrient}")
-                return self._get_fallback_commentary(nutrient, evaluation, percent_dv)
-            
-            return commentary
+            logger.info(f"Generated {len(commentaries)} valid nutrition commentaries from batched AI call")
+            return commentaries
             
         except asyncio.TimeoutError:
-            logger.warning(f"AI commentary generation timed out for {nutrient} after 10 seconds")
-            return self._get_fallback_commentary(nutrient, evaluation, percent_dv)
+            logger.warning("Batched AI nutrition commentary timed out, using fallbacks")
+            return {}
         except Exception as e:
-            logger.warning(f"Failed to generate AI commentary for {nutrient}: {e}")
-            # Fallback to improved static commentary
-            return self._get_fallback_commentary(nutrient, evaluation, percent_dv)
+            logger.warning(f"Batched AI nutrition commentary failed: {e}, using fallbacks")
+            return {}
     
     def _get_fallback_commentary(self, nutrient: str, evaluation: str, percent_dv: float) -> str:
         """Generate improved fallback commentary when AI is unavailable."""
@@ -1184,6 +1352,10 @@ Generate ONE complete comment under 80 characters:"""
                 return "Natural flavoring with potential antioxidant and anti-inflammatory properties. [7]"
             else:
                 return f"{ingredient} is generally recognized as safe for consumption. [7]"
+    
+    def _get_fallback_ingredient_analysis(self, ingredient: str, risk_level: str) -> str:
+        """Get fallback ingredient analysis for merge operations."""
+        return self._generate_ingredient_specific_fallback(ingredient, risk_level)
     
     def _generate_fallback_nutrition_insights(self, product: ProductStructured) -> List[Dict[str, Any]]:
         """Generate basic nutrition insights when AI fails."""
@@ -1272,7 +1444,7 @@ Generate ONE complete comment under 80 characters:"""
             logger.info(f"[Real Citations] Researching {len(high_risk_ingredients)} high-risk and {len(moderate_risk_ingredients)} moderate-risk ingredients")
             
             # Research high-risk ingredients first
-            for ingredient in high_risk_ingredients[:2]:  # Limit to top 2 high-risk
+            for ingredient in high_risk_ingredients[:7]:  # Limit to top 7 high-risk
                 try:
                     search_params = CitationSearch(
                         ingredient=ingredient,
@@ -1312,44 +1484,43 @@ Generate ONE complete comment under 80 characters:"""
                     logger.warning(f"Citation search failed for {ingredient}: {e}")
                     continue
             
-            # If no real citations found, research moderate-risk ingredients
-            if len(citations) < 2:
-                for ingredient in moderate_risk_ingredients[:1]:  # Limit to 1 moderate-risk
-                    try:
-                        search_params = CitationSearch(
-                            ingredient=ingredient,
-                            health_claim="safety assessment",
-                            max_results=1,
-                            search_pubmed=True,
-                            search_crossref=True
-                        )
+            # Research moderate-risk ingredients
+            for ingredient in moderate_risk_ingredients[:7]:  # Limit to top 7 moderate-risk
+                try:
+                    search_params = CitationSearch(
+                        ingredient=ingredient,
+                        health_claim="safety assessment",
+                        max_results=1,
+                        search_pubmed=True,
+                        search_crossref=True
+                    )
+                    
+                    result = citation_service.search_citations(search_params)
+                    
+                    if result.citations:
+                        citation = result.citations[0]
+                        # Format URL properly - ensure DOIs are converted to full URLs
+                        url = citation.url
+                        if not url and citation.doi:
+                            # Convert DOI to proper URL format
+                            doi = citation.doi.strip()
+                            if doi.startswith('10.'):
+                                url = f"https://doi.org/{doi}"
+                            else:
+                                url = doi
                         
-                        result = citation_service.search_citations(search_params)
+                        citations.append({
+                            "id": citation_id,
+                            "title": citation.title[:100] + "..." if len(citation.title) > 100 else citation.title,
+                            "source": citation.journal or "Scientific Research Database",
+                            "year": citation.publication_date.year if citation.publication_date else 2024,
+                            "url": url
+                        })
+                        citation_id += 1
                         
-                        if result.citations:
-                            citation = result.citations[0]
-                            # Format URL properly - ensure DOIs are converted to full URLs
-                            url = citation.url
-                            if not url and citation.doi:
-                                # Convert DOI to proper URL format
-                                doi = citation.doi.strip()
-                                if doi.startswith('10.'):
-                                    url = f"https://doi.org/{doi}"
-                                else:
-                                    url = doi
-                            
-                            citations.append({
-                                "id": citation_id,
-                                "title": citation.title[:100] + "..." if len(citation.title) > 100 else citation.title,
-                                "source": citation.journal or "Scientific Research Database",
-                                "year": citation.publication_date.year if citation.publication_date else 2024,
-                                "url": url
-                            })
-                            citation_id += 1
-                            
-                    except Exception as e:
-                        logger.warning(f"Citation search failed for {ingredient}: {e}")
-                        continue
+                except Exception as e:
+                    logger.warning(f"Citation search failed for {ingredient}: {e}")
+                    continue
             
             # Fallback if no real research found
             if not citations:
