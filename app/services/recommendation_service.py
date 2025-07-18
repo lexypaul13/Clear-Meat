@@ -195,7 +195,10 @@ def _get_optimized_recommendations(
         # Apply meat type filter at database level
         if preferred_types:
             meat_types_list = list(preferred_types)
+            logger.info(f"🥩 Filtering by meat types: {meat_types_list}")
             query = query.in_('meat_type', meat_types_list)
+        else:
+            logger.info("🥩 No meat type filter applied - showing all types")
         
         # Apply nutritional filters based on preferences
         if nutrition_focus == "salt" and user_preferences.get("avoid_high_sodium"):
@@ -235,12 +238,21 @@ def _get_optimized_recommendations(
         response = query.execute()
         products = response.data or []
         
+        logger.info(f"🔍 Backend query details:")
+        logger.info(f"   - Requested limit: {limit}, skip: {skip}")
+        logger.info(f"   - User preferences: {user_preferences}")
+        logger.info(f"   - Preferred meat types: {_get_preferred_meat_types(user_preferences)}")
+        logger.info(f"   - Nutrition focus: {user_preferences.get('nutrition_focus', 'protein')}")
+        logger.info(f"   - Fetch limit used: {fetch_limit}")
         logger.debug(f"Optimized query returned {len(products)} products")
         
         # Apply final diversity and ranking if we have results
         if products:
-            return _apply_final_selection_with_randomization(products, user_preferences, limit, skip)
+            final_results = _apply_final_selection_with_randomization(products, user_preferences, limit, skip)
+            logger.info(f"📦 Final selection returned {len(final_results)} products")
+            return final_results
         else:
+            logger.warning("⚠️  No products returned from database query")
             return []
             
     except Exception as e:
@@ -300,6 +312,7 @@ def _apply_final_selection(
         
         selected.extend(remaining_products[:remaining_slots])
     
+    logger.info(f"🎯 _apply_final_selection returning {len(selected)} products (limit: {limit})")
     return selected[:limit]
 
 
@@ -324,8 +337,10 @@ def _apply_final_selection_with_randomization(
     import random
     
     if not products:
+        logger.info("🎲 No products to randomize")
         return []
     
+    logger.info(f"🎲 Randomizing {len(products)} products (limit: {limit}, skip: {skip})")
     preferred_types = _get_preferred_meat_types(user_preferences)
     
     # If we have multiple meat types, apply diversity
@@ -371,11 +386,15 @@ def _apply_final_selection_with_randomization(
                             selected.append(products[idx])
                             selected_indices.add(idx)
         
-        return selected[:limit]
+        result = selected[:limit]
+        logger.info(f"🎲 Randomization returning {len(result)} products")
+        return result
         
     except Exception as e:
         logger.warning(f"Error in randomization, falling back to simple selection: {e}")
-        return products[:limit]
+        fallback_result = products[:limit]
+        logger.info(f"🎲 Fallback returning {len(fallback_result)} products")
+        return fallback_result
 
 
 def _apply_diversity_with_randomization(
