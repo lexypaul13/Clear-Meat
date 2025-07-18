@@ -595,10 +595,11 @@ def get_product_recommendations(
     db: Session = Depends(get_db),
     supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user),
-    limit: int = Query(30, ge=1, le=100, description="Maximum number of recommendations to return", example=10),
+    limit: int = Query(10, ge=1, le=50, description="Number of recommendations per page", example=10),
+    skip: int = Query(0, ge=0, description="Number of recommendations to skip (for pagination)", example=0),
 ) -> models.RecommendationResponse:
     """
-    Get personalized product recommendations based on user preferences.
+    Get personalized product recommendations with pagination support.
     
     Recommendations are tailored based on the preferences set during the user onboarding process,
     including nutrition focus, additives, ethical concerns, and preferred meat types.
@@ -606,10 +607,11 @@ def get_product_recommendations(
     Args:
         db: Database session
         current_user: Current active user
-        limit: Maximum number of recommendations to return (1-100, default 30)
+        limit: Number of recommendations per page (1-50, default 10)
+        skip: Number of recommendations to skip for pagination (default 0)
         
     Returns:
-        RecommendationResponse: List of recommended products with match details
+        RecommendationResponse: List of recommended products with match details and pagination info
     """
     try:
         # Get user preferences
@@ -633,8 +635,11 @@ def get_product_recommendations(
                     "meat_preferences": ["chicken", "beef", "pork"]
                 }
         
-        # Get personalized recommendations using Supabase
-        recommended_products = get_personalized_recommendations(supabase_service, preferences, limit)
+        # Log user preferences for debugging
+        logger.info(f"🎯 User {current_user.id} preferences: {preferences}")
+        
+        # Get personalized recommendations using Supabase with pagination
+        recommended_products = get_personalized_recommendations(supabase_service, preferences, limit, skip)
         
         if not recommended_products:
             return models.RecommendationResponse(
