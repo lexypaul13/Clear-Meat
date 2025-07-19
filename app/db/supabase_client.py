@@ -246,10 +246,12 @@ class SupabaseService:
             return None
     
     def get_products(self, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
-        """Get products with pagination."""
+        """Get products with pagination - excludes image_data to prevent massive response sizes."""
         try:
+            # Exclude image_data to eliminate 50KB+ base64 data per product
             response = (self.client.table('products')
-                       .select('*')
+                       .select('code, name, brand, description, ingredients_text, calories, protein, fat, '
+                              'carbohydrates, salt, meat_type, risk_rating, image_url, last_updated, created_at')
                        .range(offset, offset + limit - 1)
                        .execute())
             return response.data or []

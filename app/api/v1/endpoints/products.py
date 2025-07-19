@@ -113,8 +113,11 @@ async def _fallback_search(query: str, limit: int, skip: int, supabase_service) 
     Fallback search function using basic text matching when AI is not available.
     """
     try:
-        # Basic text search on multiple fields
-        search_query = supabase_service.client.table('products').select('*')
+        # Basic text search on multiple fields - exclude image_data for performance
+        search_query = supabase_service.client.table('products').select(
+            'code, name, brand, description, ingredients_text, calories, protein, fat, '
+            'carbohydrates, salt, meat_type, risk_rating, image_url, last_updated, created_at'
+        )
         
         # Create OR conditions for text search
         conditions = []
@@ -538,7 +541,7 @@ def get_products(
                     meat_type=product_dict.get('meat_type', ''),
                     risk_rating=product_dict.get('risk_rating', ''),
                     image_url=product_dict.get('image_url', ''),
-                    image_data=product_dict.get('image_data', ''),
+                    image_data=None,  # Exclude massive base64 data - use image_url instead
                     last_updated=product_dict.get('last_updated'),
                     created_at=product_dict.get('created_at')
                 )
@@ -669,7 +672,7 @@ def get_product_recommendations(
                     meat_type=product_dict.get('meat_type', ''),
                     risk_rating=product_dict.get('risk_rating', ''),
                     image_url=product_dict.get('image_url', ''),
-                    image_data=product_dict.get('image_data', ''),
+                    image_data=None,  # Exclude massive base64 data - use image_url instead
                     last_updated=product_dict.get('last_updated'),
                     created_at=product_dict.get('created_at')
                 )

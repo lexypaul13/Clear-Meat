@@ -190,8 +190,12 @@ def _get_optimized_recommendations(
         preferred_types = _get_preferred_meat_types(user_preferences)
         nutrition_focus = user_preferences.get("nutrition_focus", "protein")
         
-        # Start with base query
-        query = supabase_service.client.table('products').select('*')
+        # Start with base query - exclude image_data to prevent massive response sizes
+        # This eliminates the 50KB+ base64 data per product that causes performance issues
+        query = supabase_service.client.table('products').select(
+            'code, name, brand, description, ingredients_text, calories, protein, fat, '
+            'carbohydrates, salt, meat_type, risk_rating, image_url, last_updated, created_at'
+        )
         
         # Apply meat type filter with page-based expansion
         page_num = offset // page_size

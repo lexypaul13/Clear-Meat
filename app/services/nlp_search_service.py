@@ -155,7 +155,11 @@ Return ONLY the JSON, no explanation.
         Returns:
             Supabase query object
         """
-        query = supabase_client.table('products').select('*')
+        # Exclude image_data to prevent massive response sizes during search
+        query = supabase_client.table('products').select(
+            'code, name, brand, description, ingredients_text, calories, protein, fat, '
+            'carbohydrates, salt, meat_type, risk_rating, image_url, last_updated, created_at'
+        )
         
         # Filter by meat types
         if parsed_query.get("meat_types"):
