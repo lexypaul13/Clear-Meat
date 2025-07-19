@@ -953,9 +953,10 @@ def convert_to_enhanced_assessment(assessment: HealthAssessment) -> EnhancedHeal
                 if assessment.ingredient_reports and ingredient_name in assessment.ingredient_reports:
                     report = assessment.ingredient_reports[ingredient_name]
                     if report.health_concerns and len(report.health_concerns) > 0:
-                        micro_report = ". ".join(report.health_concerns[:2])
-                        if len(micro_report) > 250:
-                            micro_report = micro_report[:247] + "..."
+                        micro_report = ". ".join(report.health_concerns)
+                        # Remove truncation - show full analysis for better user experience
+                        # if len(micro_report) > 250:
+                        #     micro_report = micro_report[:247] + "..."
                 
                 # Find citations for this ingredient
                 ingredient_citations = []

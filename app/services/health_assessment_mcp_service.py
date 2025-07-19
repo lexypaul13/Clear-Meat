@@ -692,17 +692,10 @@ class HealthAssessmentMCPService:
         high_risk_ingredients: List[str],
         moderate_risk_ingredients: List[str]
     ) -> List[Dict[str, Any]]:
-        """Generate appropriate citations for the real ingredients (placeholder for now)."""
-        # This will be populated by the actual citation generation process later
-        # For now, return generic citations that will be replaced by real citation search
-        return [
-            {
-                "id": 1,
-                "title": "Scientific research will be updated with real ingredient data",
-                "source": "Research Database",
-                "year": 2024
-            }
-        ]
+        """Generate appropriate citations for the real ingredients (no longer using placeholders)."""
+        # No longer generate placeholder citations - return empty list
+        # Real citations will be added by the citation search process
+        return []
     
     def _build_categorization_prompt(self, product: ProductStructured) -> str:
         """Build prompt for ingredient categorization."""
@@ -869,7 +862,7 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
                 assessment_data["ingredients_assessment"]["high_risk"].append({
                     "name": ingredient,
                     "risk_level": "high",
-                    "micro_report": micro_report[:180],  # Ensure max 180 chars
+                    "micro_report": micro_report,  # Show full analysis
                     "citations": [1, 2]
                 })
             
@@ -889,7 +882,7 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
                 assessment_data["ingredients_assessment"]["moderate_risk"].append({
                     "name": ingredient,
                     "risk_level": "moderate",
-                    "micro_report": micro_report[:180],
+                    "micro_report": micro_report,
                     "citations": [3, 4]
                 })
             
@@ -926,7 +919,7 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
                 assessment_data["ingredients_assessment"]["low_risk"].append({
                     "name": ingredient,
                     "risk_level": "low",
-                    "micro_report": micro_report[:180],
+                    "micro_report": micro_report,
                     "citations": [7]
                 })
             
@@ -1076,7 +1069,7 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
                 current_ingredient['risk_level'] = risk_level
             elif ('Micro Report:' in line or 'micro report:' in line.lower()) and current_ingredient:
                 micro_report = line.split(':', 1)[1].strip()
-                current_ingredient['micro_report'] = micro_report[:180]  # Limit to 180 chars
+                current_ingredient['micro_report'] = micro_report  # Show full analysis
             elif ('Citations:' in line or 'citations:' in line.lower()) and current_ingredient:
                 # Simple citation parsing - just extract citation markers as integers
                 citations_text = line.split(':', 1)[1].strip()
