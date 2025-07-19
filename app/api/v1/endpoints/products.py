@@ -818,7 +818,7 @@ def get_product(
                 description=product_data.get('description', ''),
                 ingredients_text=product_data.get('ingredients_text', ''),
                 image_url=product_data.get('image_url', ''),
-                image_data=product_data.get('image_data', ''),
+                image_data=None,  # Exclude massive base64 data - use image_url instead
                 meat_type=product_data.get('meat_type', '')
             ),
             criteria=models.ProductCriteria(
@@ -993,7 +993,7 @@ def get_product_alternatives(
                         meat_type=alt.meat_type,
                 risk_rating=alt.risk_rating,
                         image_url=alt.image_url,
-                        image_data=alt.image_data,
+                        image_data=None,  # Exclude massive base64 data - use image_url instead
                         last_updated=alt.last_updated,
                         created_at=alt.created_at
                     )
