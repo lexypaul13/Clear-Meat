@@ -220,7 +220,7 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
         
         # Optimized batch citation generation with reduced string operations
         original_citations = assessment.get("citations", [])
-        base_pubmed_search_url = "https://pubmed.ncbi.nlm.nih.gov/search?term="  # For fallback searches only
+        base_pubmed_search_url = "https://pubmed.ncbi.nlm.nih.gov/?term="  # For fallback searches only
         
         # Ingredient name translation for better PubMed search results
         ingredient_translations = {
