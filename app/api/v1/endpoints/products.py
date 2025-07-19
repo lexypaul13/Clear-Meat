@@ -220,7 +220,7 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
         
         # Optimized batch citation generation with reduced string operations
         original_citations = assessment.get("citations", [])
-        base_pubmed_url = "https://pubmed.ncbi.nlm.nih.gov/search?term="  # Pre-computed base URL
+        base_pubmed_search_url = "https://pubmed.ncbi.nlm.nih.gov/search?term="  # For fallback searches only
         
         # Batch process citations to minimize string operations
         for citation_data in citations_data:
@@ -234,11 +234,13 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
                 citation_year = real_citation.get("year", 2024)
                 citation_url = real_citation.get("url", "")
             else:
-                # Optimized citation generation with pre-computed templates
-                citation_title = f"Health Effects and Safety Assessment of {ingredient_name} in Food Products"
+                # Fallback citation generation when real citations aren't available
+                # Note: Using search URLs instead of fake PMIDs to ensure users find real research
+                citation_title = f"Research on {ingredient_name} Safety and Health Effects"
                 citation_year = 2023 + (citation_id % 2)  # Vary years slightly
-                # Single string operation instead of multiple replacements
-                citation_url = base_pubmed_url + ingredient_name.replace(" ", "+")
+                # Create PubMed search URL with relevant terms for better results
+                search_terms = f"{ingredient_name.replace(' ', '+')}+food+safety+health+effects+toxicity"
+                citation_url = base_pubmed_search_url + search_terms
             
             optimized["citations"].append({
                 "id": citation_id,

@@ -1478,8 +1478,10 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
                     search_pubmed=True,
                     search_crossref=True,
                     search_doaj=True,
-                    search_scihub=False,  # Disable for production
-                    search_libgen=False   # Disable for production
+                    search_arxiv=True,
+                    search_biorxiv=True,
+                    search_semantic_scholar=True,
+                    search_europe_pmc=False  # Keep disabled for performance
                 )
                 citation_tasks.append(self._search_citations_async(search_params, "high"))
             
@@ -1490,7 +1492,10 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
                     health_claim="safety assessment",
                     max_results=1,
                     search_pubmed=True,
-                    search_crossref=True
+                    search_crossref=True,
+                    search_arxiv=True,
+                    search_biorxiv=True,
+                    search_semantic_scholar=True
                 )
                 citation_tasks.append(self._search_citations_async(search_params, "moderate"))
             

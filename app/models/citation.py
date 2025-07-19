@@ -118,8 +118,10 @@ class CitationSearch(BaseModel):
     
     # Free research databases
     search_doaj: bool = True  # Directory of Open Access Journals
-    search_scihub: bool = True  # Sci-Hub for full text access
-    search_libgen: bool = True  # Library Genesis for academic papers
+    search_arxiv: bool = True  # arXiv preprint server
+    search_biorxiv: bool = True  # Biology preprint server
+    search_semantic_scholar: bool = True  # AI-powered academic search
+    search_europe_pmc: bool = True  # European biomedical literature
     
     search_web: bool = False  # Keep general web search disabled for now
     

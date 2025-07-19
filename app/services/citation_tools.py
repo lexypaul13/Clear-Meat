@@ -123,26 +123,48 @@ class CitationSearchService:
                 errors.append(error_msg)
                 print(f"[DOAJ] Error: {error_msg}")
         
-        # Search Sci-Hub
-        if search_params.search_scihub:
+        # Search arXiv
+        if search_params.search_arxiv:
             try:
-                scihub_citations = self._search_scihub(query, search_params.max_results)
-                all_citations.extend(scihub_citations)
-                print(f"[Sci-Hub] Found {len(scihub_citations)} citations")
+                arxiv_citations = self._search_arxiv(query, search_params.max_results)
+                all_citations.extend(arxiv_citations)
+                print(f"[arXiv] Found {len(arxiv_citations)} citations")
             except Exception as e:
-                error_msg = f"Sci-Hub search error: {str(e)}"
+                error_msg = f"arXiv search error: {str(e)}"
                 logger.error(error_msg)
                 errors.append(error_msg)
                 print(f"[Sci-Hub] Error: {error_msg}")
         
-        # Search LibGen
-        if search_params.search_libgen:
+        # Search bioRxiv
+        if search_params.search_biorxiv:
             try:
-                libgen_citations = self._search_libgen(query, search_params.max_results)
-                all_citations.extend(libgen_citations)
-                print(f"[LibGen] Found {len(libgen_citations)} citations")
+                biorxiv_citations = self._search_biorxiv(query, search_params.max_results)
+                all_citations.extend(biorxiv_citations)
+                print(f"[bioRxiv] Found {len(biorxiv_citations)} citations")
             except Exception as e:
-                error_msg = f"LibGen search error: {str(e)}"
+                error_msg = f"bioRxiv search error: {str(e)}"
+                logger.error(error_msg)
+                errors.append(error_msg)
+        
+        # Search Semantic Scholar
+        if search_params.search_semantic_scholar:
+            try:
+                semantic_citations = self._search_semantic_scholar(query, search_params.max_results)
+                all_citations.extend(semantic_citations)
+                print(f"[Semantic Scholar] Found {len(semantic_citations)} citations")
+            except Exception as e:
+                error_msg = f"Semantic Scholar search error: {str(e)}"
+                logger.error(error_msg)
+                errors.append(error_msg)
+        
+        # Search Europe PMC
+        if search_params.search_europe_pmc:
+            try:
+                europe_pmc_citations = self._search_europe_pmc(query, search_params.max_results)
+                all_citations.extend(europe_pmc_citations)
+                print(f"[Europe PMC] Found {len(europe_pmc_citations)} citations")
+            except Exception as e:
+                error_msg = f"Europe PMC search error: {str(e)}"
                 logger.error(error_msg)
                 errors.append(error_msg)
                 print(f"[LibGen] Error: {error_msg}")
@@ -255,7 +277,7 @@ class CitationSearchService:
                 'sort': 'relevance'
             }
             
-            response = requests.get(url, params=params, timeout=10, verify=False)  # Disable SSL verification for development
+            response = requests.get(url, params=params, timeout=10, verify=True)
             response.raise_for_status()
             
             data = response.json()
@@ -337,7 +359,7 @@ class CitationSearchService:
                 'fields': 'title,authors,venue,year,doi,url,abstract,citationCount'
             }
             
-            response = requests.get(url, params=params, timeout=10, verify=False)  # Disable SSL verification for development
+            response = requests.get(url, params=params, timeout=10, verify=True)
             response.raise_for_status()
             
             data = response.json()
@@ -544,7 +566,7 @@ class CitationSearchService:
             
             # Use CrossRef API to get detailed information
             url = f"https://api.crossref.org/works/{doi}"
-            response = requests.get(url, timeout=10, verify=False)
+            response = requests.get(url, timeout=10, verify=True)
             response.raise_for_status()
             
             data = response.json()
@@ -743,7 +765,7 @@ class CitationSearchService:
             # DOAJ API endpoint
             url = "https://doaj.org/api/search/articles/title%3A" + query.replace(" ", "%20")
             
-            response = requests.get(url, timeout=10, verify=False)
+            response = requests.get(url, timeout=10, verify=True)
             response.raise_for_status()
             
             data = response.json()
@@ -789,58 +811,320 @@ class CitationSearchService:
         
         return citations
     
-    def _search_scihub(self, query: str, max_results: int) -> List[Citation]:
-        """Search Sci-Hub for academic papers (defensive access only)."""
+    def _search_arxiv(self, query: str, max_results: int) -> List[Citation]:
+        """Search arXiv for preprint papers in quantitative biology and related fields."""
         citations = []
         
         try:
-            print(f"[Sci-Hub] Searching for: {query}")
+            print(f"[arXiv] Searching for: {query}")
             
-            # Note: This is a defensive implementation for research purposes only
-            # In a production environment, ensure compliance with copyright laws
+            # arXiv API search for quantitative biology (q-bio) and related categories
+            arxiv_url = "http://export.arxiv.org/api/query"
             
-            # Search for papers mentioning the ingredient
-            if any(term in query.lower() for term in ["bha", "nitrite", "nitrate", "additive"]):
-                citation = Citation(
-                    title=f"Full-text research on {query.split()[0]} from academic databases",
-                    authors=[Author(last_name="Various Authors", first_name="")],
-                    journal="Academic Research Collection",
-                    publication_date=datetime(2023, 1, 1),
-                    url="https://sci-hub.se",  # Defensive research access
-                    source_type="scihub",
-                    relevance_score=0.7
-                )
-                citations.append(citation)
-                
+            # Search in quantitative biology categories relevant to food science
+            search_query = f"cat:q-bio.BM OR cat:q-bio.OT AND all:{query}"
+            
+            params = {
+                'search_query': search_query,
+                'start': 0,
+                'max_results': max_results,
+                'sortBy': 'relevance'
+            }
+            
+            response = requests.get(arxiv_url, params=params, timeout=10, verify=True)
+            response.raise_for_status()
+            
+            # Parse XML response
+            import xml.etree.ElementTree as ET
+            root = ET.fromstring(response.content)
+            
+            # arXiv namespace
+            ns = {'atom': 'http://www.w3.org/2005/Atom', 'arxiv': 'http://arxiv.org/schemas/atom'}
+            
+            for entry in root.findall('atom:entry', ns)[:max_results]:
+                try:
+                    title = entry.find('atom:title', ns).text.strip() if entry.find('atom:title', ns) is not None else "Unknown Title"
+                    summary = entry.find('atom:summary', ns).text.strip() if entry.find('atom:summary', ns) is not None else ""
+                    
+                    # Get authors
+                    authors = []
+                    for author in entry.findall('atom:author', ns):
+                        name_elem = author.find('atom:name', ns)
+                        if name_elem is not None:
+                            full_name = name_elem.text.strip()
+                            name_parts = full_name.split()
+                            if len(name_parts) >= 2:
+                                authors.append(Author(last_name=name_parts[-1], first_name=" ".join(name_parts[:-1])))
+                            else:
+                                authors.append(Author(last_name=full_name, first_name=""))
+                    
+                    # Get publication date
+                    pub_date = entry.find('atom:published', ns)
+                    year = 2024  # Default
+                    if pub_date is not None:
+                        try:
+                            year = int(pub_date.text[:4])
+                        except:
+                            pass
+                    
+                    # Get arXiv ID and create URL
+                    arxiv_id = entry.find('atom:id', ns).text.split('/')[-1] if entry.find('atom:id', ns) is not None else ""
+                    url = f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else None
+                    
+                    citation = Citation(
+                        title=title,
+                        authors=authors[:3],  # Limit to first 3 authors
+                        journal="arXiv preprint",
+                        publication_date=datetime(year, 1, 1),
+                        url=url,
+                        source_type="arxiv",
+                        relevance_score=0.8,
+                        pmid=arxiv_id
+                    )
+                    citations.append(citation)
+                    
+                except Exception as e:
+                    logger.warning(f"Error parsing arXiv entry: {e}")
+                    continue
+                    
         except Exception as e:
-            logger.error(f"Sci-Hub search error: {e}")
+            logger.error(f"arXiv search error: {e}")
         
         return citations
     
-    def _search_libgen(self, query: str, max_results: int) -> List[Citation]:
-        """Search Library Genesis for academic literature."""
+    def _search_biorxiv(self, query: str, max_results: int) -> List[Citation]:
+        """Search bioRxiv for biology and health science preprints."""
         citations = []
         
         try:
-            print(f"[LibGen] Searching for: {query}")
+            print(f"[bioRxiv] Searching for: {query}")
             
-            # LibGen search for academic papers
-            # Note: This is for academic research purposes
+            # bioRxiv API search
+            biorxiv_url = "https://api.biorxiv.org/details/biorxiv"
             
-            if any(term in query.lower() for term in ["food", "toxicity", "health", "safety"]):
-                citation = Citation(
-                    title=f"Academic literature on {query} from Library Genesis",
-                    authors=[Author(last_name="Academic Researchers", first_name="")],
-                    journal="Open Access Academic Collection", 
-                    publication_date=datetime(2023, 1, 1),
-                    url="http://libgen.rs",
-                    source_type="libgen",
-                    relevance_score=0.75
-                )
-                citations.append(citation)
+            # Search recent papers (last 2 years)
+            from datetime import datetime, timedelta
+            end_date = datetime.now().strftime('%Y-%m-%d')
+            start_date = (datetime.now() - timedelta(days=730)).strftime('%Y-%m-%d')
+            
+            search_url = f"{biorxiv_url}/{start_date}/{end_date}"
+            
+            response = requests.get(search_url, timeout=10, verify=True)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            if 'collection' in data:
+                # Filter papers by relevance to query
+                relevant_papers = []
+                query_terms = query.lower().split()
                 
+                for paper in data['collection']:
+                    title = paper.get('title', '').lower()
+                    abstract = paper.get('abstract', '').lower()
+                    
+                    # Calculate relevance score
+                    relevance = 0
+                    for term in query_terms:
+                        if term in title:
+                            relevance += 0.3
+                        if term in abstract:
+                            relevance += 0.1
+                    
+                    if relevance > 0.1:  # Only include relevant papers
+                        relevant_papers.append((paper, relevance))
+                
+                # Sort by relevance and take top results
+                relevant_papers.sort(key=lambda x: x[1], reverse=True)
+                
+                for paper_data, relevance in relevant_papers[:max_results]:
+                    try:
+                        # Parse authors
+                        authors = []
+                        authors_str = paper_data.get('authors', '')
+                        if authors_str:
+                            author_names = authors_str.split(';')[:3]  # Limit to first 3
+                            for author_name in author_names:
+                                name_parts = author_name.strip().split()
+                                if len(name_parts) >= 2:
+                                    authors.append(Author(last_name=name_parts[-1], first_name=" ".join(name_parts[:-1])))
+                                else:
+                                    authors.append(Author(last_name=author_name.strip(), first_name=""))
+                        
+                        # Get publication date
+                        date_str = paper_data.get('date', '')
+                        year = 2024
+                        if date_str:
+                            try:
+                                year = int(date_str[:4])
+                            except:
+                                pass
+                        
+                        # Create DOI URL
+                        doi = paper_data.get('doi', '')
+                        url = f"https://doi.org/{doi}" if doi else f"https://www.biorxiv.org/content/{paper_data.get('server', 'biorxiv')}/early/{date_str}/{doi}"
+                        
+                        citation = Citation(
+                            title=paper_data.get('title', 'Unknown Title'),
+                            authors=authors,
+                            journal="bioRxiv preprint",
+                            publication_date=datetime(year, 1, 1),
+                            url=url,
+                            source_type="biorxiv",
+                            relevance_score=min(relevance, 1.0),
+                            doi=doi if doi else None
+                        )
+                        citations.append(citation)
+                        
+                    except Exception as e:
+                        logger.warning(f"Error parsing bioRxiv entry: {e}")
+                        continue
+                        
         except Exception as e:
-            logger.error(f"LibGen search error: {e}")
+            logger.error(f"bioRxiv search error: {e}")
+        
+        return citations
+    
+    def _search_semantic_scholar(self, query: str, max_results: int) -> List[Citation]:
+        """Search Semantic Scholar for academic papers with citation metrics."""
+        citations = []
+        
+        try:
+            print(f"[Semantic Scholar] Searching for: {query}")
+            
+            # Semantic Scholar API
+            api_url = "https://api.semanticscholar.org/graph/v1/paper/search"
+            
+            params = {
+                'query': query,
+                'limit': max_results,
+                'fields': 'title,authors,year,journal,citationCount,url,abstract,openAccessPdf'
+            }
+            
+            response = requests.get(api_url, params=params, timeout=10, verify=True)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            if 'data' in data:
+                for paper in data['data']:
+                    try:
+                        # Parse authors
+                        authors = []
+                        if 'authors' in paper and paper['authors']:
+                            for author_data in paper['authors'][:3]:  # Limit to first 3
+                                name = author_data.get('name', '')
+                                if name:
+                                    name_parts = name.split()
+                                    if len(name_parts) >= 2:
+                                        authors.append(Author(last_name=name_parts[-1], first_name=" ".join(name_parts[:-1])))
+                                    else:
+                                        authors.append(Author(last_name=name, first_name=""))
+                        
+                        # Get publication year
+                        year = paper.get('year', 2024)
+                        if not year:
+                            year = 2024
+                        
+                        # Calculate relevance score based on citation count and recency
+                        citation_count = paper.get('citationCount', 0)
+                        relevance = min(0.5 + (citation_count / 100), 1.0)  # Base 0.5, up to 1.0 based on citations
+                        
+                        # Get URL (prefer open access PDF if available)
+                        url = paper.get('url', '')
+                        if 'openAccessPdf' in paper and paper['openAccessPdf'] and paper['openAccessPdf'].get('url'):
+                            url = paper['openAccessPdf']['url']
+                        
+                        citation = Citation(
+                            title=paper.get('title', 'Unknown Title'),
+                            authors=authors,
+                            journal=paper.get('journal', {}).get('name', 'Unknown Journal') if paper.get('journal') else 'Unknown Journal',
+                            publication_date=datetime(year, 1, 1),
+                            url=url,
+                            source_type="semantic_scholar",
+                            relevance_score=relevance
+                        )
+                        citations.append(citation)
+                        
+                    except Exception as e:
+                        logger.warning(f"Error parsing Semantic Scholar entry: {e}")
+                        continue
+                        
+        except Exception as e:
+            logger.error(f"Semantic Scholar search error: {e}")
+        
+        return citations
+    
+    def _search_europe_pmc(self, query: str, max_results: int) -> List[Citation]:
+        """Search Europe PMC for European biomedical literature."""
+        citations = []
+        
+        try:
+            print(f"[Europe PMC] Searching for: {query}")
+            
+            # Europe PMC API
+            api_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+            
+            params = {
+                'query': query,
+                'resultType': 'core',
+                'pageSize': max_results,
+                'format': 'json'
+            }
+            
+            response = requests.get(api_url, params=params, timeout=10, verify=True)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            if 'resultList' in data and 'result' in data['resultList']:
+                for paper in data['resultList']['result']:
+                    try:
+                        # Parse authors
+                        authors = []
+                        if 'authorList' in paper and paper['authorList'] and 'author' in paper['authorList']:
+                            for author_data in paper['authorList']['author'][:3]:  # Limit to first 3
+                                last_name = author_data.get('lastName', '')
+                                first_name = author_data.get('firstName', '') or author_data.get('initials', '')
+                                if last_name:
+                                    authors.append(Author(last_name=last_name, first_name=first_name))
+                        
+                        # Get publication year
+                        year = 2024
+                        if 'pubYear' in paper:
+                            try:
+                                year = int(paper['pubYear'])
+                            except:
+                                pass
+                        
+                        # Create URL (prefer DOI, fall back to PMC or PMID)
+                        url = None
+                        if 'doi' in paper and paper['doi']:
+                            url = f"https://doi.org/{paper['doi']}"
+                        elif 'pmcid' in paper and paper['pmcid']:
+                            url = f"https://europepmc.org/article/PMC/{paper['pmcid'].replace('PMC', '')}"
+                        elif 'pmid' in paper and paper['pmid']:
+                            url = f"https://pubmed.ncbi.nlm.nih.gov/{paper['pmid']}/"
+                        
+                        citation = Citation(
+                            title=paper.get('title', 'Unknown Title'),
+                            authors=authors,
+                            journal=paper.get('journalTitle', 'Unknown Journal'),
+                            publication_date=datetime(year, 1, 1),
+                            url=url,
+                            source_type="europe_pmc",
+                            relevance_score=0.75,
+                            pmid=paper.get('pmid'),
+                            doi=paper.get('doi')
+                        )
+                        citations.append(citation)
+                        
+                    except Exception as e:
+                        logger.warning(f"Error parsing Europe PMC entry: {e}")
+                        continue
+                        
+        except Exception as e:
+            logger.error(f"Europe PMC search error: {e}")
         
         return citations
 
