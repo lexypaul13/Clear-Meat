@@ -221,44 +221,31 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
         # Use real scientific citations from the advanced search system
         original_citations = assessment.get("citations", [])
         
-        # DEBUG: Log citation data to understand what's happening
-        logger.info(f"[CITATION DEBUG] Assessment type: {type(assessment)}")
-        logger.info(f"[CITATION DEBUG] Assessment keys: {list(assessment.keys()) if isinstance(assessment, dict) else 'Not a dict'}")
-        logger.info(f"[CITATION DEBUG] Original citations count: {len(original_citations)}")
-        for i, citation in enumerate(original_citations):
-            logger.info(f"[CITATION DEBUG] Citation {i}: title='{citation.get('title', '')}', url='{citation.get('url', '')}', source='{citation.get('source', '')}'")
-        
-        # Filter and use only real, valid citations
+        # Filter and use only valid citations with URLs
         valid_citations = []
         for citation in original_citations:
             title = citation.get("title", "")
             url = citation.get("url", "")
             
-            # EMERGENCY FIX: Allow ALL citations through to test
-            valid_citations.append({
-                "id": citation.get("id", len(valid_citations) + 1),
-                "title": truncate_text(title or "No Title", 100),
-                "year": citation.get("year", 2024),
-                "url": url or "https://placeholder.com",
-                "source_type": citation.get("source_type", "research"),
-                "journal": citation.get("source", ""),
-                "format": "APA"
-            })
-                
-        logger.info(f"[CITATION DEBUG] Valid citations after filtering: {len(valid_citations)}")
+            # Only include citations that have URLs (fixed fallback citations now have URLs)
+            if url and url.strip():
+                valid_citations.append({
+                    "id": citation.get("id", len(valid_citations) + 1),
+                    "title": truncate_text(title, 100),
+                    "year": citation.get("year", 2024),
+                    "url": url,
+                    "source_type": citation.get("source_type", "research"),
+                    "journal": citation.get("source", ""),
+                    "format": "APA"
+                })
         
-        # Use only valid real citations - no fake fallbacks
+        # Use filtered citations with URLs
         optimized["citations"] = valid_citations
         
         # Keep essential metadata but minimize it
         optimized["meta"] = {
             "product": assessment.get("metadata", {}).get("product_name", ""),
-            "generated": assessment.get("metadata", {}).get("generated_at", "")[:10],  # Just date, not full timestamp
-            "debug_citations": {
-                "original_count": len(original_citations),
-                "valid_count": len(valid_citations),
-                "sample_citation": original_citations[0] if original_citations else None
-            }
+            "generated": assessment.get("metadata", {}).get("generated_at", "")[:10]  # Just date, not full timestamp
         }
         
         return optimized
@@ -1307,10 +1294,8 @@ async def get_product_health_assessment_mcp(
         
         logger.info("Step 3: MCP health assessment generated successfully")
         
-        # DEBUG: Show raw assessment before mobile optimization
+        # Optimize response for mobile if requested
         if format == "mobile":
-            assessment["debug_raw_citations"] = assessment.get("citations", [])
-            assessment["debug_deployment_id"] = "deploy_20250720_1901"
             assessment = _optimize_for_mobile(assessment)
         
         # Return dict directly to avoid Pydantic model conversion issues

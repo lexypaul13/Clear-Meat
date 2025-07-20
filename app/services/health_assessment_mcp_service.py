@@ -59,13 +59,13 @@ class HealthAssessmentMCPService:
             # Generate cache key with version to force refresh with enhanced citation system
             # Add timestamp to force fresh generation for debugging
             import time
-            cache_key = cache.generate_key(product.product.code, prefix=f"health_assessment_mcp_v15_debug_{int(time.time())}")
+            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v16_fixed_citations")
             
-            # TEMPORARILY DISABLE CACHE for debugging
-            # cached_result = cache.get(cache_key)
-            # if cached_result:
-            #     logger.info(f"Returning cached MCP health assessment for product {product.product.code}")
-            #     return cached_result  # Return dict directly, not HealthAssessment object
+            # Check cache first with fixed citation URLs
+            cached_result = cache.get(cache_key)
+            if cached_result:
+                logger.info(f"Returning cached MCP health assessment for product {product.product.code}")
+                return cached_result  # Return dict directly, not HealthAssessment object
             
             logger.info(f"[MCP Health Assessment] Analyzing product: {product.product.name}")
             
