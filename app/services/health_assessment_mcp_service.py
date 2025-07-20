@@ -59,7 +59,7 @@ class HealthAssessmentMCPService:
             # Generate cache key with version to force refresh with enhanced citation system
             # Add timestamp to force fresh generation for debugging
             import time
-            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v16_fixed_citations")
+            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v17_merge_fixed")
             
             # Check cache first with fixed citation URLs
             cached_result = cache.get(cache_key)
