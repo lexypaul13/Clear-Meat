@@ -61,11 +61,11 @@ class HealthAssessmentMCPService:
             import time
             cache_key = cache.generate_key(product.product.code, prefix=f"health_assessment_mcp_v15_debug_{int(time.time())}")
             
-            # Check cache first
-            cached_result = cache.get(cache_key)
-            if cached_result:
-                logger.info(f"Returning cached MCP health assessment for product {product.product.code}")
-                return cached_result  # Return dict directly, not HealthAssessment object
+            # TEMPORARILY DISABLE CACHE for debugging
+            # cached_result = cache.get(cache_key)
+            # if cached_result:
+            #     logger.info(f"Returning cached MCP health assessment for product {product.product.code}")
+            #     return cached_result  # Return dict directly, not HealthAssessment object
             
             logger.info(f"[MCP Health Assessment] Analyzing product: {product.product.name}")
             
