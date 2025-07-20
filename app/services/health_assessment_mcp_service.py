@@ -680,10 +680,13 @@ class HealthAssessmentMCPService:
             # Update the assessment with real ingredient data
             preliminary_assessment["ingredients_assessment"] = updated_ingredients_assessment
             
-            # Update citations with real ingredient data
-            preliminary_assessment["citations"] = self._update_citations_for_ingredients(
+            # Preserve existing citations instead of overwriting them
+            existing_citations = preliminary_assessment.get("citations", [])
+            new_citations = self._update_citations_for_ingredients(
                 high_risk_ingredients, moderate_risk_ingredients
             )
+            # Keep existing citations and add any new ones (don't lose working citations)
+            preliminary_assessment["citations"] = existing_citations + new_citations
             
             logger.info(f"[Merge] Successfully merged {len(high_risk_ingredients)} high-risk and {len(moderate_risk_ingredients)} moderate-risk ingredients")
             return preliminary_assessment
