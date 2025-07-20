@@ -1313,8 +1313,9 @@ async def get_product_health_assessment_mcp(
         
         logger.info("Step 3: MCP health assessment generated successfully")
         
-        # Optimize response for mobile if requested
+        # DEBUG: Show raw assessment before mobile optimization
         if format == "mobile":
+            assessment["debug_raw_citations"] = assessment.get("citations", [])
             assessment = _optimize_for_mobile(assessment)
         
         # Return dict directly to avoid Pydantic model conversion issues
