@@ -59,7 +59,7 @@ class HealthAssessmentMCPService:
             # Generate cache key with version to force refresh with enhanced citation system
             # Add timestamp to force fresh generation for debugging
             import time
-            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v18_real_citations")
+            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v19_enhanced_citations")
             
             # Check cache first with fixed citation URLs
             cached_result = cache.get(cache_key)
@@ -1470,20 +1470,9 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
     async def _generate_real_citations(self, high_risk_ingredients: List[str], moderate_risk_ingredients: List[str]) -> List[Dict[str, Any]]:
         """Generate real scientific citations for concerning ingredients found in the product."""
         try:
-            logger.info(f"[Railway Test] Starting citation generation for {len(high_risk_ingredients)} high-risk, {len(moderate_risk_ingredients)} moderate-risk ingredients")
+            logger.info(f"[Real Citations] Starting citation generation for {len(high_risk_ingredients)} high-risk, {len(moderate_risk_ingredients)} moderate-risk ingredients")
             
-            # FORCE TEST: Always return a citation to test response structure
-            logger.info("[Force Test] Forcing citation generation to test Railway response structure")
-            return [{
-                "id": 1,
-                "title": "Test FDA Citation for Railway Debugging",
-                "source": "FDA.gov Food Safety",
-                "year": 2024,
-                "url": "https://www.fda.gov/food/food-additives-petitions/food-additive-status-list",
-                "source_type": "fda_web"
-            }]
-            
-            # OLD ENHANCED LOGIC (temporarily disabled for testing)
+            # ENHANCED CITATION LOGIC - Real scientific research
             from app.services.citation_tools import CitationSearchService
             from app.models.citation import CitationSearch
             
