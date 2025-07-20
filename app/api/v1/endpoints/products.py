@@ -234,12 +234,10 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
             title = citation.get("title", "")
             url = citation.get("url", "")
             
-            # Only include real scientific citations (not dummy or fallback messages)
-            if (title and 
-                "Scientific research will be updated" not in title and
-                "Research on " not in title and  # Skip our generated fallback titles
-                "Research could not be found" not in title and
-                url and url.strip()):
+            # DEBUG: Temporarily allow all citations with URLs to see what's being filtered
+            logger.info(f"[CITATION DEBUG] Checking citation: title='{title}', url='{url}'")
+            if url and url.strip():
+                logger.info(f"[CITATION DEBUG] Citation PASSED URL filter: {title}")
                 
                 valid_citations.append({
                     "id": citation.get("id", len(valid_citations) + 1),
@@ -250,6 +248,8 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
                     "journal": citation.get("source", ""),  # Use source as journal for display
                     "format": "APA"
                 })
+            else:
+                logger.info(f"[CITATION DEBUG] Citation FAILED URL filter: title='{title}', url='{url}'")
                 
         logger.info(f"[CITATION DEBUG] Valid citations after filtering: {len(valid_citations)}")
         
