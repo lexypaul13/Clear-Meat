@@ -259,7 +259,12 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
         # Keep essential metadata but minimize it
         optimized["meta"] = {
             "product": assessment.get("metadata", {}).get("product_name", ""),
-            "generated": assessment.get("metadata", {}).get("generated_at", "")[:10]  # Just date, not full timestamp
+            "generated": assessment.get("metadata", {}).get("generated_at", "")[:10],  # Just date, not full timestamp
+            "debug_citations": {
+                "original_count": len(original_citations),
+                "valid_count": len(valid_citations),
+                "sample_citation": original_citations[0] if original_citations else None
+            }
         }
         
         return optimized
