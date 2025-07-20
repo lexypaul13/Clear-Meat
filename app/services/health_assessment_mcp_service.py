@@ -1560,7 +1560,8 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
                             "title": citation_data['title'],
                             "source": citation_data['source'],
                             "year": citation_data['year'],
-                            "url": citation_data.get('url')
+                            "url": citation_data.get('url'),
+                            "source_type": citation_data.get('source_type', 'research')
                         })
                         citation_id += 1
             
@@ -1615,7 +1616,8 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
                             "title": citation.title[:100] + "..." if len(citation.title) > 100 else citation.title,
                             "source": citation.journal or ("Academic Research" if risk_level == "high" else "Scientific Research Database"),
                             "year": citation.publication_date.year if citation.publication_date else (2023 if risk_level == "high" else 2024),
-                            "url": url
+                            "url": url,
+                            "source_type": getattr(citation, 'source_type', 'research')
                         })
                     
                     return {"citations": citations_data}

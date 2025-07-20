@@ -239,6 +239,8 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
                     "title": truncate_text(title, 100),
                     "year": citation.get("year", 2024),
                     "url": url,
+                    "source_type": citation.get("source_type", "research"),  # Preserve source type for iOS
+                    "journal": citation.get("source", ""),  # Use source as journal for display
                     "format": "APA"
                 })
         
