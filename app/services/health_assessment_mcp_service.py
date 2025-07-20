@@ -57,7 +57,9 @@ class HealthAssessmentMCPService:
         """
         try:
             # Generate cache key with version to force refresh with enhanced citation system
-            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v14_enhanced_citations")
+            # Add timestamp to force fresh generation for debugging
+            import time
+            cache_key = cache.generate_key(product.product.code, prefix=f"health_assessment_mcp_v15_debug_{int(time.time() // 3600)}")
             
             # Check cache first
             cached_result = cache.get(cache_key)
