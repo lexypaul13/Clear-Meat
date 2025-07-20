@@ -940,7 +940,10 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
                 assessment_data["nutrition_insights"] = self._generate_fallback_nutrition_insights(self._current_product)
             
             # Generate real scientific citations using MCP
-            assessment_data["citations"] = await self._generate_real_citations(high_risk_ingredients, moderate_risk_ingredients)
+            logger.info(f"[Citation Debug] About to generate citations for {len(high_risk_ingredients)} high-risk and {len(moderate_risk_ingredients)} moderate-risk ingredients")
+            citations_result = await self._generate_real_citations(high_risk_ingredients, moderate_risk_ingredients)
+            logger.info(f"[Citation Debug] Generated {len(citations_result)} citations: {[c.get('title', 'No title')[:50] for c in citations_result]}")
+            assessment_data["citations"] = citations_result
             
             # Analyze product quality indicators
             product_name = self._current_product.product.name.lower() if self._current_product else ""
