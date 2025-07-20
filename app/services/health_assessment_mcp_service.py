@@ -149,7 +149,10 @@ class HealthAssessmentMCPService:
             return assessment_result
             
         except Exception as e:
-            logger.error(f"Error generating MCP health assessment: {e}")
+            logger.error(f"[MCP EXCEPTION DEBUG] Main MCP service failed: {e}")
+            logger.error(f"[MCP EXCEPTION DEBUG] Exception type: {type(e).__name__}")
+            import traceback
+            logger.error(f"[MCP EXCEPTION DEBUG] Full traceback: {traceback.format_exc()}")
             return None
     
     async def _categorize_ingredients_with_gemini(self, product: ProductStructured) -> Optional[Dict[str, Any]]:
@@ -1008,10 +1011,16 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
             assessment_data["metadata"]["product_brand"] = self._current_product.product.brand or ""
             assessment_data["metadata"]["ingredients"] = self._current_product.product.ingredients_text or ""
             
+            logger.info(f"[SUCCESS DEBUG] Assessment function completing successfully. Citations: {len(assessment_data.get('citations', []))}")
+            logger.info(f"[SUCCESS DEBUG] Assessment data keys: {list(assessment_data.keys())}")
             return assessment_data
             
         except Exception as e:
-            logger.error(f"Error parsing assessment response: {e}")
+            logger.error(f"[EXCEPTION DEBUG] Assessment function failed at parsing stage: {e}")
+            logger.error(f"[EXCEPTION DEBUG] Exception type: {type(e).__name__}")
+            logger.error(f"[EXCEPTION DEBUG] Exception details: {str(e)}")
+            import traceback
+            logger.error(f"[EXCEPTION DEBUG] Full traceback: {traceback.format_exc()}")
             return None
     
     def _split_response_into_sections(self, response_text: str) -> Dict[str, str]:
