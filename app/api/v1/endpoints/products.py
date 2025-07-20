@@ -234,22 +234,16 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
             title = citation.get("title", "")
             url = citation.get("url", "")
             
-            # DEBUG: Temporarily allow all citations with URLs to see what's being filtered
-            logger.info(f"[CITATION DEBUG] Checking citation: title='{title}', url='{url}'")
-            if url and url.strip():
-                logger.info(f"[CITATION DEBUG] Citation PASSED URL filter: {title}")
-                
-                valid_citations.append({
-                    "id": citation.get("id", len(valid_citations) + 1),
-                    "title": truncate_text(title, 100),
-                    "year": citation.get("year", 2024),
-                    "url": url,
-                    "source_type": citation.get("source_type", "research"),  # Preserve source type for iOS
-                    "journal": citation.get("source", ""),  # Use source as journal for display
-                    "format": "APA"
-                })
-            else:
-                logger.info(f"[CITATION DEBUG] Citation FAILED URL filter: title='{title}', url='{url}'")
+            # EMERGENCY FIX: Allow ALL citations through to test
+            valid_citations.append({
+                "id": citation.get("id", len(valid_citations) + 1),
+                "title": truncate_text(title or "No Title", 100),
+                "year": citation.get("year", 2024),
+                "url": url or "https://placeholder.com",
+                "source_type": citation.get("source_type", "research"),
+                "journal": citation.get("source", ""),
+                "format": "APA"
+            })
                 
         logger.info(f"[CITATION DEBUG] Valid citations after filtering: {len(valid_citations)}")
         
