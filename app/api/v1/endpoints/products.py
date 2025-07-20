@@ -221,6 +221,11 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
         # Use real scientific citations from the advanced search system
         original_citations = assessment.get("citations", [])
         
+        # DEBUG: Log citation data to understand what's happening
+        logger.info(f"[CITATION DEBUG] Original citations count: {len(original_citations)}")
+        for i, citation in enumerate(original_citations):
+            logger.info(f"[CITATION DEBUG] Citation {i}: title='{citation.get('title', '')}', url='{citation.get('url', '')}', source='{citation.get('source', '')}'")
+        
         # Filter and use only real, valid citations
         valid_citations = []
         for citation in original_citations:
@@ -243,6 +248,8 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
                     "journal": citation.get("source", ""),  # Use source as journal for display
                     "format": "APA"
                 })
+                
+        logger.info(f"[CITATION DEBUG] Valid citations after filtering: {len(valid_citations)}")
         
         # Use only valid real citations - no fake fallbacks
         optimized["citations"] = valid_citations
