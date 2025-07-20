@@ -1496,6 +1496,8 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
                         break
             
             logger.info(f"[Real Citations] Researching {len(ingredients_to_research)} concerning ingredients: {len(high_risk_ingredients)} high-risk, {len(moderate_risk_ingredients)} moderate-risk, {len(ingredients_to_research) - len(high_risk_ingredients) - len(moderate_risk_ingredients)} additives")
+            logger.info(f"[Debug] All ingredients found: {all_ingredients}")
+            logger.info(f"[Debug] Ingredients to research: {[item[0] for item in ingredients_to_research]}")
             
             # Research ingredients in parallel with web sources as fallback
             citation_tasks = []
