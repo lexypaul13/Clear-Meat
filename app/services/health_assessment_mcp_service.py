@@ -134,12 +134,18 @@ class HealthAssessmentMCPService:
                 assessment_result = self._merge_categorization_with_assessment(
                     preliminary_assessment, basic_categorization, high_risk_ingredients, moderate_risk_ingredients
                 )
+                # Add debug marker to show we used enhanced assessment
+                if assessment_result:
+                    assessment_result["debug_path"] = "enhanced_assessment_merged"
                 logger.info(f"[Parallel Processing] Successfully merged categorization with assessment")
             
             # Step 4: If assessment generation fails, create minimal fallback assessment
             if not assessment_result and existing_risk_rating:
                 logger.warning(f"Assessment generation failed, creating minimal fallback assessment using risk_rating: {existing_risk_rating}")
                 assessment_result = self.create_minimal_fallback_assessment(product, existing_risk_rating)
+                # Add debug marker to show we used fallback
+                if assessment_result:
+                    assessment_result["debug_path"] = "fallback_assessment"
             
             if assessment_result:
                 # Cache the result - assessment_result is already a dict
@@ -682,11 +688,13 @@ class HealthAssessmentMCPService:
             
             # Preserve existing citations instead of overwriting them
             existing_citations = preliminary_assessment.get("citations", [])
+            logger.info(f"[MERGE FIX DEBUG] Found {len(existing_citations)} existing citations before merge")
             new_citations = self._update_citations_for_ingredients(
                 high_risk_ingredients, moderate_risk_ingredients
             )
             # Keep existing citations and add any new ones (don't lose working citations)
             preliminary_assessment["citations"] = existing_citations + new_citations
+            logger.info(f"[MERGE FIX DEBUG] Final citations after merge: {len(preliminary_assessment.get('citations', []))}")
             
             logger.info(f"[Merge] Successfully merged {len(high_risk_ingredients)} high-risk and {len(moderate_risk_ingredients)} moderate-risk ingredients")
             return preliminary_assessment
