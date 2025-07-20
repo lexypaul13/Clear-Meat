@@ -222,6 +222,8 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
         original_citations = assessment.get("citations", [])
         
         # DEBUG: Log citation data to understand what's happening
+        logger.info(f"[CITATION DEBUG] Assessment type: {type(assessment)}")
+        logger.info(f"[CITATION DEBUG] Assessment keys: {list(assessment.keys()) if isinstance(assessment, dict) else 'Not a dict'}")
         logger.info(f"[CITATION DEBUG] Original citations count: {len(original_citations)}")
         for i, citation in enumerate(original_citations):
             logger.info(f"[CITATION DEBUG] Citation {i}: title='{citation.get('title', '')}', url='{citation.get('url', '')}', source='{citation.get('source', '')}'")
