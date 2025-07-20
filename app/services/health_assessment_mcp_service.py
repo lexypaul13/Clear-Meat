@@ -508,7 +508,8 @@ class HealthAssessmentMCPService:
                     "id": 1,
                     "title": "OpenFoodFacts Product Database",
                     "source": "OpenFoodFacts",
-                    "year": 2024
+                    "year": 2024,
+                    "url": "https://world.openfoodfacts.org/"
                 }
             ],
             "metadata": {
