@@ -1466,6 +1466,8 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
             all_ingredients = []
             if self._current_product and self._current_product.product.ingredients_text:
                 all_ingredients = self._extract_all_ingredients(self._current_product.product.ingredients_text)
+                logger.info(f"[Enhanced Debug] Product ingredients text: {self._current_product.product.ingredients_text}")
+                logger.info(f"[Enhanced Debug] Extracted ingredients: {all_ingredients}")
             
             # Define concerning additives/preservatives that warrant citation search
             concerning_additives = [
