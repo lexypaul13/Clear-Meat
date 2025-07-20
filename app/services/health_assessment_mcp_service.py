@@ -943,9 +943,22 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
             
             # Generate real scientific citations using MCP
             logger.info(f"[Citation Debug] About to generate citations for {len(high_risk_ingredients)} high-risk and {len(moderate_risk_ingredients)} moderate-risk ingredients")
-            citations_result = await self._generate_real_citations(high_risk_ingredients, moderate_risk_ingredients)
-            logger.info(f"[Citation Debug] Generated {len(citations_result)} citations: {[c.get('title', 'No title')[:50] for c in citations_result]}")
-            assessment_data["citations"] = citations_result
+            
+            # BYPASS TEST: Skip citation function entirely
+            logger.info("[Bypass Test] Skipping citation function, adding hardcoded citation")
+            assessment_data["citations"] = [{
+                "id": 1,
+                "title": "Test Citation Added Directly",
+                "source": "Direct Assignment Test",
+                "year": 2024,
+                "url": "https://test.com",
+                "source_type": "test"
+            }]
+            
+            # OLD CODE (commented out for bypass test)
+            # citations_result = await self._generate_real_citations(high_risk_ingredients, moderate_risk_ingredients)
+            # logger.info(f"[Citation Debug] Generated {len(citations_result)} citations: {[c.get('title', 'No title')[:50] for c in citations_result]}")
+            # assessment_data["citations"] = citations_result
             
             # Analyze product quality indicators
             product_name = self._current_product.product.name.lower() if self._current_product else ""
@@ -1457,28 +1470,16 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
         try:
             logger.info(f"[Railway Test] Starting citation generation for {len(high_risk_ingredients)} high-risk, {len(moderate_risk_ingredients)} moderate-risk ingredients")
             
-            # TEMPORARY: Simple fallback to test Railway environment
-            if self._current_product and self._current_product.product.ingredients_text:
-                ingredients_text = self._current_product.product.ingredients_text.lower()
-                logger.info(f"[Railway Test] Checking ingredients: {ingredients_text[:100]}...")
-                
-                # Simple check for common preservatives
-                if any(term in ingredients_text for term in ['nitrite', 'nitrate', 'phosphate', 'msg']):
-                    logger.info("[Railway Test] Found preservatives, generating test citation")
-                    return [{
-                        "id": 1,
-                        "title": "FDA Food Additive Safety Information",
-                        "source": "FDA.gov Food Safety",
-                        "year": 2024,
-                        "url": "https://www.fda.gov/food/food-additives-petitions/food-additive-status-list",
-                        "source_type": "fda_web"
-                    }]
-                else:
-                    logger.info("[Railway Test] No preservatives found")
-                    return []
-            else:
-                logger.info("[Railway Test] No product or ingredients text available")
-                return []
+            # FORCE TEST: Always return a citation to test response structure
+            logger.info("[Force Test] Forcing citation generation to test Railway response structure")
+            return [{
+                "id": 1,
+                "title": "Test FDA Citation for Railway Debugging",
+                "source": "FDA.gov Food Safety",
+                "year": 2024,
+                "url": "https://www.fda.gov/food/food-additives-petitions/food-additive-status-list",
+                "source_type": "fda_web"
+            }]
             
             # OLD ENHANCED LOGIC (temporarily disabled for testing)
             from app.services.citation_tools import CitationSearchService
