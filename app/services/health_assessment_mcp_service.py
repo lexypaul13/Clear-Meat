@@ -59,7 +59,7 @@ class HealthAssessmentMCPService:
             # Generate cache key with version to force refresh with enhanced citation system
             # Add timestamp to force fresh generation for debugging
             import time
-            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v17_merge_fixed")
+            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v18_real_citations")
             
             # Check cache first with fixed citation URLs
             cached_result = cache.get(cache_key)
@@ -951,21 +951,10 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
             # Generate real scientific citations using MCP
             logger.info(f"[Citation Debug] About to generate citations for {len(high_risk_ingredients)} high-risk and {len(moderate_risk_ingredients)} moderate-risk ingredients")
             
-            # BYPASS TEST: Skip citation function entirely
-            logger.info("[Bypass Test] Skipping citation function, adding hardcoded citation")
-            assessment_data["citations"] = [{
-                "id": 1,
-                "title": "Test Citation Added Directly",
-                "source": "Direct Assignment Test",
-                "year": 2024,
-                "url": "https://test.com",
-                "source_type": "test"
-            }]
-            
-            # OLD CODE (commented out for bypass test)
-            # citations_result = await self._generate_real_citations(high_risk_ingredients, moderate_risk_ingredients)
-            # logger.info(f"[Citation Debug] Generated {len(citations_result)} citations: {[c.get('title', 'No title')[:50] for c in citations_result]}")
-            # assessment_data["citations"] = citations_result
+            # Use real citation system
+            citations_result = await self._generate_real_citations(high_risk_ingredients, moderate_risk_ingredients)
+            logger.info(f"[Citation Debug] Generated {len(citations_result)} citations: {[c.get('title', 'No title')[:50] for c in citations_result]}")
+            assessment_data["citations"] = citations_result
             
             # Analyze product quality indicators
             product_name = self._current_product.product.name.lower() if self._current_product else ""
