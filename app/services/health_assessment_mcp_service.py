@@ -1513,15 +1513,10 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
                         })
                         citation_id += 1
             
-            # Fallback if no real research found
+            # If no real research found, return empty list (better than fake citations)
             if not citations:
-                logger.info("No research found - returning fallback message")
-                return [{
-                    "id": 1,
-                    "title": "Research could not be found for the ingredients in this product",
-                    "source": "Research Database Search",
-                    "year": 2024
-                }]
+                logger.info("No real scientific citations found for these ingredients")
+                return []  # Empty list - iOS will handle this gracefully
             
             logger.info(f"Generated {len(citations)} real citations from scientific databases")
             return citations
