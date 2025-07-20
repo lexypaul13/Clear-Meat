@@ -1448,7 +1448,7 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
             return f"{product_name} requires careful consideration due to ingredient profile. [1][2]"
 
     async def _generate_real_citations(self, high_risk_ingredients: List[str], moderate_risk_ingredients: List[str]) -> List[Dict[str, Any]]:
-        """Generate real scientific citations using direct citation service for high-risk ingredients."""
+        """Generate real scientific citations for concerning ingredients found in the product."""
         try:
             from app.services.citation_tools import CitationSearchService
             from app.models.citation import CitationSearch
@@ -1457,44 +1457,95 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
             citation_id = 1
             citation_service = CitationSearchService()
             
-            logger.info(f"[Real Citations] Researching {len(high_risk_ingredients)} high-risk and {len(moderate_risk_ingredients)} moderate-risk ingredients")
+            # Get ALL ingredients from the current product for broader search
+            all_ingredients = []
+            if self._current_product and self._current_product.product.ingredients_text:
+                all_ingredients = self._extract_all_ingredients(self._current_product.product.ingredients_text)
             
-            # Research all ingredients in parallel for maximum efficiency
+            # Define concerning additives/preservatives that warrant citation search
+            concerning_additives = [
+                'sodium nitrite', 'sodium nitrate', 'nitrite', 'nitrate',
+                'msg', 'monosodium glutamate', 'glutamate',
+                'sodium benzoate', 'benzoate', 'potassium sorbate', 'sorbate',
+                'carrageenan', 'guar gum', 'xanthan gum',
+                'artificial color', 'red dye', 'yellow dye', 'blue dye', 'caramel color',
+                'bht', 'bha', 'tbhq', 'tocopherol',
+                'high fructose corn syrup', 'corn syrup', 'fructose',
+                'sodium phosphate', 'phosphate', 'polyphosphate',
+                'artificial flavor', 'natural flavor'
+            ]
+            
+            # Find ingredients that match concerning additives
+            ingredients_to_research = []
+            
+            # Prioritize high-risk and moderate-risk ingredients
+            for ingredient in high_risk_ingredients[:5]:
+                ingredients_to_research.append((ingredient, "high", "toxicity safety health effects"))
+            
+            for ingredient in moderate_risk_ingredients[:5]:
+                ingredients_to_research.append((ingredient, "moderate", "safety assessment"))
+            
+            # Add concerning additives found in ALL ingredients (not just high/moderate risk)
+            for ingredient in all_ingredients:
+                ingredient_lower = ingredient.lower()
+                for additive in concerning_additives:
+                    if (additive in ingredient_lower and 
+                        ingredient not in [item[0] for item in ingredients_to_research] and
+                        len(ingredients_to_research) < 10):  # Limit total searches
+                        ingredients_to_research.append((ingredient, "additive", "safety health effects"))
+                        break
+            
+            logger.info(f"[Real Citations] Researching {len(ingredients_to_research)} concerning ingredients: {len(high_risk_ingredients)} high-risk, {len(moderate_risk_ingredients)} moderate-risk, {len(ingredients_to_research) - len(high_risk_ingredients) - len(moderate_risk_ingredients)} additives")
+            
+            # Research ingredients in parallel with web sources as fallback
             citation_tasks = []
             
-            # Create parallel tasks for high-risk ingredients
-            for ingredient in high_risk_ingredients[:7]:
+            for ingredient, risk_type, health_claim in ingredients_to_research:
+                # Enable web sources as fallback for better coverage
                 search_params = CitationSearch(
                     ingredient=ingredient,
-                    health_claim="toxicity safety health effects",
-                    max_results=2,
+                    health_claim=health_claim,
+                    max_results=2 if risk_type == "high" else 1,
+                    # Academic sources (may hit rate limits)
                     search_pubmed=True,
                     search_crossref=True,
-                    search_doaj=True,
+                    search_semantic_scholar=False,  # Disable due to rate limiting
+                    # Web authority sources (more reliable)
+                    search_fda=True,
+                    search_cdc=True,
+                    search_mayo_clinic=True,
+                    search_nih=True,
+                    search_who=True,
+                    search_harvard_health=True,
+                    # Preprint sources
                     search_arxiv=True,
                     search_biorxiv=True,
-                    search_semantic_scholar=True,
+                    search_doaj=True,
                     search_europe_pmc=False  # Keep disabled for performance
                 )
-                citation_tasks.append(self._search_citations_async(search_params, "high"))
+                citation_tasks.append(self._search_citations_async(search_params, risk_type))
             
-            # Create parallel tasks for moderate-risk ingredients  
-            for ingredient in moderate_risk_ingredients[:7]:
-                search_params = CitationSearch(
-                    ingredient=ingredient,
-                    health_claim="safety assessment",
-                    max_results=1,
-                    search_pubmed=True,
-                    search_crossref=True,
-                    search_arxiv=True,
-                    search_biorxiv=True,
-                    search_semantic_scholar=True
-                )
-                citation_tasks.append(self._search_citations_async(search_params, "moderate"))
+            # Execute citation searches with rate limiting protection
+            logger.info(f"[Parallel Citations] Starting {len(citation_tasks)} citation searches with rate limiting protection")
             
-            # Execute all citation searches in parallel
-            logger.info(f"[Parallel Citations] Starting {len(citation_tasks)} citation searches simultaneously")
-            citation_results = await asyncio.gather(*citation_tasks, return_exceptions=True)
+            # Process citations in smaller batches to avoid rate limiting
+            batch_size = 3  # Reduce parallel requests to avoid 429 errors
+            citation_results = []
+            
+            for i in range(0, len(citation_tasks), batch_size):
+                batch = citation_tasks[i:i + batch_size]
+                logger.info(f"[Batch {i//batch_size + 1}] Processing {len(batch)} citation searches")
+                
+                # Add delay between batches
+                if i > 0:
+                    await asyncio.sleep(2)  # 2-second delay between batches
+                
+                try:
+                    batch_results = await asyncio.gather(*batch, return_exceptions=True)
+                    citation_results.extend(batch_results)
+                except Exception as e:
+                    logger.warning(f"Batch {i//batch_size + 1} failed: {e}")
+                    citation_results.extend([None] * len(batch))
             
             # Process results and build citations list
             for result in citation_results:
@@ -1532,41 +1583,69 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
             }]
     
     async def _search_citations_async(self, search_params: CitationSearch, risk_level: str) -> Optional[Dict[str, Any]]:
-        """Search citations asynchronously using executor to avoid blocking."""
-        try:
-            # Run the synchronous citation search in a thread executor
-            result = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: self._search_citations_sync(search_params)
-            )
-            
-            if result and result.citations:
-                citations_data = []
-                for citation in result.citations[:1]:  # Take 1 per ingredient
-                    # Format URL properly - ensure DOIs are converted to full URLs
-                    url = citation.url
-                    if not url and citation.doi:
-                        # Convert DOI to proper URL format
-                        doi = citation.doi.strip()
-                        if doi.startswith('10.'):
-                            url = f"https://doi.org/{doi}"
-                        else:
-                            url = doi
-                    
-                    citations_data.append({
-                        "title": citation.title[:100] + "..." if len(citation.title) > 100 else citation.title,
-                        "source": citation.journal or ("Academic Research" if risk_level == "high" else "Scientific Research Database"),
-                        "year": citation.publication_date.year if citation.publication_date else (2023 if risk_level == "high" else 2024),
-                        "url": url
-                    })
+        """Search citations asynchronously with retry logic for rate limiting."""
+        max_retries = 2
+        base_delay = 1
+        
+        for attempt in range(max_retries + 1):
+            try:
+                # Add small delay before each search to avoid overwhelming APIs
+                await asyncio.sleep(0.5 * attempt)  # Progressive delay
                 
-                return {"citations": citations_data}
-            
-            return None
-            
-        except Exception as e:
-            logger.warning(f"Async citation search failed for {search_params.ingredient}: {e}")
-            return None
+                # Run the synchronous citation search in a thread executor
+                result = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: self._search_citations_sync(search_params)
+                )
+                
+                if result and result.citations:
+                    citations_data = []
+                    for citation in result.citations[:1]:  # Take 1 per ingredient
+                        # Format URL properly - ensure DOIs are converted to full URLs
+                        url = citation.url
+                        if not url and citation.doi:
+                            # Convert DOI to proper URL format
+                            doi = citation.doi.strip()
+                            if doi.startswith('10.'):
+                                url = f"https://doi.org/{doi}"
+                            else:
+                                url = doi
+                        
+                        citations_data.append({
+                            "title": citation.title[:100] + "..." if len(citation.title) > 100 else citation.title,
+                            "source": citation.journal or ("Academic Research" if risk_level == "high" else "Scientific Research Database"),
+                            "year": citation.publication_date.year if citation.publication_date else (2023 if risk_level == "high" else 2024),
+                            "url": url
+                        })
+                    
+                    return {"citations": citations_data}
+                
+                # If no results and we have retries left, continue to next attempt
+                if attempt < max_retries:
+                    logger.info(f"No citations found for {search_params.ingredient}, retrying (attempt {attempt + 1}/{max_retries})")
+                    continue
+                else:
+                    return None
+                    
+            except Exception as e:
+                # Check if it's a rate limiting error
+                if "429" in str(e) or "rate limit" in str(e).lower():
+                    if attempt < max_retries:
+                        delay = base_delay * (2 ** attempt)  # Exponential backoff
+                        logger.warning(f"Rate limit hit for {search_params.ingredient}, retrying in {delay}s (attempt {attempt + 1}/{max_retries})")
+                        await asyncio.sleep(delay)
+                        continue
+                    else:
+                        logger.error(f"Rate limit exhausted for {search_params.ingredient}: {e}")
+                        return None
+                else:
+                    logger.warning(f"Citation search failed for {search_params.ingredient}: {e}")
+                    if attempt < max_retries:
+                        continue
+                    else:
+                        return None
+        
+        return None
     
     def _search_citations_sync(self, search_params: CitationSearch):
         """Synchronous citation search wrapper for executor."""

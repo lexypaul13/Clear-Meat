@@ -115,6 +115,9 @@ class CitationSearch(BaseModel):
     search_fda: bool = True
     search_who: bool = True
     search_harvard_health: bool = True
+    search_cdc: bool = True
+    search_mayo_clinic: bool = True
+    search_nih: bool = True
     
     # Free research databases
     search_doaj: bool = True  # Directory of Open Access Journals
