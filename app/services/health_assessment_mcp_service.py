@@ -1455,6 +1455,32 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
     async def _generate_real_citations(self, high_risk_ingredients: List[str], moderate_risk_ingredients: List[str]) -> List[Dict[str, Any]]:
         """Generate real scientific citations for concerning ingredients found in the product."""
         try:
+            logger.info(f"[Railway Test] Starting citation generation for {len(high_risk_ingredients)} high-risk, {len(moderate_risk_ingredients)} moderate-risk ingredients")
+            
+            # TEMPORARY: Simple fallback to test Railway environment
+            if self._current_product and self._current_product.product.ingredients_text:
+                ingredients_text = self._current_product.product.ingredients_text.lower()
+                logger.info(f"[Railway Test] Checking ingredients: {ingredients_text[:100]}...")
+                
+                # Simple check for common preservatives
+                if any(term in ingredients_text for term in ['nitrite', 'nitrate', 'phosphate', 'msg']):
+                    logger.info("[Railway Test] Found preservatives, generating test citation")
+                    return [{
+                        "id": 1,
+                        "title": "FDA Food Additive Safety Information",
+                        "source": "FDA.gov Food Safety",
+                        "year": 2024,
+                        "url": "https://www.fda.gov/food/food-additives-petitions/food-additive-status-list",
+                        "source_type": "fda_web"
+                    }]
+                else:
+                    logger.info("[Railway Test] No preservatives found")
+                    return []
+            else:
+                logger.info("[Railway Test] No product or ingredients text available")
+                return []
+            
+            # OLD ENHANCED LOGIC (temporarily disabled for testing)
             from app.services.citation_tools import CitationSearchService
             from app.models.citation import CitationSearch
             
