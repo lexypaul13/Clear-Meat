@@ -68,7 +68,7 @@ class HealthAssessmentMCPService:
             # Generate cache key with version to force refresh with enhanced citation system
             # Add timestamp to force fresh generation for debugging
             import time
-            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v24_langchain_intelligent")
+            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v25_no_generic_citations")
             
             # Check cache first with fixed citation URLs
             cached_result = cache.get(cache_key)
@@ -549,51 +549,19 @@ class HealthAssessmentMCPService:
         else:
             summary = "This product appears to have minimal concerning additives based on current analysis."
         
-        # Create citations for dangerous ingredients
+        # Citations will be populated by LangChain research if available
+        # If no research citations are found, provide an informational message
         citations = []
-        citation_id = 1
         
-        if "Sodium Nitrite" in high_risk_ingredients:
-            citations.append({
-                "id": citation_id,
-                "title": "FDA Guidance on Sodium Nitrite in Processed Meats",
-                "source": "FDA.gov",
-                "year": 2024,
-                "url": "https://www.fda.gov/food/food-additives-petitions/sodium-reduction",
-                "source_type": "fda_web"
-            })
-            citation_id += 1
-            
-            citations.append({
-                "id": citation_id,
-                "title": "WHO Report on Processed Meat and Cancer Risk",
-                "source": "World Health Organization",
-                "year": 2023,
-                "url": "https://www.who.int/news-room/q-a-detail/cancer-carcinogenicity-of-the-consumption-of-red-meat-and-processed-meat",
-                "source_type": "who_web"
-            })
-            citation_id += 1
-        
-        if any("BHA" in ingredient or "BHT" in ingredient for ingredient in moderate_risk_ingredients):
-            citations.append({
-                "id": citation_id,
-                "title": "CDC Information on BHA and BHT Safety",
-                "source": "Centers for Disease Control",
-                "year": 2024,
-                "url": "https://www.cdc.gov/nutrition/food-safety/index.html",
-                "source_type": "cdc_web"
-            })
-            citation_id += 1
-        
-        # Add fallback citation if no specific ones
+        # Add informational citation when no research is available
         if not citations:
             citations.append({
                 "id": 1,
-                "title": "FDA Food Additive Safety Guidelines",
-                "source": "FDA.gov",
-                "year": 2024,
-                "url": "https://www.fda.gov/food/food-additives-petitions/food-additive-status-list",
-                "source_type": "fda_web"
+                "title": "Research citations not available",
+                "source": "Clear-Meat Analysis",
+                "year": datetime.now().year,
+                "url": "",
+                "source_type": "info_message"
             })
         
         assessment_result = {

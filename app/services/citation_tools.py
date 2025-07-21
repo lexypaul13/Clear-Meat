@@ -486,32 +486,57 @@ class CitationSearchService:
                     logger.warning(f"Error parsing FDA result: {e}")
                     continue
             
-            # If no results found, try direct FDA pages for common ingredients
+            # If no results found, try more specific FDA searches with ingredient-specific terms
             if not citations and len(query.split()[0]) > 2:
                 ingredient = query.split()[0].lower()
                 
-                # Known FDA pages for common ingredients
-                direct_pages = {
-                    "salt": ("Sodium Reduction Initiative", "https://www.fda.gov/food/food-additives-petitions/sodium-reduction"),
-                    "sodium": ("Sodium in Your Diet", "https://www.fda.gov/food/nutrition-education-resources-materials/sodium-your-diet"),
-                    "sugar": ("Added Sugars on the Nutrition Facts Label", "https://www.fda.gov/food/nutrition-facts-label/added-sugars-nutrition-facts-label"),
-                    "nitrite": ("Food Additive Status List", "https://www.fda.gov/food/food-additives-petitions/food-additive-status-list"),
-                    "msg": ("Questions and Answers on MSG", "https://www.fda.gov/food/food-additives-petitions/questions-and-answers-monosodium-glutamate-msg")
-                }
+                # Try additional FDA search terms for better results
+                enhanced_searches = [
+                    f"{ingredient} safety assessment site:fda.gov",
+                    f"{ingredient} toxicology site:fda.gov",
+                    f"{ingredient} GRAS notice site:fda.gov",
+                    f"{ingredient} food additive petition site:fda.gov"
+                ]
                 
-                if ingredient in direct_pages:
-                    title, url = direct_pages[ingredient]
-                    citation = Citation(
-                        title=f"FDA: {title}",
-                        authors=[Author(last_name="FDA", first_name="U.S. Food and Drug Administration")],
-                        journal="FDA.gov Consumer Information",
-                        publication_date=datetime(2024, 1, 1),
-                        url=url,
-                        abstract=f"Official FDA guidance on {ingredient} in food products, safety assessments, and health recommendations",
-                        source_type="fda_web",
-                        relevance_score=0.9
-                    )
-                    citations.append(citation)
+                for enhanced_query in enhanced_searches:
+                    try:
+                        search_url = f"https://search.fda.gov/search?utf8=✓&affiliate=fda1&query={requests.utils.quote(enhanced_query)}&commit=Search"
+                        response = requests.get(search_url, headers=headers, timeout=10)
+                        
+                        if response.status_code == 200:
+                            soup = BeautifulSoup(response.content, 'html.parser')
+                            results = soup.find_all('div', class_='result')[:2]  # Get top 2 results
+                            
+                            for idx, result in enumerate(results):
+                                title_elem = result.find('a')
+                                if title_elem and title_elem.get('href'):
+                                    title = title_elem.get_text(strip=True)
+                                    url = title_elem.get('href')
+                                    
+                                    if not url.startswith('http'):
+                                        url = f"https://www.fda.gov{url}"
+                                    
+                                    # Only add if it's a substantive result, not the generic status list
+                                    if 'food-additive-status-list' not in url and len(title) > 20:
+                                        citation = Citation(
+                                            title=f"FDA: {title}",
+                                            authors=[Author(last_name="FDA", first_name="U.S. Food and Drug Administration")],
+                                            journal="FDA.gov",
+                                            publication_date=datetime(2024, 1, 1),
+                                            url=url,
+                                            abstract=f"FDA guidance on {ingredient} safety and regulatory status",
+                                            source_type="fda_web",
+                                            relevance_score=0.8 - (idx * 0.1)
+                                        )
+                                        citations.append(citation)
+                            
+                            # Stop searching if we found results
+                            if citations:
+                                break
+                                
+                    except Exception as e:
+                        logger.warning(f"Enhanced FDA search failed for {enhanced_query}: {e}")
+                        continue
             
                 
         except requests.RequestException as e:
