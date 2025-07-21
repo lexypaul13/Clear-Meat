@@ -508,56 +508,6 @@ class HealthAssessmentMCPService:
             "low_risk": []
         }
         
-        # Process high-risk ingredients with analyses
-        for ingredient in high_risk_ingredients:
-            analysis = ""
-            if ingredient_analyses and 'high' in ingredient_analyses:
-                analysis = ingredient_analyses['high'].get(ingredient, "")
-            
-            if not analysis:
-                analysis = self._generate_ingredient_specific_fallback(ingredient, "high")
-            
-            ingredients_assessment["high_risk"].append({
-                "name": ingredient,
-                "risk_level": "high",
-                "micro_report": analysis,
-                "citations": [1, 2]  # Reference to citations we'll generate
-            })
-            logger.info(f"[DIRECT ASSESSMENT] Added high-risk: {ingredient}")
-        
-        # Process moderate-risk ingredients
-        for ingredient in moderate_risk_ingredients:
-            analysis = ""
-            if ingredient_analyses and 'moderate' in ingredient_analyses:
-                analysis = ingredient_analyses['moderate'].get(ingredient, "")
-            
-            if not analysis:
-                analysis = self._generate_ingredient_specific_fallback(ingredient, "moderate")
-            
-            ingredients_assessment["moderate_risk"].append({
-                "name": ingredient,
-                "risk_level": "moderate", 
-                "micro_report": analysis,
-                "citations": [3, 4]
-            })
-            logger.info(f"[DIRECT ASSESSMENT] Added moderate-risk: {ingredient}")
-        
-        # Process some low-risk ingredients (limit to avoid huge payloads)
-        for ingredient in low_risk_ingredients[:5]:
-            analysis = ""
-            if ingredient_analyses and 'low' in ingredient_analyses:
-                analysis = ingredient_analyses['low'].get(ingredient, "")
-            
-            if not analysis:
-                analysis = self._generate_ingredient_specific_fallback(ingredient, "low")
-            
-            ingredients_assessment["low_risk"].append({
-                "name": ingredient,
-                "risk_level": "low",
-                "micro_report": analysis,
-                "citations": []
-            })
-        
         # Generate summary based on risk ingredients
         if high_risk_ingredients:
             summary = f"This product contains high-risk preservatives ({', '.join(high_risk_ingredients[:2])}). Regular consumption may increase health risks."
@@ -566,12 +516,15 @@ class HealthAssessmentMCPService:
         else:
             summary = "This product appears to have minimal concerning additives based on current analysis."
         
-        # Search for real citations for high-risk ingredients using LangChain
+        # Search for real citations for both high-risk and moderate-risk ingredients
         citations = []
-        
-        # Search for real citations for each high-risk ingredient
         citation_id = 1
-        for ingredient in high_risk_ingredients[:3]:  # Limit to top 3 high-risk ingredients
+        
+        # Track citation IDs for each ingredient
+        ingredient_citations = {}
+        
+        # Search for real citations for high-risk ingredients (up to 8)
+        for ingredient in high_risk_ingredients[:8]:
             clean_ingredient = ingredient.replace("**", "").strip().lower()
             
             # Add real citations for known dangerous ingredients based on actual research
@@ -645,6 +598,92 @@ class HealthAssessmentMCPService:
                             
                 except Exception as e:
                     logger.warning(f"Automated citation search failed for {ingredient}: {e}")
+            
+            # Track citation IDs for this ingredient
+            if clean_ingredient not in ingredient_citations:
+                ingredient_citations[clean_ingredient] = []
+            # Record citations generated for this ingredient
+            # Count how many citations were added in this iteration
+            current_citation_count = len(citations)
+            if current_citation_count > 0:
+                # Find citations added for this ingredient (could be 1 or 2)
+                for cit in citations:
+                    if cit['id'] >= citation_id - 2 and cit['id'] < citation_id:
+                        ingredient_citations[clean_ingredient].append(cit['id'])
+        
+        # Search for real citations for moderate-risk ingredients (up to 8)
+        for ingredient in moderate_risk_ingredients[:8]:
+            clean_ingredient = ingredient.replace("**", "").strip().lower()
+            
+            # Check for known moderate-risk ingredients
+            if "msg" in clean_ingredient or "monosodium glutamate" in clean_ingredient:
+                citations.append({
+                    "id": citation_id,
+                    "title": "FDA: Questions and Answers on Monosodium glutamate (MSG)",
+                    "source": "U.S. Food and Drug Administration", 
+                    "year": 2024,
+                    "url": "https://www.fda.gov/food/food-additives-petitions/questions-and-answers-monosodium-glutamate-msg",
+                    "source_type": "fda_research"
+                })
+                citation_id += 1
+            elif "sodium phosphate" in clean_ingredient or "phosphate" in clean_ingredient:
+                citations.append({
+                    "id": citation_id,
+                    "title": "Dietary Phosphorus and Cardiovascular Disease",
+                    "source": "National Institutes of Health",
+                    "year": 2023,
+                    "url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6198708/",
+                    "source_type": "nih_research"
+                })
+                citation_id += 1
+            elif "sugar" in clean_ingredient or "corn syrup" in clean_ingredient:
+                citations.append({
+                    "id": citation_id,
+                    "title": "Added Sugars and Cardiovascular Disease Risk",
+                    "source": "American Heart Association",
+                    "year": 2024,
+                    "url": "https://www.heart.org/en/healthy-living/healthy-eating/eat-smart/sugar/added-sugars",
+                    "source_type": "aha_research"
+                })
+                citation_id += 1
+            else:
+                # Try automated citation search for other moderate-risk ingredients
+                try:
+                    from app.services.citation_tools import CitationSearchService
+                    search_service = CitationSearchService()
+                    from app.models.citation import CitationSearch
+                    
+                    search_params = CitationSearch(
+                        ingredient=clean_ingredient,
+                        health_claim="health effects dietary intake safety",
+                        max_results=1,
+                        search_fda=True,
+                        search_who=True,
+                        search_cdc=True
+                    )
+                    
+                    result = search_service.search_citations(search_params)
+                    if result.citations:
+                        for citation in result.citations[:1]:
+                            citations.append({
+                                "id": citation_id,
+                                "title": citation.title,
+                                "source": citation.journal or "Research Database",
+                                "year": citation.publication_date.year if citation.publication_date else 2024,
+                                "url": citation.url or "",
+                                "source_type": citation.source_type or "research"
+                            })
+                            citation_id += 1
+                            
+                except Exception as e:
+                    logger.warning(f"Automated citation search failed for moderate-risk {ingredient}: {e}")
+            
+            # Track citation IDs for this ingredient
+            if clean_ingredient not in ingredient_citations:
+                ingredient_citations[clean_ingredient] = []
+            # Add citation ID generated for this ingredient
+            if citations and citations[-1]['id'] == citation_id - 1:
+                ingredient_citations[clean_ingredient].append(citation_id - 1)
         
         # If no real citations found, add informational message
         if not citations:
@@ -655,6 +694,63 @@ class HealthAssessmentMCPService:
                 "year": datetime.now().year,
                 "url": "",
                 "source_type": "info_message"
+            })
+        
+        # Now populate ingredients assessment with proper citation references
+        # Process high-risk ingredients with analyses
+        for ingredient in high_risk_ingredients:
+            analysis = ""
+            if ingredient_analyses and 'high' in ingredient_analyses:
+                analysis = ingredient_analyses['high'].get(ingredient, "")
+            
+            if not analysis:
+                analysis = self._generate_ingredient_specific_fallback(ingredient, "high")
+            
+            clean_ingredient = ingredient.replace("**", "").strip().lower()
+            citation_refs = ingredient_citations.get(clean_ingredient, [])
+            
+            ingredients_assessment["high_risk"].append({
+                "name": ingredient,
+                "risk_level": "high",
+                "micro_report": analysis,
+                "citations": citation_refs  # Use actual citation IDs found
+            })
+            logger.info(f"[DIRECT ASSESSMENT] Added high-risk: {ingredient} with citations {citation_refs}")
+        
+        # Process moderate-risk ingredients
+        for ingredient in moderate_risk_ingredients:
+            analysis = ""
+            if ingredient_analyses and 'moderate' in ingredient_analyses:
+                analysis = ingredient_analyses['moderate'].get(ingredient, "")
+            
+            if not analysis:
+                analysis = self._generate_ingredient_specific_fallback(ingredient, "moderate")
+            
+            clean_ingredient = ingredient.replace("**", "").strip().lower()
+            citation_refs = ingredient_citations.get(clean_ingredient, [])
+            
+            ingredients_assessment["moderate_risk"].append({
+                "name": ingredient,
+                "risk_level": "moderate", 
+                "micro_report": analysis,
+                "citations": citation_refs  # Use actual citation IDs found
+            })
+            logger.info(f"[DIRECT ASSESSMENT] Added moderate-risk: {ingredient} with citations {citation_refs}")
+        
+        # Process some low-risk ingredients (limit to avoid huge payloads)
+        for ingredient in low_risk_ingredients[:5]:
+            analysis = ""
+            if ingredient_analyses and 'low' in ingredient_analyses:
+                analysis = ingredient_analyses['low'].get(ingredient, "")
+            
+            if not analysis:
+                analysis = self._generate_ingredient_specific_fallback(ingredient, "low")
+            
+            ingredients_assessment["low_risk"].append({
+                "name": ingredient,
+                "risk_level": "low",
+                "micro_report": analysis,
+                "citations": []  # Low-risk ingredients don't need citations
             })
         
         assessment_result = {
