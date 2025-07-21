@@ -48,3 +48,6 @@ langchain-core>=0.1.0
 
 # Additional dependencies
 urllib3>=1.26.0,<3.0.0
+
+# Redis for distributed caching
+redis>=4.5.0

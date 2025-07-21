@@ -549,16 +549,45 @@ class HealthAssessmentMCPService:
         else:
             summary = "This product appears to have minimal concerning additives based on current analysis."
         
-        # Citations will be populated by LangChain research if available
-        # If no research citations are found, provide an informational message
+        # Search for real citations for high-risk ingredients using LangChain
         citations = []
         
-        # Add informational citation when no research is available
+        # Search for citations for each high-risk ingredient
+        for ingredient in high_risk_ingredients[:3]:  # Limit to top 3 high-risk ingredients
+            try:
+                from app.services.langchain_citation_tools import search_all_health_citations
+                citation_result = search_all_health_citations(
+                    ingredient=ingredient.replace("**", "").strip(),
+                    health_claim="safety effects toxicity health risks",
+                    max_results=2
+                )
+                
+                if citation_result and citation_result != f"No citations found for '{ingredient}' and 'safety effects toxicity health risks'":
+                    import json
+                    try:
+                        citation_data = json.loads(citation_result)
+                        if citation_data.get("citations"):
+                            for idx, citation in enumerate(citation_data["citations"]):
+                                citations.append({
+                                    "id": len(citations) + 1,
+                                    "title": citation.get("title", "Research Article"),
+                                    "source": citation.get("source", "Research Database"),
+                                    "year": citation.get("year", 2024),
+                                    "url": citation.get("url", ""),
+                                    "source_type": citation.get("source_type", "research")
+                                })
+                    except json.JSONDecodeError:
+                        logger.warning(f"Failed to parse citation result for {ingredient}")
+                        
+            except Exception as e:
+                logger.warning(f"Citation search failed for {ingredient}: {e}")
+        
+        # If no real citations found, add informational message
         if not citations:
             citations.append({
                 "id": 1,
                 "title": "Research citations not available",
-                "source": "Clear-Meat Analysis",
+                "source": "Clear-Meat Analysis", 
                 "year": datetime.now().year,
                 "url": "",
                 "source_type": "info_message"
@@ -1071,7 +1100,7 @@ CRITICAL RULES:
     ) -> str:
         """Build prompt for evidence-based assessment using MCP tools."""
         
-        return f"""You are a health assessment specialist with access to scientific literature search tools.
+        return f"""You are a health assessment specialist with access to real-time scientific literature search tools. Your responses must be based EXCLUSIVELY on current research findings, NOT on your training data.
 
 PRODUCT TO ANALYZE:
 Name: {product.product.name}
@@ -1080,35 +1109,41 @@ Ingredients: {product.product.ingredients_text or "Not available"}
 HIGH-RISK INGREDIENTS: {', '.join(high_risk_ingredients) if high_risk_ingredients else 'None'}
 MODERATE-RISK INGREDIENTS: {', '.join(moderate_risk_ingredients) if moderate_risk_ingredients else 'None'}
 
-CRITICAL INSTRUCTIONS:
-1. For EACH high-risk and moderate-risk ingredient, you MUST use the search_health_citations tool
-2. Search for health effects, toxicity, and safety concerns for each ingredient
-3. Use the evidence from scientific papers to write micro-reports
-4. Generate concise, plain English summaries (≤180 characters) based on actual research findings
-5. Include proper citations from the research you find with actual URLs
+CRITICAL RESEARCH REQUIREMENTS:
+1. For EVERY high-risk and moderate-risk ingredient, you MUST search for current scientific evidence
+2. Use search_all_health_citations tool for each ingredient with specific health concerns
+3. Analyze the abstracts and findings from the research papers you discover
+4. Write detailed analyses (200-300 characters) based ONLY on the research evidence you find
+5. Quote specific studies, statistics, and findings from the papers
+6. Include working URLs to the actual research sources
 
-REQUIRED TOOLS TO USE:
-- search_health_citations(ingredient, "health effects toxicity", 2) for each high-risk ingredient
-- search_health_citations(ingredient, "safety assessment", 1) for each moderate-risk ingredient
+MANDATORY RESEARCH PROTOCOL:
+- search_all_health_citations(ingredient, "carcinogenic effects cancer risk", 3) for suspected carcinogens
+- search_all_health_citations(ingredient, "cardiovascular effects blood pressure", 2) for sodium compounds  
+- search_all_health_citations(ingredient, "toxicity safety assessment", 2) for chemical additives
+- search_all_health_citations(ingredient, "metabolic effects diabetes obesity", 2) for sugars/sweeteners
 
-RESPONSE FORMAT:
-Provide a comprehensive health assessment with:
+RESPONSE REQUIREMENTS:
+1. DETAILED SUMMARY (4-5 sentences): Comprehensive assessment based on research findings
+2. EVIDENCE-BASED INGREDIENT ANALYSIS:
+   For each ingredient:
+   - Name: [Exact ingredient name]
+   - Risk Level: [High/Moderate/Low based on research evidence]
+   - Detailed Analysis (250-300 chars): Quote specific research findings, studies, and statistics
+   - Research Sources: [List actual paper titles and working URLs]
 
-SUMMARY: [Overall assessment in 2-3 sentences]
+3. SCIENTIFIC GRADE: [A-F based on research evidence]
+4. RISK COLOR: [Green/Yellow/Orange/Red based on research severity]
 
-INGREDIENT ANALYSIS:
-For each high/moderate risk ingredient:
-- Name: [Ingredient]
-- Risk Level: [High/Moderate] 
-- Micro Report: [Evidence-based summary ≤180 chars from research]
-- Citations: [List actual citations with titles and URLs found]
+STRICT GUIDELINES:
+- NEVER use general knowledge from training data
+- ALWAYS base responses on research papers you find via tools
+- Include specific study names, publication years, and findings
+- Use phrases like "According to [Study Name]...", "Research published in [Journal]...", "Studies show..."
+- Provide detailed explanations of health mechanisms found in research
+- Include exact statistics and findings from papers (e.g., "increased risk by 23%", "correlation coefficient of 0.74")
 
-OVERALL GRADE: [A-F based on ingredients]
-GRADE COLOR: [Green/Yellow/Orange/Red]
-
-WORKS CITED: [Numbered list of all citations with titles and URLs]
-
-Remember: Base ALL micro-reports on actual scientific evidence you find using the search_health_citations tool. Include real URLs."""
+YOUR ANALYSIS MUST BE RESEARCH-DRIVEN, DETAILED, AND EVIDENCE-BASED."""
     
     async def _parse_assessment_response(
         self, 

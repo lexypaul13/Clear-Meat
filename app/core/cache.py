@@ -31,17 +31,18 @@ class CacheService:
         """
         self.redis_client = None
         self.default_ttl = default_ttl
-        self.local_cache = {}  # Fallback in-memory cache
         
-        # Set up Redis if available
+        # Set up Redis - required for caching
         if redis_url and REDIS_AVAILABLE:
             try:
                 self.redis_client = redis.from_url(redis_url, decode_responses=True)
                 self.redis_client.ping()
                 logger.info("Connected to Redis for caching")
             except Exception as e:
-                logger.warning(f"Failed to connect to Redis: {e}")
+                logger.error(f"Failed to connect to Redis: {e}")
                 self.redis_client = None
+        else:
+            logger.warning("Redis not configured - caching disabled")
     
     def get(self, key: str) -> Optional[Any]:
         """
@@ -53,7 +54,7 @@ class CacheService:
         Returns:
             Cached value or None if not found/expired
         """
-        # Try Redis first
+        # Only use Redis - no fallback
         if self.redis_client:
             try:
                 data = self.redis_client.get(key)
@@ -62,15 +63,7 @@ class CacheService:
             except Exception as e:
                 logger.warning(f"Redis get error: {e}")
         
-        # Fallback to local cache
-        if key in self.local_cache:
-            entry = self.local_cache[key]
-            if entry['expires_at'] > time.time():
-                return entry['data']
-            else:
-                # Clean up expired entry
-                del self.local_cache[key]
-        
+        # No cache available - return None to force fresh generation
         return None
     
     def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
@@ -87,7 +80,7 @@ class CacheService:
         """
         ttl = ttl or self.default_ttl
         
-        # Store in Redis if available
+        # Store in Redis only
         if self.redis_client:
             try:
                 self.redis_client.setex(
@@ -98,37 +91,23 @@ class CacheService:
                 return True
             except Exception as e:
                 logger.warning(f"Redis set error: {e}")
+                return False
         
-        # Always store in local cache as fallback
-        self.local_cache[key] = {
-            'data': value,
-            'expires_at': time.time() + ttl
-        }
-        
-        # Clean up old entries periodically
-        if len(self.local_cache) > 1000:
-            self._cleanup_local_cache()
-        
-        return True
+        # No cache available
+        return False
     
     def delete(self, key: str) -> bool:
         """Delete a key from cache."""
-        success = False
-        
-        # Delete from Redis
+        # Delete from Redis only
         if self.redis_client:
             try:
                 self.redis_client.delete(key)
-                success = True
+                return True
             except Exception as e:
                 logger.warning(f"Redis delete error: {e}")
+                return False
         
-        # Delete from local cache
-        if key in self.local_cache:
-            del self.local_cache[key]
-            success = True
-        
-        return success
+        return False
     
     def clear_pattern(self, pattern: str) -> int:
         """
@@ -142,37 +121,17 @@ class CacheService:
         """
         count = 0
         
-        # Clear from Redis
+        # Clear from Redis only
         if self.redis_client:
             try:
                 keys = self.redis_client.keys(pattern)
                 if keys:
-                    count += self.redis_client.delete(*keys)
+                    count = self.redis_client.delete(*keys)
             except Exception as e:
                 logger.warning(f"Redis clear pattern error: {e}")
         
-        # Clear from local cache
-        keys_to_delete = [k for k in self.local_cache.keys() if self._match_pattern(k, pattern)]
-        for key in keys_to_delete:
-            del self.local_cache[key]
-            count += 1
-        
         return count
     
-    def _cleanup_local_cache(self):
-        """Remove expired entries from local cache."""
-        current_time = time.time()
-        expired_keys = [
-            k for k, v in self.local_cache.items()
-            if v['expires_at'] <= current_time
-        ]
-        for key in expired_keys:
-            del self.local_cache[key]
-    
-    def _match_pattern(self, key: str, pattern: str) -> bool:
-        """Simple pattern matching for local cache."""
-        import fnmatch
-        return fnmatch.fnmatch(key, pattern)
     
     @staticmethod
     def generate_key(*args, prefix: str = "cache") -> str:
