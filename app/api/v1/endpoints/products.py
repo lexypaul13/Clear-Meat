@@ -255,9 +255,57 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
         # Return original if optimization fails
         return assessment
 
-async def _fallback_search(query: str, limit: int, skip: int, supabase_service) -> Dict[str, Any]:
+
+# Simple Product Search endpoint
+@router.get("/search", 
+    response_model=Dict[str, Any],
+    summary="Search Products by Name",
+    description="Simple product search by name, brand, or ingredients",
+    responses={
+        200: {
+            "description": "Search results found",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "query": "chicken breast",
+                        "total_results": 5,
+                        "limit": 20,
+                        "skip": 0,
+                        "products": [
+                            {
+                                "code": "1234567890",
+                                "name": "Organic Chicken Breast",
+                                "brand": "HealthyMeat Co",
+                                "risk_rating": "Green",
+                                "salt": 0.3,
+                                "protein": 25.0
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        400: {"description": "Invalid search query"},
+        500: {"description": "Search service error"}
+    },
+    tags=["Products"]
+)
+async def search_products(
+    q: str = Query(..., description="Search query for product name, brand, or ingredients", example="chicken breast"),
+    limit: int = Query(20, ge=1, le=100, description="Maximum number of results to return"),
+    skip: int = Query(0, ge=0, description="Number of results to skip for pagination"),
+    supabase_service = Depends(get_supabase_service),
+) -> Dict[str, Any]:
     """
-    Fallback search function using basic text matching when AI is not available.
+    Simple product search by name, brand, or ingredients.
+    
+    Args:
+        q: Search query for product name, brand, or ingredients
+        limit: Maximum number of results to return (1-100, default 20)
+        skip: Number of results to skip for pagination
+        
+    Returns:
+        Dict containing search results and metadata
     """
     try:
         # Basic text search on multiple fields - exclude image_data for performance
@@ -268,7 +316,7 @@ async def _fallback_search(query: str, limit: int, skip: int, supabase_service) 
         
         # Create OR conditions for text search
         conditions = []
-        search_terms = query.lower().split()
+        search_terms = q.lower().split()
         
         for term in search_terms:
             conditions.extend([
@@ -287,30 +335,26 @@ async def _fallback_search(query: str, limit: int, skip: int, supabase_service) 
         results = response.data or []
         
         return {
-            "query": query,
-            "parsed_intent": {
-                "meat_types": [],
-                "nutrition_filters": {},
-                "quality_preferences": [],
-                "health_intent": "balanced",
-                "confidence": 0.3
-            },
+            "query": q,
             "total_results": len(results),
             "limit": limit,
             "skip": skip,
-            "products": results,
-            "fallback_mode": True
+            "products": results
         }
         
     except Exception as e:
-        logger.error(f"Fallback search failed: {e}")
-        raise
+        logger.error(f"Search failed for query '{q}': {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Search service temporarily unavailable"
+        )
 
-# AI-Powered Natural Language Search endpoint
+# AI-Powered Natural Language Search endpoint (DEPRECATED - use /search instead)
 @router.get("/nlp-search", 
     response_model=Dict[str, Any],
-    summary="AI-Powered Natural Language Product Search",
-    description="Search for products using natural language with AI understanding of context and intent",
+    summary="[DEPRECATED] AI-Powered Natural Language Product Search",
+    description="DEPRECATED: Use /search endpoint instead. This endpoint now redirects to simple search.",
+    deprecated=True,
     responses={
         200: {
             "description": "Search results found with AI ranking",
@@ -353,85 +397,15 @@ async def natural_language_search(
     supabase_service = Depends(get_supabase_service),
 ) -> Dict[str, Any]:
     """
-    AI-powered natural language search for products with contextual understanding.
+    DEPRECATED: This endpoint now redirects to the simple /search endpoint.
     
-    Examples:
-    - "healthy chicken options" → Finds chicken with good health ratings
-    - "low sodium beef for dinner" → Beef with <500mg sodium
-    - "organic grass-fed options" → Products with organic/grass-fed ingredients
-    - "something clean and natural" → Products with minimal processing
-    - "high protein snacks" → Products with >20g protein
-    
-    Args:
-        q: Natural language search query
-        limit: Maximum number of results to return (1-100, default 20)
-        skip: Number of results to skip for pagination
-        
-    Returns:
-        Dict containing AI-parsed intent, ranked results, and metadata
+    The AI-powered NLP search has been replaced with traditional product search.
+    Please use /api/v1/products/search instead.
     """
-    try:
-        from app.services.nlp_search_service import get_nlp_search_service
-        from app.core.config import settings
-        
-        # Check if Gemini API key is available
-        if not settings.GEMINI_API_KEY:
-            logger.warning("GEMINI_API_KEY not configured, falling back to basic search")
-            return await _fallback_search(q, limit, skip, supabase_service)
-        
-        try:
-            nlp_service = get_nlp_search_service()
-            
-            # Parse the natural language query using AI
-            parsed_query = await nlp_service.parse_search_query(q)
-            
-            # Build and execute the database query
-            query = nlp_service.build_database_query(parsed_query, supabase_service.client)
-            query = query.range(skip, skip + limit - 1)
-            
-            response = query.execute()
-            results = response.data or []
-            
-            # Rank results by relevance using AI scoring
-            ranked_results = nlp_service.rank_results(results, parsed_query)
-            
-            return {
-                "query": q,
-                "parsed_intent": {
-                    "meat_types": parsed_query.get("meat_types", []),
-                    "nutrition_filters": parsed_query.get("nutrition_filters", {}),
-                    "quality_preferences": parsed_query.get("quality_preferences", []),
-                    "health_intent": parsed_query.get("health_intent", "balanced"),
-                    "confidence": parsed_query.get("confidence", 0.5)
-                },
-                "total_results": len(ranked_results),
-                "limit": limit,
-                "skip": skip,
-                "products": ranked_results
-            }
-            
-        except ValueError as ve:
-            if "GEMINI_API_KEY" in str(ve):
-                logger.warning(f"Gemini API key error: {ve}, falling back to basic search")
-                return await _fallback_search(q, limit, skip, supabase_service)
-            else:
-                raise ve
-        
-    except Exception as e:
-        logger.error(f"NLP search error for query '{q}': {e}")
-        logger.error(f"Error type: {type(e).__name__}")
-        
-        # Try fallback search as last resort
-        try:
-            logger.info("Attempting fallback search after NLP failure")
-            return await _fallback_search(q, limit, skip, supabase_service)
-        except Exception as fallback_error:
-            logger.error(f"Fallback search also failed: {fallback_error}")
-            
-            raise HTTPException(
-                status_code=500,
-                detail="Search service temporarily unavailable"
-            )
+    logger.info(f"NLP search called with query '{q}', redirecting to simple search")
+    
+    # Simply redirect to the new search endpoint
+    return await search_products(q=q, limit=limit, skip=skip, supabase_service=supabase_service)
 
 @router.get("/search-debug",
     response_model=Dict[str, Any],
