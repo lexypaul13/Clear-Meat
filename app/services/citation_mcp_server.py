@@ -38,14 +38,22 @@ def search_health_citations(ingredient: str, health_claim: str, max_results: int
         
         print(f"[MCP Citation Tool] Searching for: {ingredient} + {health_claim}")
         
-        # Create search parameters
+        # Create search parameters - Focus on web authority sources
         search_params = CitationSearch(
             ingredient=ingredient,
             health_claim=health_claim,
             max_results=max_results,
-            search_pubmed=True,
-            search_crossref=True,
-            search_web=False
+            # Disable academic sources that cause rate limiting
+            search_pubmed=False,
+            search_crossref=False,
+            search_semantic_scholar=False,
+            # Enable reliable web authority sources
+            search_fda=True,
+            search_cdc=True,
+            search_mayo_clinic=True,
+            search_nih=True,
+            search_who=True,
+            search_harvard_health=True
         )
         
         # Perform search - note: this is a sync function but we're in async context
@@ -55,17 +63,35 @@ def search_health_citations(ingredient: str, health_claim: str, max_results: int
         if not result.citations:
             return f"No citations found for '{ingredient}' and '{health_claim}'"
         
-        # Format citations for return
+        # Format citations for return - INCLUDE URLs for clickable links
         formatted_citations = []
         for i, citation in enumerate(result.citations, 1):
-            formatted = f"{i}. {citation.to_apa_format()}"
-            if citation.doi:
-                formatted += f"\n   DOI: {citation.doi}"
-            if citation.pmid:
-                formatted += f"\n   PMID: {citation.pmid}"
+            formatted = f"{i}. {citation.title}. {citation.journal}. "
+            
+            # Add year if available
+            if citation.publication_date:
+                formatted += f"{citation.publication_date.year}. "
+            
+            # CRITICAL: Add URL for clickable link
+            if citation.url:
+                formatted += f"URL: {citation.url}"
+            elif citation.doi:
+                formatted += f"URL: https://doi.org/{citation.doi}"
+            else:
+                # Fallback URL based on source
+                if hasattr(citation, 'source_type'):
+                    if citation.source_type == 'fda_web':
+                        formatted += "URL: https://www.fda.gov/food/food-additives-petitions"
+                    elif citation.source_type == 'cdc_web':
+                        formatted += "URL: https://www.cdc.gov/nutrition"
+                    elif citation.source_type == 'mayo_clinic_web':
+                        formatted += "URL: https://www.mayoclinic.org/healthy-lifestyle"
+                    else:
+                        formatted += "URL: Not available"
+            
             formatted_citations.append(formatted)
         
-        response = f"Found {len(result.citations)} citations (search time: {result.search_time:.2f}s):\n\n"
+        response = f"Found {len(result.citations)} citations:\n\n"
         response += "\n\n".join(formatted_citations)
         
         if result.error:

@@ -451,261 +451,459 @@ class CitationSearchService:
         return citations
     
     def _search_fda(self, query: str, max_results: int) -> List[Citation]:
-        """Search FDA.gov for official guidance and reports."""
+        """Search FDA.gov for official guidance and reports using real web search."""
         citations = []
         
         try:
-            print(f"[FDA] Searching for: {query}")
+            print(f"[FDA] Real web search for: {query}")
             
-            # Extract ingredient name for targeted searches
-            ingredient = query.split()[0].lower()
+            # Perform real FDA search
+            search_url = f"https://search.fda.gov/search?utf8=✓&affiliate=fda1&query={requests.utils.quote(query)}&commit=Search"
             
-            # FDA Food Additive Database mappings
-            fda_additive_info = {
-                "sodium": {
-                    "title": "FDA Guidance on Sodium in Food",
-                    "url": "https://www.fda.gov/food/food-additives-petitions/sodium-reduction",
-                    "abstract": "Official FDA guidance on sodium additives and health effects in processed foods"
-                },
-                "nitrite": {
-                    "title": "FDA Food Additive Status List - Sodium Nitrite",
-                    "url": "https://www.fda.gov/food/food-additives-petitions/food-additive-status-list",
-                    "abstract": "FDA approved uses and safety assessment of sodium nitrite as a food preservative"
-                },
-                "nitrate": {
-                    "title": "FDA Food Additive Status List - Sodium Nitrate", 
-                    "url": "https://www.fda.gov/food/food-additives-petitions/food-additive-status-list",
-                    "abstract": "FDA approved uses and safety limits for sodium nitrate in meat products"
-                },
-                "msg": {
-                    "title": "FDA Statement on Monosodium Glutamate (MSG)",
-                    "url": "https://www.fda.gov/food/food-additives-petitions/questions-and-answers-monosodium-glutamate-msg",
-                    "abstract": "FDA official position on MSG safety and GRAS status"
-                },
-                "monosodium": {
-                    "title": "FDA Questions and Answers on Monosodium Glutamate",
-                    "url": "https://www.fda.gov/food/food-additives-petitions/questions-and-answers-monosodium-glutamate-msg", 
-                    "abstract": "FDA Q&A addressing MSG safety concerns and scientific evidence"
-                },
-                "carrageenan": {
-                    "title": "FDA Review of Carrageenan Safety",
-                    "url": "https://www.fda.gov/food/food-additives-petitions/carrageenan",
-                    "abstract": "FDA safety review and regulatory status of carrageenan as food additive"
-                },
-                "artificial": {
-                    "title": "FDA Guidance on Artificial Food Colors",
-                    "url": "https://www.fda.gov/food/food-additives-petitions/color-additives-questions-and-answers-consumers",
-                    "abstract": "FDA consumer information on artificial color additives and safety"
-                }
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
             
-            # Check for matches and create citations
-            for keyword, info in fda_additive_info.items():
-                if keyword in ingredient or keyword in query.lower():
+            response = requests.get(search_url, headers=headers, timeout=10)
+            response.raise_for_status()
+            
+            # Parse search results
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Find search results - FDA uses specific CSS classes
+            results = soup.find_all('div', class_='result')[:max_results]
+            
+            if not results:
+                # Try alternative search result format
+                results = soup.find_all('li', class_='search-result')[:max_results]
+            
+            for idx, result in enumerate(results):
+                try:
+                    # Extract title
+                    title_elem = result.find('h2') or result.find('h3') or result.find('a', class_='title')
+                    if not title_elem:
+                        continue
+                    
+                    title = title_elem.get_text(strip=True)
+                    
+                    # Extract URL
+                    url_elem = title_elem.find('a') if title_elem.name != 'a' else title_elem
+                    if url_elem and url_elem.get('href'):
+                        url = url_elem['href']
+                        if not url.startswith('http'):
+                            url = f"https://www.fda.gov{url}"
+                    else:
+                        continue
+                    
+                    # Extract abstract/snippet
+                    abstract_elem = result.find('div', class_='snippet') or result.find('p')
+                    abstract = abstract_elem.get_text(strip=True) if abstract_elem else f"FDA guidance on {query}"
+                    
+                    # Create citation with real data
                     citation = Citation(
-                        title=info["title"],
+                        title=title,
+                        authors=[Author(last_name="FDA", first_name="U.S. Food and Drug Administration")],
+                        journal="FDA.gov Official Publication",
+                        publication_date=datetime(2024, 1, 1),  # FDA doesn't always show dates
+                        url=url,
+                        abstract=abstract[:200] + "..." if len(abstract) > 200 else abstract,
+                        source_type="fda_web",
+                        relevance_score=1.0 - (idx * 0.1)  # Higher rank = higher relevance
+                    )
+                    citations.append(citation)
+                    
+                except Exception as e:
+                    logger.warning(f"Error parsing FDA result: {e}")
+                    continue
+            
+            # If no results found, try direct FDA pages for common ingredients
+            if not citations and len(query.split()[0]) > 2:
+                ingredient = query.split()[0].lower()
+                
+                # Known FDA pages for common ingredients
+                direct_pages = {
+                    "salt": ("Sodium Reduction Initiative", "https://www.fda.gov/food/food-additives-petitions/sodium-reduction"),
+                    "sodium": ("Sodium in Your Diet", "https://www.fda.gov/food/nutrition-education-resources-materials/sodium-your-diet"),
+                    "sugar": ("Added Sugars on the Nutrition Facts Label", "https://www.fda.gov/food/nutrition-facts-label/added-sugars-nutrition-facts-label"),
+                    "nitrite": ("Food Additive Status List", "https://www.fda.gov/food/food-additives-petitions/food-additive-status-list"),
+                    "msg": ("Questions and Answers on MSG", "https://www.fda.gov/food/food-additives-petitions/questions-and-answers-monosodium-glutamate-msg")
+                }
+                
+                if ingredient in direct_pages:
+                    title, url = direct_pages[ingredient]
+                    citation = Citation(
+                        title=f"FDA: {title}",
                         authors=[Author(last_name="FDA", first_name="U.S. Food and Drug Administration")],
                         journal="FDA.gov Consumer Information",
                         publication_date=datetime(2024, 1, 1),
-                        url=info["url"],
-                        abstract=info["abstract"],
+                        url=url,
+                        abstract=f"Official FDA guidance on {ingredient} in food products, safety assessments, and health recommendations",
                         source_type="fda_web",
-                        relevance_score=1.0  # Government sources get max relevance
+                        relevance_score=0.9
                     )
                     citations.append(citation)
-                    break
-                    
-            # Generic FDA food safety citation if no specific match
-            if not citations and any(term in query.lower() for term in ["additive", "preservative", "safety", "health"]):
-                citation = Citation(
-                    title="FDA Food Additives and Ingredients Overview",
-                    authors=[Author(last_name="FDA", first_name="U.S. Food and Drug Administration")],
-                    journal="FDA.gov Food Safety",
-                    publication_date=datetime(2024, 1, 1),
-                    url="https://www.fda.gov/food/food-additives-petitions/overview-food-ingredients-additives-colors",
-                    abstract="FDA overview of food ingredient safety and regulatory framework",
-                    source_type="fda_web",
-                    relevance_score=0.8
-                )
-                citations.append(citation)
+            
+            print(f"[FDA] Found {len(citations)} real citations")
                 
+        except requests.RequestException as e:
+            logger.error(f"FDA web search error: {e}")
+            # Don't return fake data on error - return empty list
         except Exception as e:
-            logger.error(f"FDA search error: {e}")
+            logger.error(f"FDA search parsing error: {e}")
         
         return citations[:max_results]
     
     def _search_who(self, query: str, max_results: int) -> List[Citation]:
-        """Search WHO.int for international health guidance."""
+        """Search WHO.int for international health guidance using real web search."""
         citations = []
         
         try:
-            print(f"[WHO] Searching for: {query}")
+            print(f"[WHO] Real web search for: {query}")
             
             # WHO search endpoint
-            base_url = "https://www.who.int/search"
-            params = {
-                'query': query,
-                'searchlang': 'en',
-                'page': 1
+            search_url = f"https://www.who.int/home/search?indexCatalogue=genericsearchindex1&searchQuery={requests.utils.quote(query)}&wordsMode=AnyWord"
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
             
-            # For demonstration, create relevant WHO citation
-            if any(term in query.lower() for term in ["nitrite", "nitrate", "preservative"]):
-                citation = Citation(
-                    title="WHO Report on Food Additives and Cancer Risk",
-                    authors=[Author(last_name="WHO", first_name="World Health Organization")],
-                    journal="WHO Technical Report Series",
-                    publication_date=datetime(2023, 1, 1),
-                    url="https://www.who.int/news-room/fact-sheets/detail/cancer",
-                    source_type="who",
-                    relevance_score=1.0
-                )
-                citations.append(citation)
+            response = requests.get(search_url, headers=headers, timeout=10)
+            response.raise_for_status()
+            
+            # Parse search results
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Find search results - WHO uses different structure
+            results = soup.find_all('div', class_='search-result-item')[:max_results]
+            
+            if not results:
+                # Try alternative selectors
+                results = soup.find_all('article', class_='search-result')[:max_results]
+            
+            for idx, result in enumerate(results):
+                try:
+                    # Extract title
+                    title_elem = result.find('h3') or result.find('h4') or result.find('a', class_='search-title')
+                    if not title_elem:
+                        continue
+                    
+                    title = title_elem.get_text(strip=True)
+                    
+                    # Extract URL
+                    url_elem = title_elem.find('a') if title_elem.name != 'a' else title_elem
+                    if url_elem and url_elem.get('href'):
+                        url = url_elem['href']
+                        if not url.startswith('http'):
+                            url = f"https://www.who.int{url}"
+                    else:
+                        continue
+                    
+                    # Extract abstract
+                    abstract_elem = result.find('div', class_='search-snippet') or result.find('p', class_='description')
+                    abstract = abstract_elem.get_text(strip=True) if abstract_elem else f"WHO guidance on {query}"
+                    
+                    citation = Citation(
+                        title=title,
+                        authors=[Author(last_name="WHO", first_name="World Health Organization")],
+                        journal="WHO Official Publication",
+                        publication_date=datetime(2024, 1, 1),
+                        url=url,
+                        abstract=abstract[:200] + "..." if len(abstract) > 200 else abstract,
+                        source_type="who_web",
+                        relevance_score=1.0 - (idx * 0.1)
+                    )
+                    citations.append(citation)
+                    
+                except Exception as e:
+                    logger.warning(f"Error parsing WHO result: {e}")
+                    continue
+            
+            print(f"[WHO] Found {len(citations)} real citations")
                 
         except Exception as e:
-            logger.error(f"WHO search error: {e}")
+            logger.error(f"WHO web search error: {e}")
+            # Return empty list on error
         
-        return citations
+        return citations[:max_results]
     
     def _search_harvard_health(self, query: str, max_results: int) -> List[Citation]:
-        """Search Harvard Health for clinical guidance."""
+        """Search Harvard Health for clinical guidance using real web search."""
         citations = []
         
         try:
-            print(f"[Harvard Health] Searching for: {query}")
+            print(f"[Harvard Health] Real web search for: {query}")
             
-            # Search Harvard Health Publishing
-            # In production, would use their API or web scraping
-            if any(term in query.lower() for term in ["msg", "monosodium glutamate", "sodium"]):
-                citation = Citation(
-                    title="The Truth About MSG and Your Health",
-                    authors=[Author(last_name="Harvard Medical School", first_name="")],
-                    journal="Harvard Health Publishing",
-                    publication_date=datetime(2024, 1, 1),
-                    url="https://www.health.harvard.edu/newsletter",
-                    abstract="Clinical review of monosodium glutamate safety and health effects",
-                    source_type="harvard_health",
-                    relevance_score=0.95
-                )
-                citations.append(citation)
-                
-        except Exception as e:
-            logger.error(f"Harvard Health search error: {e}")
-        
-        return citations
-    
-    def _search_cdc(self, query: str, max_results: int) -> List[Citation]:
-        """Search CDC.gov for official health guidance."""
-        citations = []
-        
-        try:
-            print(f"[CDC] Searching for: {query}")
+            # Harvard Health search endpoint
+            search_url = f"https://www.health.harvard.edu/search?q={requests.utils.quote(query)}"
             
-            # Extract ingredient name for targeted searches
-            ingredient = query.split()[0].lower()
-            
-            # CDC Nutrition and Food Safety content mappings
-            cdc_content = {
-                "sodium": {
-                    "title": "CDC Guidelines on Sodium and Heart Health",
-                    "url": "https://www.cdc.gov/salt/index.htm",
-                    "abstract": "CDC guidance on sodium reduction for cardiovascular health and dietary recommendations"
-                },
-                "nitrite": {
-                    "title": "CDC Food Safety and Preservatives",
-                    "url": "https://www.cdc.gov/foodsafety/foodborne-germs.html",
-                    "abstract": "CDC information on food preservatives and their role in preventing foodborne illness"
-                },
-                "artificial": {
-                    "title": "CDC Nutrition Facts and Food Additives",
-                    "url": "https://www.cdc.gov/nutrition/data-statistics/food-safety.html",
-                    "abstract": "CDC data on food additives consumption and health surveillance"
-                },
-                "msg": {
-                    "title": "CDC Food Additives and Public Health",
-                    "url": "https://www.cdc.gov/nutrition/micronutrient-malnutrition/micronutrients/index.html",
-                    "abstract": "CDC monitoring of food additives and population health effects"
-                }
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
             
-            # Check for matches and create citations
-            for keyword, info in cdc_content.items():
-                if keyword in ingredient or keyword in query.lower():
+            response = requests.get(search_url, headers=headers, timeout=10)
+            
+            # Harvard Health may return different status codes
+            if response.status_code == 200:
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(response.text, 'html.parser')
+                
+                # Find search results
+                results = soup.find_all('article', class_='search-result')[:max_results]
+                
+                if not results:
+                    results = soup.find_all('div', class_='content-item')[:max_results]
+                
+                for idx, result in enumerate(results):
+                    try:
+                        # Extract title and URL
+                        title_elem = result.find('h2') or result.find('h3') or result.find('a', class_='title')
+                        if not title_elem:
+                            continue
+                        
+                        if title_elem.name == 'a':
+                            title = title_elem.get_text(strip=True)
+                            url = title_elem.get('href', '')
+                        else:
+                            link_elem = title_elem.find('a')
+                            if link_elem:
+                                title = link_elem.get_text(strip=True)
+                                url = link_elem.get('href', '')
+                            else:
+                                continue
+                        
+                        if not url.startswith('http'):
+                            url = f"https://www.health.harvard.edu{url}"
+                        
+                        # Extract abstract
+                        abstract_elem = result.find('div', class_='summary') or result.find('p')
+                        abstract = abstract_elem.get_text(strip=True) if abstract_elem else f"Harvard Health guidance on {query}"
+                        
+                        citation = Citation(
+                            title=title,
+                            authors=[Author(last_name="Harvard Medical School", first_name="")],
+                            journal="Harvard Health Publishing",
+                            publication_date=datetime(2024, 1, 1),
+                            url=url,
+                            abstract=abstract[:200] + "..." if len(abstract) > 200 else abstract,
+                            source_type="harvard_health",
+                            relevance_score=0.95 - (idx * 0.05)
+                        )
+                        citations.append(citation)
+                        
+                    except Exception as e:
+                        logger.warning(f"Error parsing Harvard Health result: {e}")
+                        continue
+            
+            print(f"[Harvard Health] Found {len(citations)} real citations")
+                
+        except Exception as e:
+            logger.error(f"Harvard Health web search error: {e}")
+            # Return empty list on error
+        
+        return citations[:max_results]
+    
+    def _search_cdc(self, query: str, max_results: int) -> List[Citation]:
+        """Search CDC.gov for official health guidance using real web search."""
+        citations = []
+        
+        try:
+            print(f"[CDC] Real web search for: {query}")
+            
+            # CDC search endpoint
+            search_url = f"https://search.cdc.gov/search?query={requests.utils.quote(query)}&utf8=✓&affiliate=cdc-main"
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+            
+            response = requests.get(search_url, headers=headers, timeout=10)
+            response.raise_for_status()
+            
+            # Parse search results
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Find search results - CDC uses specific structure
+            results = soup.find_all('div', class_='searchResultsModule')[:max_results]
+            
+            if not results:
+                # Try alternative selectors
+                results = soup.find_all('div', class_='result')[:max_results]
+            
+            for idx, result in enumerate(results):
+                try:
+                    # Extract title
+                    title_elem = result.find('h3') or result.find('a', class_='title')
+                    if not title_elem:
+                        continue
+                    
+                    title = title_elem.get_text(strip=True)
+                    
+                    # Extract URL
+                    url_elem = title_elem.find('a') if title_elem.name != 'a' else title_elem
+                    if url_elem and url_elem.get('href'):
+                        url = url_elem['href']
+                        if not url.startswith('http'):
+                            url = f"https://www.cdc.gov{url}"
+                    else:
+                        continue
+                    
+                    # Extract abstract/description
+                    abstract_elem = result.find('p', class_='description') or result.find('div', class_='snippet')
+                    abstract = abstract_elem.get_text(strip=True) if abstract_elem else f"CDC guidance on {query}"
+                    
                     citation = Citation(
-                        title=info["title"],
+                        title=title,
+                        authors=[Author(last_name="CDC", first_name="Centers for Disease Control and Prevention")],
+                        journal="CDC.gov Official Publication",
+                        publication_date=datetime(2024, 1, 1),
+                        url=url,
+                        abstract=abstract[:200] + "..." if len(abstract) > 200 else abstract,
+                        source_type="cdc_web",
+                        relevance_score=1.0 - (idx * 0.1)
+                    )
+                    citations.append(citation)
+                    
+                except Exception as e:
+                    logger.warning(f"Error parsing CDC result: {e}")
+                    continue
+            
+            # If no results, try known CDC pages for common topics
+            if not citations and len(query.split()[0]) > 2:
+                ingredient = query.split()[0].lower()
+                
+                direct_pages = {
+                    "salt": ("Sodium and Your Health", "https://www.cdc.gov/salt/index.htm"),
+                    "sodium": ("Salt Home", "https://www.cdc.gov/salt/"),
+                    "sugar": ("Get the Facts: Added Sugars", "https://www.cdc.gov/nutrition/data-statistics/added-sugars.html"),
+                    "nitrite": ("Food Safety", "https://www.cdc.gov/foodsafety/"),
+                    "msg": ("Nutrition", "https://www.cdc.gov/nutrition/")
+                }
+                
+                if ingredient in direct_pages:
+                    title, url = direct_pages[ingredient]
+                    citation = Citation(
+                        title=f"CDC: {title}",
                         authors=[Author(last_name="CDC", first_name="Centers for Disease Control and Prevention")],
                         journal="CDC.gov Health Information",
                         publication_date=datetime(2024, 1, 1),
-                        url=info["url"],
-                        abstract=info["abstract"],
+                        url=url,
+                        abstract=f"CDC official guidance on {ingredient} and its health impacts, including recommended daily limits and health risks",
                         source_type="cdc_web",
-                        relevance_score=1.0  # Government sources get max relevance
+                        relevance_score=0.9
                     )
                     citations.append(citation)
-                    break
+            
+            print(f"[CDC] Found {len(citations)} real citations")
                     
         except Exception as e:
-            logger.error(f"CDC search error: {e}")
+            logger.error(f"CDC web search error: {e}")
+            # Return empty list on error
         
         return citations[:max_results]
     
     def _search_mayo_clinic(self, query: str, max_results: int) -> List[Citation]:
-        """Search Mayo Clinic for medical guidance on food ingredients."""
+        """Search Mayo Clinic for medical guidance on food ingredients using real web search."""
         citations = []
         
         try:
-            print(f"[Mayo Clinic] Searching for: {query}")
+            print(f"[Mayo Clinic] Real web search for: {query}")
             
-            # Extract ingredient name for targeted searches
-            ingredient = query.split()[0].lower()
+            # Mayo Clinic search endpoint
+            search_url = f"https://www.mayoclinic.org/search/search-results?q={requests.utils.quote(query)}"
             
-            # Mayo Clinic health content mappings
-            mayo_content = {
-                "sodium": {
-                    "title": "Sodium: How to Tame Your Salt Habit",
-                    "url": "https://www.mayoclinic.org/healthy-lifestyle/nutrition-and-healthy-eating/in-depth/sodium/art-20045479",
-                    "abstract": "Mayo Clinic expert guidance on sodium intake, health effects, and dietary recommendations"
-                },
-                "msg": {
-                    "title": "MSG: Is This Food Additive Harmful?",
-                    "url": "https://www.mayoclinic.org/healthy-lifestyle/nutrition-and-healthy-eating/expert-answers/monosodium-glutamate/faq-20058196",
-                    "abstract": "Mayo Clinic expert analysis of MSG safety, symptoms, and scientific evidence"
-                },
-                "monosodium": {
-                    "title": "Monosodium Glutamate (MSG): Safety and Health Effects",
-                    "url": "https://www.mayoclinic.org/healthy-lifestyle/nutrition-and-healthy-eating/expert-answers/monosodium-glutamate/faq-20058196",
-                    "abstract": "Medical expert review of MSG research and health implications"
-                },
-                "nitrite": {
-                    "title": "Processed Meat and Health: What You Need to Know",
-                    "url": "https://www.mayoclinic.org/healthy-lifestyle/nutrition-and-healthy-eating/in-depth/processed-meat/art-20045989",
-                    "abstract": "Mayo Clinic analysis of processed meat preservatives and cancer risk"
-                },
-                "artificial": {
-                    "title": "Artificial Sweeteners and Other Sugar Substitutes",
-                    "url": "https://www.mayoclinic.org/healthy-lifestyle/nutrition-and-healthy-eating/in-depth/artificial-sweeteners/art-20046936",
-                    "abstract": "Mayo Clinic expert review of artificial additives safety and health effects"
-                }
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
             
-            # Check for matches and create citations
-            for keyword, info in mayo_content.items():
-                if keyword in ingredient or keyword in query.lower():
+            response = requests.get(search_url, headers=headers, timeout=10)
+            response.raise_for_status()
+            
+            # Parse search results
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Find search results - Mayo Clinic structure
+            results = soup.find_all('li', class_='cmp-search-results__item')[:max_results]
+            
+            if not results:
+                # Try alternative selector
+                results = soup.find_all('div', class_='search-result')[:max_results]
+            
+            for idx, result in enumerate(results):
+                try:
+                    # Extract title and URL
+                    title_elem = result.find('h3') or result.find('a', class_='cmp-search-results__item-link')
+                    if not title_elem:
+                        continue
+                    
+                    if title_elem.name == 'a':
+                        title = title_elem.get_text(strip=True)
+                        url = title_elem.get('href', '')
+                    else:
+                        link_elem = title_elem.find('a')
+                        if link_elem:
+                            title = link_elem.get_text(strip=True)
+                            url = link_elem.get('href', '')
+                        else:
+                            continue
+                    
+                    if not url.startswith('http'):
+                        url = f"https://www.mayoclinic.org{url}"
+                    
+                    # Extract description/abstract
+                    desc_elem = result.find('p', class_='cmp-search-results__item-excerpt') or result.find('div', class_='description')
+                    abstract = desc_elem.get_text(strip=True) if desc_elem else f"Mayo Clinic guidance on {query}"
+                    
                     citation = Citation(
-                        title=info["title"],
+                        title=title,
                         authors=[Author(last_name="Mayo Clinic Staff", first_name="")],
                         journal="Mayo Clinic Health Information",
                         publication_date=datetime(2024, 1, 1),
-                        url=info["url"],
-                        abstract=info["abstract"],
+                        url=url,
+                        abstract=abstract[:200] + "..." if len(abstract) > 200 else abstract,
                         source_type="mayo_clinic_web",
-                        relevance_score=0.95  # High-quality medical source
+                        relevance_score=0.95 - (idx * 0.05)
                     )
                     citations.append(citation)
-                    break
+                    
+                except Exception as e:
+                    logger.warning(f"Error parsing Mayo Clinic result: {e}")
+                    continue
+            
+            # Fallback to known Mayo Clinic pages for common ingredients
+            if not citations and len(query.split()[0]) > 2:
+                ingredient = query.split()[0].lower()
+                
+                direct_pages = {
+                    "salt": ("Sodium: How to tame your salt habit", "https://www.mayoclinic.org/healthy-lifestyle/nutrition-and-healthy-eating/in-depth/sodium/art-20045479"),
+                    "sodium": ("Sodium: How to tame your salt habit", "https://www.mayoclinic.org/healthy-lifestyle/nutrition-and-healthy-eating/in-depth/sodium/art-20045479"),
+                    "sugar": ("Added sugars: Don't get sabotaged by sweeteners", "https://www.mayoclinic.org/healthy-lifestyle/nutrition-and-healthy-eating/in-depth/added-sugar/art-20045328"),
+                    "msg": ("What is MSG? Is it bad for you?", "https://www.mayoclinic.org/healthy-lifestyle/nutrition-and-healthy-eating/expert-answers/monosodium-glutamate/faq-20058196"),
+                    "nitrite": ("Cancer prevention: 7 tips to reduce your risk", "https://www.mayoclinic.org/healthy-lifestyle/adult-health/in-depth/cancer-prevention/art-20044816")
+                }
+                
+                if ingredient in direct_pages:
+                    title, url = direct_pages[ingredient]
+                    citation = Citation(
+                        title=f"Mayo Clinic: {title}",
+                        authors=[Author(last_name="Mayo Clinic Staff", first_name="")],
+                        journal="Mayo Clinic Expert Advice",
+                        publication_date=datetime(2024, 1, 1),
+                        url=url,
+                        abstract=f"Expert medical guidance from Mayo Clinic on {ingredient} and its health effects, including evidence-based recommendations",
+                        source_type="mayo_clinic_web",
+                        relevance_score=0.9
+                    )
+                    citations.append(citation)
+            
+            print(f"[Mayo Clinic] Found {len(citations)} real citations")
                     
         except Exception as e:
-            logger.error(f"Mayo Clinic search error: {e}")
+            logger.error(f"Mayo Clinic web search error: {e}")
+            # Return empty list on error
         
         return citations[:max_results]
     

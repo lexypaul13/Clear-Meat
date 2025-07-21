@@ -535,28 +535,34 @@ class HealthAssessmentMCPService:
     ) -> Optional[HealthAssessment]:
         """Generate evidence-based assessment using MCP tools."""
         try:
-            # Using direct Gemini assessment (MCP disabled)
-            logger.info(f"[Assessment] Starting health analysis")
+            logger.info(f"[MCP Assessment] Starting health analysis WITH MCP citation tools")
             
             # Build the evidence-based assessment prompt
             prompt = self._build_evidence_assessment_prompt(
                 product, high_risk_ingredients, moderate_risk_ingredients
             )
             
-            # Send request to Gemini directly with timeout protection
-            response = await asyncio.wait_for(
-                asyncio.get_event_loop().run_in_executor(
-                    None,
-                    lambda: genai.GenerativeModel(self.model).generate_content(
-                        prompt,
-                        generation_config=genai.GenerationConfig(
-                            temperature=0,
-                            max_output_tokens=4000
+            # Set up MCP transport and client
+            transport = FastMCPTransport(self.mcp_server)
+            
+            async with MCPClient(transport) as mcp_client:
+                logger.info(f"[MCP Assessment] MCP client connected, tools available: {[tool.name for tool in await mcp_client.list_tools()]}")
+                
+                # Send request to Gemini WITH MCP tools
+                response = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: genai.GenerativeModel(self.model).generate_content(
+                            prompt,
+                            generation_config=genai.GenerationConfig(
+                                temperature=0,
+                                max_output_tokens=4000,
+                                tools=[mcp_client]  # CRITICAL: Provide MCP tools to Gemini!
+                            )
                         )
-                    )
-                ),
-                timeout=15.0  # 15 second timeout for full assessment (optimized)
-            )
+                    ),
+                    timeout=30.0  # Increase timeout for MCP tool calls
+                )
             
             # Set product context for parser
             self._current_product = product
@@ -568,17 +574,19 @@ class HealthAssessmentMCPService:
             )
             
             if assessment_data:
-                # Ensure the response matches the exact contract format
-                return assessment_data  # Return dict instead of HealthAssessment to avoid Pydantic issues
+                logger.info(f"[MCP Assessment] Successfully generated assessment with {len(assessment_data.get('citations', []))} citations")
+                return assessment_data
             else:
                 return None
                 
         except asyncio.TimeoutError:
-            logger.warning(f"Health assessment generation timed out after 20 seconds for product {product.product.code}")
+            logger.warning(f"MCP health assessment generation timed out after 30 seconds for product {product.product.code}")
             return None
         except Exception as e:
             logger.error(f"Error in MCP evidence-based assessment for product {product.product.code}: {e}")
             logger.debug(f"High-risk ingredients: {len(high_risk_ingredients)}, Moderate-risk: {len(moderate_risk_ingredients)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return None
     
     async def _generate_evidence_based_assessment_with_fallback(
@@ -600,20 +608,27 @@ class HealthAssessmentMCPService:
                 product, high_risk_ingredients, moderate_risk_ingredients
             )
             
-            # Send request to Gemini directly with timeout protection
-            response = await asyncio.wait_for(
-                asyncio.get_event_loop().run_in_executor(
-                    None,
-                    lambda: genai.GenerativeModel(self.model).generate_content(
-                        prompt,
-                        generation_config=genai.GenerationConfig(
-                            temperature=0,
-                            max_output_tokens=4000
+            # Set up MCP transport and client for parallel assessment
+            transport = FastMCPTransport(self.mcp_server)
+            
+            async with MCPClient(transport) as mcp_client:
+                logger.info(f"[MCP Parallel Assessment] MCP client connected for parallel assessment")
+                
+                # Send request to Gemini WITH MCP tools
+                response = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: genai.GenerativeModel(self.model).generate_content(
+                            prompt,
+                            generation_config=genai.GenerationConfig(
+                                temperature=0,
+                                max_output_tokens=4000,
+                                tools=[mcp_client]  # Provide MCP tools for parallel assessment too!
+                            )
                         )
-                    )
-                ),
-                timeout=15.0  # 15 second timeout for parallel assessment (optimized)
-            )
+                    ),
+                    timeout=30.0  # Increase timeout for MCP tool calls
+                )
             
             # Set product context for parser
             self._current_product = product
@@ -773,14 +788,15 @@ HIGH-RISK INGREDIENTS: {', '.join(high_risk_ingredients) if high_risk_ingredient
 MODERATE-RISK INGREDIENTS: {', '.join(moderate_risk_ingredients) if moderate_risk_ingredients else 'None'}
 
 CRITICAL INSTRUCTIONS:
-1. For EACH high-risk and moderate-risk ingredient, you MUST use the search_and_extract_evidence tool
+1. For EACH high-risk and moderate-risk ingredient, you MUST use the search_health_citations tool
 2. Search for health effects, toxicity, and safety concerns for each ingredient
 3. Use the evidence from scientific papers to write micro-reports
 4. Generate concise, plain English summaries (≤180 characters) based on actual research findings
-5. Include proper citations from the research you find
+5. Include proper citations from the research you find with actual URLs
 
 REQUIRED TOOLS TO USE:
-- search_and_extract_evidence(ingredient, "health effects toxicity", 2) for each high/moderate risk ingredient
+- search_health_citations(ingredient, "health effects toxicity", 2) for each high-risk ingredient
+- search_health_citations(ingredient, "safety assessment", 1) for each moderate-risk ingredient
 
 RESPONSE FORMAT:
 Provide a comprehensive health assessment with:
@@ -792,14 +808,14 @@ For each high/moderate risk ingredient:
 - Name: [Ingredient]
 - Risk Level: [High/Moderate] 
 - Micro Report: [Evidence-based summary ≤180 chars from research]
-- Citations: [List citations found]
+- Citations: [List actual citations with titles and URLs found]
 
 OVERALL GRADE: [A-F based on ingredients]
 GRADE COLOR: [Green/Yellow/Orange/Red]
 
-WORKS CITED: [Numbered list of all citations]
+WORKS CITED: [Numbered list of all citations with titles and URLs]
 
-Remember: Base ALL micro-reports on actual scientific evidence you find using the tools. Do NOT use generic statements."""
+Remember: Base ALL micro-reports on actual scientific evidence you find using the search_health_citations tool. Include real URLs."""
     
     async def _parse_assessment_response(
         self, 
@@ -948,13 +964,14 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
                 logger.warning(f"AI nutrition generation failed, falling back to static insights: {e}")
                 assessment_data["nutrition_insights"] = self._generate_fallback_nutrition_insights(self._current_product)
             
-            # Generate real scientific citations using MCP
-            logger.info(f"[Citation Debug] About to generate citations for {len(high_risk_ingredients)} high-risk and {len(moderate_risk_ingredients)} moderate-risk ingredients")
+            # Citations should now come from the AI's MCP tool usage in the response
+            # Extract citations from the AI's response text instead of generating separately
+            logger.info(f"[MCP Citations] Parsing citations from AI response with MCP tools")
             
-            # Use real citation system
-            citations_result = await self._generate_real_citations(high_risk_ingredients, moderate_risk_ingredients)
-            logger.info(f"[Citation Debug] Generated {len(citations_result)} citations: {[c.get('title', 'No title')[:50] for c in citations_result]}")
-            assessment_data["citations"] = citations_result
+            # Parse citations from the WORKS CITED section of the response
+            citations_from_response = self._parse_citations_from_response(response_text)
+            logger.info(f"[MCP Citations] Found {len(citations_from_response)} citations from AI MCP tool usage")
+            assessment_data["citations"] = citations_from_response
             
             # Analyze product quality indicators
             product_name = self._current_product.product.name.lower() if self._current_product else ""
@@ -1125,6 +1142,60 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
                         'id': len(citations) + 1,
                         'citation': citation_clean.strip()
                     })
+        
+        return citations
+    
+    def _parse_citations_from_response(self, response_text: str) -> List[Dict[str, Any]]:
+        """Parse citations from AI response that used MCP tools."""
+        citations = []
+        
+        # Find WORKS CITED section
+        works_cited_match = re.search(r'WORKS CITED:(.*?)(?=\n\n|\Z)', response_text, re.IGNORECASE | re.DOTALL)
+        if not works_cited_match:
+            logger.warning("[MCP Citations] No WORKS CITED section found in AI response")
+            return []
+        
+        citations_text = works_cited_match.group(1)
+        lines = citations_text.strip().split('\n')
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            # Parse numbered citations that should include URLs from MCP search
+            match = re.match(r'^\d+\.\s*(.+)', line)
+            if match:
+                citation_text = match.group(1)
+                
+                # Extract title and URL from citation
+                # Format expected: "Title of Article. Source. URL"
+                url_match = re.search(r'(https?://[^\s]+)', citation_text)
+                if url_match:
+                    url = url_match.group(1).rstrip('.,;')
+                    title = citation_text[:url_match.start()].strip().rstrip('.,')
+                else:
+                    # No URL found - this shouldn't happen with MCP
+                    logger.warning(f"[MCP Citations] No URL found in citation: {citation_text}")
+                    continue
+                
+                # Extract source/journal name if present
+                parts = title.split('.')
+                if len(parts) >= 2:
+                    actual_title = parts[0].strip()
+                    source = parts[1].strip()
+                else:
+                    actual_title = title
+                    source = "Scientific Research"
+                
+                citations.append({
+                    "id": len(citations) + 1,
+                    "title": actual_title,
+                    "source": source,
+                    "year": 2024,  # Default year - can be extracted if present
+                    "url": url,
+                    "source_type": "research"
+                })
         
         return citations
     
@@ -1487,20 +1558,7 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
                 logger.info(f"[Enhanced Debug] Product ingredients text: {self._current_product.product.ingredients_text}")
                 logger.info(f"[Enhanced Debug] Extracted ingredients: {all_ingredients}")
             
-            # Define concerning additives/preservatives that warrant citation search
-            concerning_additives = [
-                'sodium nitrite', 'sodium nitrate', 'nitrite', 'nitrate',
-                'msg', 'monosodium glutamate', 'glutamate',
-                'sodium benzoate', 'benzoate', 'potassium sorbate', 'sorbate',
-                'carrageenan', 'guar gum', 'xanthan gum',
-                'artificial color', 'red dye', 'yellow dye', 'blue dye', 'caramel color',
-                'bht', 'bha', 'tbhq', 'tocopherol',
-                'high fructose corn syrup', 'corn syrup', 'fructose',
-                'sodium phosphate', 'phosphate', 'polyphosphate',
-                'artificial flavor', 'natural flavor'
-            ]
-            
-            # Find ingredients that match concerning additives
+            # Find ingredients that warrant citation search
             ingredients_to_research = []
             
             # Prioritize high-risk and moderate-risk ingredients
@@ -1509,16 +1567,6 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
             
             for ingredient in moderate_risk_ingredients[:5]:
                 ingredients_to_research.append((ingredient, "moderate", "safety assessment"))
-            
-            # Add concerning additives found in ALL ingredients (not just high/moderate risk)
-            for ingredient in all_ingredients:
-                ingredient_lower = ingredient.lower()
-                for additive in concerning_additives:
-                    if (additive in ingredient_lower and 
-                        ingredient not in [item[0] for item in ingredients_to_research] and
-                        len(ingredients_to_research) < 10):  # Limit total searches
-                        ingredients_to_research.append((ingredient, "additive", "safety health effects"))
-                        break
             
             logger.info(f"[Real Citations] Researching {len(ingredients_to_research)} concerning ingredients: {len(high_risk_ingredients)} high-risk, {len(moderate_risk_ingredients)} moderate-risk, {len(ingredients_to_research) - len(high_risk_ingredients) - len(moderate_risk_ingredients)} additives")
             
