@@ -42,8 +42,10 @@ pymed==0.8.9
 # newspaper3k==0.2.8  # REMOVED: incompatible with modern dependencies
 lxml>=4.9.0  # Alternative for HTML/XML parsing
 
-# MCP support for real scientific research - using fastmcp (original package)
-fastmcp==2.7.0
+# LangChain for Google Gemini tool integration (replaces MCP)
+langchain>=0.1.0
+langchain-google-genai>=0.0.6
+langchain-core>=0.1.0
 
 # Additional dependencies - constrained for compatibility
 urllib3>=1.26.0,<3.0.0

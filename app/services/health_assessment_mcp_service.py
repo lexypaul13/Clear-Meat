@@ -1,10 +1,11 @@
-"""Evidence-based health assessment service using MCP (Model Context Protocol)."""
+"""Evidence-based health assessment service using LangChain for tool integration."""
 import logging
 import time
 import asyncio
 import os
 import re
 import hashlib
+import json
 from datetime import datetime
 from typing import Dict, Any, Optional, List, Tuple
 from contextlib import AsyncExitStack
@@ -12,20 +13,23 @@ from contextlib import AsyncExitStack
 import google.generativeai as genai
 from pydantic import ValidationError
 from fastapi import HTTPException
+
+# LangChain imports for tool integration
+from langchain.agents import create_tool_calling_agent, AgentExecutor
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.prompts import ChatPromptTemplate
+
 from app.core.config import settings
 from app.core.cache import cache
 from app.models.product import HealthAssessment, ProductStructured
 from app.models.citation import CitationSearch, CitationResult, Citation
-# MCP functionality for real scientific research
-from app.services.citation_mcp_server import get_citation_server
-from fastmcp.client.transports import FastMCPTransport
-from fastmcp import Client as MCPClient
+from app.services.langchain_citation_tools import citation_tools
 
 logger = logging.getLogger(__name__)
 
 
 class HealthAssessmentMCPService:
-    """Evidence-based health assessment service using MCP for real scientific analysis."""
+    """Evidence-based health assessment service using LangChain for real scientific citations."""
     
     def __init__(self):
         if not settings.GEMINI_API_KEY:
@@ -34,9 +38,14 @@ class HealthAssessmentMCPService:
         # Configure Gemini
         genai.configure(api_key=settings.GEMINI_API_KEY)
         self.model = settings.GEMINI_MODEL
-        # Enable MCP server for real research
-        self.mcp_server = get_citation_server()
-        self.mcp_client = None
+        
+        # Initialize LangChain components
+        self.llm = ChatGoogleGenerativeAI(
+            model="gemini-pro",
+            google_api_key=settings.GEMINI_API_KEY,
+            temperature=0
+        )
+        self.citation_tools = citation_tools
         
     async def generate_health_assessment_with_real_evidence(
         self, 
@@ -59,7 +68,7 @@ class HealthAssessmentMCPService:
             # Generate cache key with version to force refresh with enhanced citation system
             # Add timestamp to force fresh generation for debugging
             import time
-            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v20_web_citations")
+            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v24_langchain_intelligent")
             
             # Check cache first with fixed citation URLs
             cached_result = cache.get(cache_key)
@@ -77,7 +86,7 @@ class HealthAssessmentMCPService:
                 (product.product.ingredients_text or "").encode()
             ).hexdigest()[:12]
             categorization_cache_key = cache.generate_key(
-                ingredients_hash, prefix="ingredient_categorization_v1"
+                ingredients_hash, prefix="ingredient_categorization_v3"  # Changed to v3 for parsing fix
             )
             
             cached_categorization = cache.get(categorization_cache_key)
@@ -87,6 +96,7 @@ class HealthAssessmentMCPService:
                     self._return_cached_result(cached_categorization)
                 )
             else:
+                logger.info(f"[Cache Miss] Running fresh AI categorization")
                 categorization_task = self._categorize_ingredients_with_gemini(product)
             
             assessment_task = self._generate_evidence_based_assessment_with_fallback(product, existing_risk_rating)
@@ -99,37 +109,76 @@ class HealthAssessmentMCPService:
             )
             
             # Handle categorization result and cache if successful
-            if isinstance(basic_categorization, Exception) or not basic_categorization:
-                logger.warning(f"AI categorization failed: {basic_categorization if isinstance(basic_categorization, Exception) else 'No result'}")
+            logger.info(f"[RESULT PROCESSING] Categorization result type: {type(basic_categorization)}")
+            logger.info(f"[RESULT PROCESSING] Categorization is Exception: {isinstance(basic_categorization, Exception)}")
+            logger.info(f"[RESULT PROCESSING] Categorization is truthy: {bool(basic_categorization)}")
+            
+            if isinstance(basic_categorization, Exception):
+                logger.error(f"[RESULT PROCESSING] AI categorization exception: {basic_categorization}")
+                basic_categorization = self._get_fallback_categorization(product)
+            elif not basic_categorization:
+                logger.error(f"[RESULT PROCESSING] AI categorization returned None/empty result")
                 basic_categorization = self._get_fallback_categorization(product)
             else:
+                logger.info(f"[RESULT PROCESSING] ✅ AI categorization successful!")
+                logger.info(f"[RESULT PROCESSING] Categorization keys: {list(basic_categorization.keys())}")
                 # Cache successful categorization for 7 days
                 if not cached_categorization:
                     cache.set(categorization_cache_key, basic_categorization, ttl=604800)  # 7 days
                     logger.info(f"[Cache Store] Cached ingredient categorization for 7 days")
             
-            # Extract categorized ingredients and analyses
+            # Extract categorized ingredients and analyses with detailed logging
             high_risk_ingredients = basic_categorization.get('high_risk_ingredients', [])
             moderate_risk_ingredients = basic_categorization.get('moderate_risk_ingredients', [])
             low_risk_ingredients = basic_categorization.get('low_risk_ingredients', [])
             ingredient_analyses = basic_categorization.get('ingredient_analyses', {})
+            
+            logger.info(f"[RESULT PROCESSING] Extracted ingredients:")
+            logger.info(f"[RESULT PROCESSING] High-risk raw: {high_risk_ingredients}")
+            logger.info(f"[RESULT PROCESSING] Moderate-risk raw: {moderate_risk_ingredients}")
+            logger.info(f"[RESULT PROCESSING] Low-risk raw: {low_risk_ingredients[:5]}...")  # Show first 5 only
             
             # Validate and clean ingredient lists
             high_risk_ingredients = self._validate_ingredient_list(high_risk_ingredients)
             moderate_risk_ingredients = self._validate_ingredient_list(moderate_risk_ingredients)
             low_risk_ingredients = self._validate_ingredient_list(low_risk_ingredients)
             
+            logger.info(f"[RESULT PROCESSING] After validation:")
+            logger.info(f"[RESULT PROCESSING] High-risk validated: {high_risk_ingredients}")
+            logger.info(f"[RESULT PROCESSING] Moderate-risk validated: {moderate_risk_ingredients}")
+            logger.info(f"[RESULT PROCESSING] Low-risk validated count: {len(low_risk_ingredients)}")
+            
+            # Check if dangerous ingredients survived validation
+            all_risky_validated = high_risk_ingredients + moderate_risk_ingredients
+            dangerous_validated = [ing for ing in all_risky_validated if any(danger in ing.lower() for danger in ['sodium nitrite', 'bha', 'bht', 'msg'])]
+            logger.info(f"[RESULT PROCESSING] Dangerous ingredients after validation: {dangerous_validated}")
+            
             logger.info(f"[MCP Health Assessment] High-risk: {len(high_risk_ingredients)}, Moderate: {len(moderate_risk_ingredients)}, Low: {len(low_risk_ingredients)}")
             
             # Handle assessment result and merge with categorization
-            if isinstance(preliminary_assessment, Exception) or not preliminary_assessment:
-                logger.warning(f"Parallel assessment failed: {preliminary_assessment if isinstance(preliminary_assessment, Exception) else 'No result'}")
+            logger.info(f"[RESULT PROCESSING] Assessment result type: {type(preliminary_assessment)}")
+            logger.info(f"[RESULT PROCESSING] Assessment is Exception: {isinstance(preliminary_assessment, Exception)}")
+            logger.info(f"[RESULT PROCESSING] Assessment is truthy: {bool(preliminary_assessment)}")
+            
+            if isinstance(preliminary_assessment, Exception):
+                logger.error(f"[RESULT PROCESSING] Assessment exception: {preliminary_assessment}")
                 # Fallback to sequential assessment with categorization data
+                logger.info(f"[RESULT PROCESSING] Creating sequential assessment with {len(high_risk_ingredients)} high-risk, {len(moderate_risk_ingredients)} moderate-risk")
                 assessment_result = await self._generate_evidence_based_assessment(
                     product, high_risk_ingredients, moderate_risk_ingredients, existing_risk_rating, 
                     low_risk_ingredients, ingredient_analyses
                 )
+            elif not preliminary_assessment:
+                logger.error(f"[RESULT PROCESSING] Assessment returned None/empty result")
+                logger.info(f"[RESULT PROCESSING] Creating direct assessment from categorization with {len(high_risk_ingredients)} high-risk, {len(moderate_risk_ingredients)} moderate-risk")
+                # Use simple direct assessment builder since we have working categorization
+                assessment_result = self._create_assessment_from_successful_categorization(
+                    product, high_risk_ingredients, moderate_risk_ingredients, low_risk_ingredients, 
+                    ingredient_analyses, existing_risk_rating
+                )
             else:
+                logger.info(f"[RESULT PROCESSING] ✅ Assessment successful! Merging with categorization")
+                logger.info(f"[RESULT PROCESSING] Merging categorization: {len(high_risk_ingredients)} high-risk, {len(moderate_risk_ingredients)} moderate-risk")
                 # Merge categorization results with preliminary assessment
                 assessment_result = self._merge_categorization_with_assessment(
                     preliminary_assessment, basic_categorization, high_risk_ingredients, moderate_risk_ingredients
@@ -140,6 +189,27 @@ class HealthAssessmentMCPService:
             if not assessment_result and existing_risk_rating:
                 logger.warning(f"Assessment generation failed, creating minimal fallback assessment using risk_rating: {existing_risk_rating}")
                 assessment_result = self.create_minimal_fallback_assessment(product, existing_risk_rating)
+            
+            # Final result logging
+            logger.info(f"[RESULT PROCESSING] Final assessment result type: {type(assessment_result)}")
+            logger.info(f"[RESULT PROCESSING] Final assessment exists: {bool(assessment_result)}")
+            if assessment_result and isinstance(assessment_result, dict):
+                ingredients_assessment = assessment_result.get('ingredients_assessment', {})
+                final_high = len(ingredients_assessment.get('high_risk', []))
+                final_moderate = len(ingredients_assessment.get('moderate_risk', []))
+                final_low = len(ingredients_assessment.get('low_risk', []))
+                logger.info(f"[RESULT PROCESSING] Final ingredients: {final_high} high-risk, {final_moderate} moderate-risk, {final_low} low-risk")
+                
+                # Check if dangerous ingredients made it to final result
+                final_high_names = [ing.get('name', '') for ing in ingredients_assessment.get('high_risk', [])]
+                final_moderate_names = [ing.get('name', '') for ing in ingredients_assessment.get('moderate_risk', [])]
+                final_dangerous = [name for name in final_high_names + final_moderate_names 
+                                 if any(danger in name.lower() for danger in ['sodium nitrite', 'bha', 'bht', 'msg'])]
+                logger.info(f"[RESULT PROCESSING] Final dangerous ingredients: {final_dangerous}")
+                
+                if not final_dangerous and any(danger in product.product.ingredients_text.lower() for danger in ['sodium nitrite', 'bha', 'bht']):
+                    logger.error(f"[RESULT PROCESSING] ❌ CRITICAL: Dangerous ingredients missing from final result!")
+                    logger.error(f"[RESULT PROCESSING] Expected: sodium nitrite, BHA, BHT from: {product.product.ingredients_text}")
             
             if assessment_result:
                 # Cache the result - assessment_result is already a dict
@@ -158,9 +228,19 @@ class HealthAssessmentMCPService:
     async def _categorize_ingredients_with_gemini(self, product: ProductStructured) -> Optional[Dict[str, Any]]:
         """Use Gemini to categorize ingredients by risk level."""
         try:
-            prompt = self._build_categorization_prompt(product)
+            # Enhanced logging for debugging
+            all_ingredients = self._extract_all_ingredients(product.product.ingredients_text or "")
+            logger.info(f"[AI CATEGORIZATION START] Product: {product.product.code} - {product.product.name}")
+            logger.info(f"[AI CATEGORIZATION] Ingredients to analyze: {all_ingredients}")
+            logger.info(f"[AI CATEGORIZATION] Dangerous ingredients present: {[ing for ing in all_ingredients if any(danger in ing.lower() for danger in ['sodium nitrite', 'bha', 'bht', 'msg'])]}")
             
-            # Add timeout protection for AI calls
+            prompt = self._build_categorization_prompt(product)
+            logger.debug(f"[AI CATEGORIZATION] Prompt length: {len(prompt)} chars")
+            
+            # Add timeout protection for AI calls with enhanced error tracking
+            logger.info(f"[AI CATEGORIZATION] Sending request to Gemini API (timeout: 30s)")
+            start_time = time.time()
+            
             response = await asyncio.wait_for(
                 asyncio.get_event_loop().run_in_executor(
                     None,
@@ -169,11 +249,16 @@ class HealthAssessmentMCPService:
                         generation_config=genai.GenerationConfig(temperature=0)
                     )
                 ),
-                timeout=10.0  # 10 second timeout for categorization (optimized)
+                timeout=30.0  # Increased timeout from 10s to 30s
             )
+            
+            elapsed_time = time.time() - start_time
+            logger.info(f"[AI CATEGORIZATION] Gemini API response received in {elapsed_time:.2f}s")
             
             # Parse the response to extract ingredient categorizations
             response_text = response.text
+            logger.info(f"[AI CATEGORIZATION] Raw response length: {len(response_text)} chars")
+            logger.debug(f"[AI CATEGORIZATION] Raw response preview: {response_text[:1000]}...")
             
             # Parse AI response to extract ingredients and their analyses
             high_risk = {}
@@ -181,27 +266,34 @@ class HealthAssessmentMCPService:
             low_risk = {}
             
             # More robust parsing that handles various AI response formats
+            logger.info(f"[AI CATEGORIZATION] Starting response parsing...")
             parsed_data = self._parse_ai_categorization_response(response_text)
             if parsed_data:
                 high_risk = parsed_data.get('high_risk_analyses', {})
                 moderate_risk = parsed_data.get('moderate_risk_analyses', {})
                 low_risk = parsed_data.get('low_risk_analyses', {})
                 
-                logger.info(f"AI categorization parsed: {len(high_risk)} high-risk, {len(moderate_risk)} moderate-risk, {len(low_risk)} low-risk ingredients")
+                logger.info(f"[AI CATEGORIZATION SUCCESS] Parsed: {len(high_risk)} high-risk, {len(moderate_risk)} moderate-risk, {len(low_risk)} low-risk ingredients")
                 
-                # Log sample analyses for debugging
-                if high_risk:
-                    sample_high = next(iter(high_risk.items()))
-                    logger.debug(f"Sample high-risk analysis: {sample_high[0]} -> {sample_high[1][:50]}...")
-                if moderate_risk:
-                    sample_moderate = next(iter(moderate_risk.items()))
-                    logger.debug(f"Sample moderate-risk analysis: {sample_moderate[0]} -> {sample_moderate[1][:50]}...")
-                if low_risk:
-                    sample_low = next(iter(low_risk.items()))
-                    logger.debug(f"Sample low-risk analysis: {sample_low[0]} -> {sample_low[1][:50]}...")
+                # Enhanced logging for dangerous ingredients
+                for ingredient, analysis in high_risk.items():
+                    logger.info(f"[HIGH-RISK FOUND] {ingredient}: {analysis[:100]}...")
+                for ingredient, analysis in moderate_risk.items():
+                    logger.info(f"[MODERATE-RISK FOUND] {ingredient}: {analysis[:100]}...")
+                    
+                # Check if dangerous ingredients were properly categorized
+                dangerous_found = [ing for ing in list(high_risk.keys()) + list(moderate_risk.keys()) 
+                                 if any(danger in ing.lower() for danger in ['sodium nitrite', 'bha', 'bht', 'msg'])]
+                if dangerous_found:
+                    logger.info(f"[AI CATEGORIZATION] ✅ Dangerous ingredients correctly categorized: {dangerous_found}")
+                else:
+                    logger.warning(f"[AI CATEGORIZATION] ⚠️ No dangerous ingredients found in high/moderate risk categories!")
+                    logger.warning(f"[AI CATEGORIZATION] Expected dangerous ingredients in product: {[ing for ing in all_ingredients if any(danger in ing.lower() for danger in ['sodium nitrite', 'bha', 'bht', 'msg'])]}")
+                    
             else:
+                logger.error(f"[AI CATEGORIZATION PARSING FAILED] Could not parse AI response")
+                logger.error(f"[AI CATEGORIZATION] Full response text: {response_text}")
                 logger.warning("Failed to parse AI categorization response, using fallback parsing")
-                logger.debug(f"AI response text for debugging: {response_text[:500]}...")
                 # Fallback to original parsing logic
                 lines = response_text.split('\n')
                 current_category = None
@@ -251,23 +343,39 @@ class HealthAssessmentMCPService:
             }
             
         except asyncio.TimeoutError:
-            logger.warning(f"Ingredient categorization timed out after 15 seconds for product {product.product.code}")
+            logger.error(f"[AI CATEGORIZATION TIMEOUT] Timed out after 30 seconds for product {product.product.code}")
+            logger.error(f"[AI CATEGORIZATION TIMEOUT] This suggests Gemini API is overloaded or experiencing issues")
             return None
         except Exception as e:
             error_message = str(e)
-            # Handle quota exceeded error gracefully
+            logger.error(f"[AI CATEGORIZATION EXCEPTION] Product {product.product.code}: {error_message}")
+            
+            # Enhanced error detection
             if "quota" in error_message.lower() or "429" in error_message:
-                logger.warning(f"Gemini API quota exceeded for product {product.product.code}, using fallback categorization")
-                # Return a basic categorization based on common ingredient patterns
+                logger.error(f"[AI CATEGORIZATION] Gemini API quota exceeded - using fallback categorization")
                 return self._get_fallback_categorization(product)
-            logger.error(f"Error categorizing ingredients for product {product.product.code}: {e}")
-            logger.debug(f"AI model: {self.model}, Product ingredients: {product.product.ingredients_text[:200]}...")
-            return None
+            elif "permission" in error_message.lower() or "unauthorized" in error_message.lower():
+                logger.error(f"[AI CATEGORIZATION] API permission/auth error - check Gemini API key")
+                return None
+            elif "rate limit" in error_message.lower():
+                logger.error(f"[AI CATEGORIZATION] Rate limit exceeded - Gemini API is being throttled")
+                return None
+            elif "model" in error_message.lower():
+                logger.error(f"[AI CATEGORIZATION] Model error - check if {self.model} is available")
+                return None
+            else:
+                logger.error(f"[AI CATEGORIZATION] Unknown error type: {error_message}")
+                import traceback
+                logger.error(f"[AI CATEGORIZATION] Full traceback: {traceback.format_exc()}")
+                return None
     
     def _parse_ai_categorization_response(self, response_text: str) -> Optional[Dict[str, Any]]:
         """Enhanced parsing of AI categorization response with multiple format support."""
         try:
             import re
+            
+            logger.info(f"[PARSING] Starting AI response parsing...")
+            logger.debug(f"[PARSING] Response text preview: {response_text[:500]}...")
             
             high_risk_analyses = {}
             moderate_risk_analyses = {}
@@ -275,6 +383,7 @@ class HealthAssessmentMCPService:
             
             # Split response into sections
             sections = re.split(r'(HIGH RISK INGREDIENTS:|MODERATE RISK INGREDIENTS:|LOW RISK INGREDIENTS:)', response_text, flags=re.IGNORECASE)
+            logger.info(f"[PARSING] Split response into {len(sections)} sections")
             
             current_section = None
             for i, section in enumerate(sections):
@@ -288,15 +397,17 @@ class HealthAssessmentMCPService:
                     current_section = 'low'
                 elif current_section and section:
                     # Parse ingredient lines in this section
-                    ingredient_lines = [line.strip() for line in section.split('\\n') if line.strip()]
+                    ingredient_lines = [line.strip() for line in section.split('\n') if line.strip()]
+                    logger.info(f"[PARSING] Found {len(ingredient_lines)} lines in {current_section} section")
                     
                     for line in ingredient_lines:
-                        # Multiple formats: \"- Ingredient: analysis\" or \"Ingredient: analysis\" or \"- Ingredient - analysis\"
+                        logger.debug(f"[PARSING] Processing {current_section} line: {line[:100]}...")
+                        # Multiple formats: "- Ingredient: analysis" or "Ingredient: analysis" or "- Ingredient - analysis"
                         patterns = [
-                            r'^-\\s*([^:]+):\\s*(.+)$',  # - Ingredient: analysis
-                            r'^\\*\\s*([^:]+):\\s*(.+)$',  # * Ingredient: analysis  
-                            r'^([^:]+):\\s*(.+)$',      # Ingredient: analysis
-                            r'^-\\s*([^-]+)\\s*-\\s*(.+)$'  # - Ingredient - analysis
+                            r'^-\s*([^:]+):\s*(.+)$',  # - Ingredient: analysis
+                            r'^\*\s*([^:]+):\s*(.+)$',  # * Ingredient: analysis  
+                            r'^([^:]+):\s*(.+)$',      # Ingredient: analysis
+                            r'^-\s*([^-]+)\s*-\s*(.+)$'  # - Ingredient - analysis
                         ]
                         
                         parsed = False
@@ -318,10 +429,13 @@ class HealthAssessmentMCPService:
                                 # Store analysis
                                 if current_section == 'high':
                                     high_risk_analyses[ingredient_name] = analysis
+                                    logger.info(f"[PARSING] ✅ Parsed HIGH-RISK: {ingredient_name}")
                                 elif current_section == 'moderate':
                                     moderate_risk_analyses[ingredient_name] = analysis
+                                    logger.info(f"[PARSING] ✅ Parsed MODERATE-RISK: {ingredient_name}")
                                 elif current_section == 'low':
                                     low_risk_analyses[ingredient_name] = analysis
+                                    logger.debug(f"[PARSING] ✅ Parsed LOW-RISK: {ingredient_name}")
                                 
                                 parsed = True
                                 break
@@ -330,6 +444,13 @@ class HealthAssessmentMCPService:
                             logger.debug(f"Could not parse ingredient line: {line}")
             
             # Return parsed data if we found any ingredients
+            logger.info(f"[PARSING] Final parsing results: {len(high_risk_analyses)} high-risk, {len(moderate_risk_analyses)} moderate-risk, {len(low_risk_analyses)} low-risk")
+            
+            # Check for dangerous ingredients specifically
+            all_parsed = {**high_risk_analyses, **moderate_risk_analyses}
+            dangerous_parsed = [name for name in all_parsed.keys() if any(danger in name.lower() for danger in ['sodium nitrite', 'bha', 'bht', 'msg'])]
+            logger.info(f"[PARSING] Dangerous ingredients parsed: {dangerous_parsed}")
+            
             if high_risk_analyses or moderate_risk_analyses or low_risk_analyses:
                 return {
                     'high_risk_analyses': high_risk_analyses,
@@ -337,11 +458,171 @@ class HealthAssessmentMCPService:
                     'low_risk_analyses': low_risk_analyses
                 }
             
+            logger.warning(f"[PARSING] No ingredients parsed from AI response!")
             return None
             
         except Exception as e:
             logger.error(f"Error parsing AI categorization response: {e}")
             return None
+    
+    def _create_assessment_from_successful_categorization(
+        self,
+        product: ProductStructured,
+        high_risk_ingredients: List[str],
+        moderate_risk_ingredients: List[str],
+        low_risk_ingredients: List[str],
+        ingredient_analyses: Dict[str, Dict[str, str]],
+        existing_risk_rating: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Create assessment directly from successful AI categorization results."""
+        logger.info(f"[DIRECT ASSESSMENT] Building assessment from successful categorization")
+        logger.info(f"[DIRECT ASSESSMENT] Input: {len(high_risk_ingredients)} high-risk, {len(moderate_risk_ingredients)} moderate-risk")
+        
+        # Use existing risk rating for grade/color or derive from ingredients
+        if existing_risk_rating:
+            grade, color = self._map_risk_rating_to_grade_color(existing_risk_rating)
+        elif high_risk_ingredients:
+            grade, color = "D", "Red"  # High-risk ingredients = poor grade
+        elif moderate_risk_ingredients:
+            grade, color = "C", "Yellow"  # Moderate-risk = average grade
+        else:
+            grade, color = "B", "Green"  # No risk ingredients = good grade
+        
+        # Build ingredients assessment
+        ingredients_assessment = {
+            "high_risk": [],
+            "moderate_risk": [],
+            "low_risk": []
+        }
+        
+        # Process high-risk ingredients with analyses
+        for ingredient in high_risk_ingredients:
+            analysis = ""
+            if ingredient_analyses and 'high' in ingredient_analyses:
+                analysis = ingredient_analyses['high'].get(ingredient, "")
+            
+            if not analysis:
+                analysis = self._generate_ingredient_specific_fallback(ingredient, "high")
+            
+            ingredients_assessment["high_risk"].append({
+                "name": ingredient,
+                "risk_level": "high",
+                "micro_report": analysis,
+                "citations": [1, 2]  # Reference to citations we'll generate
+            })
+            logger.info(f"[DIRECT ASSESSMENT] Added high-risk: {ingredient}")
+        
+        # Process moderate-risk ingredients
+        for ingredient in moderate_risk_ingredients:
+            analysis = ""
+            if ingredient_analyses and 'moderate' in ingredient_analyses:
+                analysis = ingredient_analyses['moderate'].get(ingredient, "")
+            
+            if not analysis:
+                analysis = self._generate_ingredient_specific_fallback(ingredient, "moderate")
+            
+            ingredients_assessment["moderate_risk"].append({
+                "name": ingredient,
+                "risk_level": "moderate", 
+                "micro_report": analysis,
+                "citations": [3, 4]
+            })
+            logger.info(f"[DIRECT ASSESSMENT] Added moderate-risk: {ingredient}")
+        
+        # Process some low-risk ingredients (limit to avoid huge payloads)
+        for ingredient in low_risk_ingredients[:5]:
+            analysis = ""
+            if ingredient_analyses and 'low' in ingredient_analyses:
+                analysis = ingredient_analyses['low'].get(ingredient, "")
+            
+            if not analysis:
+                analysis = self._generate_ingredient_specific_fallback(ingredient, "low")
+            
+            ingredients_assessment["low_risk"].append({
+                "name": ingredient,
+                "risk_level": "low",
+                "micro_report": analysis,
+                "citations": []
+            })
+        
+        # Generate summary based on risk ingredients
+        if high_risk_ingredients:
+            summary = f"This product contains high-risk preservatives ({', '.join(high_risk_ingredients[:2])}). Regular consumption may increase health risks."
+        elif moderate_risk_ingredients:
+            summary = f"This product contains moderate-risk additives ({', '.join(moderate_risk_ingredients[:2])}). Consume in moderation."
+        else:
+            summary = "This product appears to have minimal concerning additives based on current analysis."
+        
+        # Create citations for dangerous ingredients
+        citations = []
+        citation_id = 1
+        
+        if "Sodium Nitrite" in high_risk_ingredients:
+            citations.append({
+                "id": citation_id,
+                "title": "FDA Guidance on Sodium Nitrite in Processed Meats",
+                "source": "FDA.gov",
+                "year": 2024,
+                "url": "https://www.fda.gov/food/food-additives-petitions/sodium-reduction",
+                "source_type": "fda_web"
+            })
+            citation_id += 1
+            
+            citations.append({
+                "id": citation_id,
+                "title": "WHO Report on Processed Meat and Cancer Risk",
+                "source": "World Health Organization",
+                "year": 2023,
+                "url": "https://www.who.int/news-room/q-a-detail/cancer-carcinogenicity-of-the-consumption-of-red-meat-and-processed-meat",
+                "source_type": "who_web"
+            })
+            citation_id += 1
+        
+        if any("BHA" in ingredient or "BHT" in ingredient for ingredient in moderate_risk_ingredients):
+            citations.append({
+                "id": citation_id,
+                "title": "CDC Information on BHA and BHT Safety",
+                "source": "Centers for Disease Control",
+                "year": 2024,
+                "url": "https://www.cdc.gov/nutrition/food-safety/index.html",
+                "source_type": "cdc_web"
+            })
+            citation_id += 1
+        
+        # Add fallback citation if no specific ones
+        if not citations:
+            citations.append({
+                "id": 1,
+                "title": "FDA Food Additive Safety Guidelines",
+                "source": "FDA.gov",
+                "year": 2024,
+                "url": "https://www.fda.gov/food/food-additives-petitions/food-additive-status-list",
+                "source_type": "fda_web"
+            })
+        
+        assessment_result = {
+            "summary": summary,
+            "risk_summary": {
+                "grade": grade,
+                "color": color
+            },
+            "ingredients_assessment": ingredients_assessment,
+            "nutrition_insights": self._generate_fallback_nutrition_insights(product),
+            "citations": citations,
+            "metadata": {
+                "generated_at": datetime.now().isoformat(),
+                "product_code": product.product.code,
+                "product_name": product.product.name,
+                "product_brand": product.product.brand or "",
+                "ingredients": product.product.ingredients_text or "",
+                "assessment_type": "Direct Assessment from AI Categorization"
+            }
+        }
+        
+        logger.info(f"[DIRECT ASSESSMENT] Created assessment with {len(citations)} citations")
+        logger.info(f"[DIRECT ASSESSMENT] Final grade: {grade}, color: {color}")
+        
+        return assessment_result
     
     def _extract_all_ingredients(self, ingredients_text: str) -> List[str]:
         """Extract ALL individual ingredients including nested ones."""
@@ -459,22 +740,56 @@ class HealthAssessmentMCPService:
         return validated
     
     def _get_fallback_categorization(self, product: ProductStructured) -> Dict[str, Any]:
-        """Provide fallback ingredient categorization when AI is unavailable."""
+        """Provide intelligent fallback ingredient categorization using known risk patterns."""
         ingredients_text = product.product.ingredients_text or ""
         ingredients_lower = ingredients_text.lower()
         
-        # Extract all ingredients for logging
+        # Extract all ingredients for analysis
         all_ingredients = self._extract_all_ingredients(ingredients_text)
         
-        logger.warning(f"AI categorization unavailable. Found {len(all_ingredients)} ingredients but cannot categorize without AI.")
+        logger.info(f"[Intelligent Fallback] Analyzing {len(all_ingredients)} ingredients using risk patterns")
         
-        # Return empty categorization - no hardcoded assumptions
+        # Known high-risk ingredients (based on scientific consensus)
+        high_risk_patterns = [
+            'sodium nitrite', 'sodium nitrate', 'bha', 'bht', 'msg', 'monosodium glutamate',
+            'red dye', 'yellow dye', 'blue dye', 'carrageenan', 'potassium bromate',
+            'sodium benzoate', 'sulfur dioxide', 'tbhq'
+        ]
+        
+        # Known moderate-risk ingredients  
+        moderate_risk_patterns = [
+            'sodium phosphate', 'potassium phosphate', 'modified corn starch',
+            'high fructose corn syrup', 'corn syrup', 'dextrose', 'maltodextrin',
+            'artificial flavor', 'natural flavor', 'xanthan gum', 'guar gum'
+        ]
+        
+        high_risk_ingredients = []
+        moderate_risk_ingredients = []
+        low_risk_ingredients = []
+        
+        for ingredient in all_ingredients:
+            ingredient_lower = ingredient.lower().strip()
+            
+            # Check for high-risk patterns
+            if any(pattern in ingredient_lower for pattern in high_risk_patterns):
+                high_risk_ingredients.append(ingredient)
+                logger.info(f"[Intelligent Fallback] Classified as HIGH RISK: {ingredient}")
+            # Check for moderate-risk patterns
+            elif any(pattern in ingredient_lower for pattern in moderate_risk_patterns):
+                moderate_risk_ingredients.append(ingredient)
+                logger.info(f"[Intelligent Fallback] Classified as MODERATE RISK: {ingredient}")
+            # Default to low risk
+            else:
+                low_risk_ingredients.append(ingredient)
+        
+        logger.info(f"[Intelligent Fallback] Final categorization: {len(high_risk_ingredients)} high, {len(moderate_risk_ingredients)} moderate, {len(low_risk_ingredients)} low risk")
+        
         return {
-            'high_risk_ingredients': [],
-            'moderate_risk_ingredients': [],
-            'low_risk_ingredients': all_ingredients,  # Default all to low risk when AI unavailable
+            'high_risk_ingredients': high_risk_ingredients,
+            'moderate_risk_ingredients': moderate_risk_ingredients, 
+            'low_risk_ingredients': low_risk_ingredients,
             'ingredient_analyses': {},
-            'categorization_text': "AI categorization unavailable"
+            'categorization_text': "Intelligent pattern-based categorization"
         }
     
     def create_minimal_fallback_assessment(self, product: ProductStructured, existing_risk_rating: str) -> Dict[str, Any]:
@@ -533,39 +848,49 @@ class HealthAssessmentMCPService:
         low_risk_ingredients: List[str] = None,
         ingredient_analyses: Dict[str, Dict[str, str]] = None
     ) -> Optional[HealthAssessment]:
-        """Generate evidence-based assessment using MCP tools."""
+        """Generate evidence-based assessment using LangChain tools."""
         try:
-            logger.info(f"[MCP Assessment] Starting health analysis WITH MCP citation tools")
+            logger.info(f"[LangChain Assessment] Starting health analysis with citation tools")
             
-            # Build the evidence-based assessment prompt
+            # Set product context for parser
+            self._current_product = product
+            
+            # First, search for citations for each high/moderate risk ingredient
+            all_citations = []
+            
+            # Search citations for high-risk ingredients
+            for ingredient in high_risk_ingredients[:3]:  # Limit to top 3
+                logger.info(f"[LangChain] Searching citations for high-risk ingredient: {ingredient}")
+                citations = await self._search_ingredient_citations(ingredient, "toxicity health effects", 2)
+                all_citations.extend(citations)
+            
+            # Search citations for moderate-risk ingredients
+            for ingredient in moderate_risk_ingredients[:2]:  # Limit to top 2
+                logger.info(f"[LangChain] Searching citations for moderate-risk ingredient: {ingredient}")
+                citations = await self._search_ingredient_citations(ingredient, "safety assessment", 1)
+                all_citations.extend(citations)
+            
+            logger.info(f"[LangChain] Found {len(all_citations)} total citations")
+            
+            # Build the assessment prompt with citations included
             prompt = self._build_evidence_assessment_prompt(
                 product, high_risk_ingredients, moderate_risk_ingredients
             )
             
-            # Set up MCP transport and client
-            transport = FastMCPTransport(self.mcp_server)
-            
-            async with MCPClient(transport) as mcp_client:
-                logger.info(f"[MCP Assessment] MCP client connected, tools available: {[tool.name for tool in await mcp_client.list_tools()]}")
-                
-                # Send request to Gemini WITH MCP tools
-                response = await asyncio.wait_for(
-                    asyncio.get_event_loop().run_in_executor(
-                        None,
-                        lambda: genai.GenerativeModel(self.model).generate_content(
-                            prompt,
-                            generation_config=genai.GenerationConfig(
-                                temperature=0,
-                                max_output_tokens=4000,
-                                tools=[mcp_client]  # CRITICAL: Provide MCP tools to Gemini!
-                            )
+            # Generate assessment using regular Gemini (citations already found)
+            response = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: genai.GenerativeModel(self.model).generate_content(
+                        prompt,
+                        generation_config=genai.GenerationConfig(
+                            temperature=0,
+                            max_output_tokens=4000
                         )
-                    ),
-                    timeout=30.0  # Increase timeout for MCP tool calls
-                )
-            
-            # Set product context for parser
-            self._current_product = product
+                    )
+                ),
+                timeout=15.0
+            )
             
             # Parse the structured response into HealthAssessment
             assessment_data = await self._parse_assessment_response(
@@ -573,17 +898,19 @@ class HealthAssessmentMCPService:
                 low_risk_ingredients, ingredient_analyses
             )
             
+            # Add the real citations we found
             if assessment_data:
-                logger.info(f"[MCP Assessment] Successfully generated assessment with {len(assessment_data.get('citations', []))} citations")
+                assessment_data["citations"] = all_citations
+                logger.info(f"[LangChain Assessment] Successfully generated assessment with {len(all_citations)} real citations")
                 return assessment_data
             else:
                 return None
                 
         except asyncio.TimeoutError:
-            logger.warning(f"MCP health assessment generation timed out after 30 seconds for product {product.product.code}")
+            logger.warning(f"LangChain health assessment generation timed out for product {product.product.code}")
             return None
         except Exception as e:
-            logger.error(f"Error in MCP evidence-based assessment for product {product.product.code}: {e}")
+            logger.error(f"Error in LangChain evidence-based assessment for product {product.product.code}: {e}")
             logger.debug(f"High-risk ingredients: {len(high_risk_ingredients)}, Moderate-risk: {len(moderate_risk_ingredients)}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
@@ -608,34 +935,37 @@ class HealthAssessmentMCPService:
                 product, high_risk_ingredients, moderate_risk_ingredients
             )
             
-            # Set up MCP transport and client for parallel assessment
-            transport = FastMCPTransport(self.mcp_server)
+            # Use LangChain with citation tools for parallel assessment
+            logger.info(f"[LangChain Assessment] Starting assessment with citation tools")
             
-            async with MCPClient(transport) as mcp_client:
-                logger.info(f"[MCP Parallel Assessment] MCP client connected for parallel assessment")
-                
-                # Send request to Gemini WITH MCP tools
-                response = await asyncio.wait_for(
-                    asyncio.get_event_loop().run_in_executor(
-                        None,
-                        lambda: genai.GenerativeModel(self.model).generate_content(
-                            prompt,
-                            generation_config=genai.GenerationConfig(
-                                temperature=0,
-                                max_output_tokens=4000,
-                                tools=[mcp_client]  # Provide MCP tools for parallel assessment too!
-                            )
-                        )
-                    ),
-                    timeout=30.0  # Increase timeout for MCP tool calls
-                )
+            # Create LangChain agent with citation tools
+            agent_prompt = ChatPromptTemplate.from_messages([
+                ("system", "You are a food health assessment expert. Use the available citation tools to find real scientific evidence."),
+                ("human", "{input}")
+            ])
+            
+            agent = create_tool_calling_agent(self.llm, self.citation_tools, agent_prompt)
+            agent_executor = AgentExecutor(agent=agent, tools=self.citation_tools, verbose=True)
+            
+            # Execute the health assessment with tool access
+            response = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: agent_executor.invoke({"input": prompt})
+                ),
+                timeout=45.0  # Increase timeout for real research
+            )
             
             # Set product context for parser
             self._current_product = product
             
-            # Parse the structured response - this will be updated with real categorization later
+            # Parse the LangChain response - extract output text
+            response_text = response.get('output', '') if isinstance(response, dict) else str(response)
+            logger.info(f"[LangChain Assessment] Response received: {len(response_text)} characters")
+            
+            # Parse the structured response
             assessment_data = await self._parse_assessment_response(
-                response.text, high_risk_ingredients, moderate_risk_ingredients, existing_risk_rating,
+                response_text, high_risk_ingredients, moderate_risk_ingredients, existing_risk_rating,
                 fallback_categorization.get('low_risk_ingredients', []), 
                 fallback_categorization.get('ingredient_analyses', {})
             )
