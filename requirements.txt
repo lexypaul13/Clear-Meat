@@ -51,3 +51,7 @@ urllib3>=1.26.0,<3.0.0
 
 # Redis for distributed caching
 redis>=4.5.0
+
+# Performance optimizations
+selectolax>=0.3.0  # Fast HTML parsing (10x faster than BeautifulSoup)
+aiohttp>=3.9.0     # Async HTTP client with connection pooling

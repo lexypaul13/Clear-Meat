@@ -133,6 +133,16 @@ class CacheService:
         return count
     
     
+    def cache_html_structure(self, url: str, parsed_data: dict, ttl: int = 3600) -> bool:
+        """Cache parsed HTML structure to avoid re-parsing the same page."""
+        cache_key = f"html_structure:{hashlib.md5(url.encode()).hexdigest()}"
+        return self.set(cache_key, parsed_data, ttl)
+    
+    def get_cached_html_structure(self, url: str) -> Optional[dict]:
+        """Get cached HTML structure if available."""
+        cache_key = f"html_structure:{hashlib.md5(url.encode()).hexdigest()}"
+        return self.get(cache_key)
+    
     @staticmethod
     def generate_key(*args, prefix: str = "cache") -> str:
         """
