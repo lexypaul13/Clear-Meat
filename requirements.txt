@@ -1,4 +1,4 @@
-# Core API requirements - letting pip resolve compatible versions
+# Core API requirements
 fastapi>=0.110.0,<0.115.0
 uvicorn[standard]==0.27.1
 sqlalchemy==2.0.25
@@ -11,16 +11,16 @@ Jinja2==3.1.4
 # Database drivers
 psycopg2-binary==2.9.9
 
-# HTTP client - precise version for compatibility
+# HTTP client
 httpx>=0.28.1,<0.29.0
 
-# Web scraping - modern alternatives to newspaper3k
+# Web scraping
 requests==2.31.0
 beautifulsoup4==4.12.3
 trafilatura>=1.12.0
 aiohttp==3.9.5
 
-# Supabase - compatible with httpx version range
+# Supabase
 supabase>=2.10.0,<3.0.0
 
 # Auth and security
@@ -32,20 +32,19 @@ python-multipart==0.0.9
 google-generativeai>=0.8.0,<0.9.0
 backoff==2.2.1
 
-# Essential packages that might be imported
+# Essential packages
 tqdm==4.66.1
 pillow>=10.0.0
 
-# Citation and research tools (required by citation_tools.py)
+# Citation and research tools
 crossref-commons==0.0.7
 pymed==0.8.9
-# newspaper3k==0.2.8  # REMOVED: incompatible with modern dependencies
-lxml>=4.9.0  # Alternative for HTML/XML parsing
+lxml>=4.9.0
 
-# LangChain for Google Gemini tool integration (replaces MCP)
+# LangChain for Google Gemini tool integration
 langchain>=0.1.0
 langchain-google-genai==2.0.10
 langchain-core>=0.1.0
 
-# Additional dependencies - constrained for compatibility
+# Additional dependencies
 urllib3>=1.26.0,<3.0.0

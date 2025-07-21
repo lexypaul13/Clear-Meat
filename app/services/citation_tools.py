@@ -37,146 +37,122 @@ class CitationSearchService:
         
         # Build search query
         query = f"{search_params.ingredient} {search_params.health_claim}"
-        print(f"[Citation Search] Searching for: {query}")
         
         # Search PubMed
         if search_params.search_pubmed:
             try:
                 pubmed_citations = self._search_pubmed(query, search_params.max_results)
                 all_citations.extend(pubmed_citations)
-                print(f"[PubMed] Found {len(pubmed_citations)} citations")
             except Exception as e:
                 error_msg = f"PubMed search error: {str(e)}"
                 logger.error(error_msg)
                 errors.append(error_msg)
-                print(f"[PubMed] Error: {error_msg}")
         
         # Search CrossRef
         if search_params.search_crossref:
             try:
                 crossref_citations = self._search_crossref(query, search_params.max_results)
                 all_citations.extend(crossref_citations)
-                print(f"[CrossRef] Found {len(crossref_citations)} citations")
             except Exception as e:
                 error_msg = f"CrossRef search error: {str(e)}"
                 logger.error(error_msg)
                 errors.append(error_msg)
-                print(f"[CrossRef] Error: {error_msg}")
         
         # Search Semantic Scholar
         if search_params.search_semantic_scholar:
             try:
                 semantic_scholar_citations = self._search_semantic_scholar(query, search_params.max_results)
                 all_citations.extend(semantic_scholar_citations)
-                print(f"[Semantic Scholar] Found {len(semantic_scholar_citations)} citations")
             except Exception as e:
                 error_msg = f"Semantic Scholar search error: {str(e)}"
                 logger.error(error_msg)
                 errors.append(error_msg)
-                print(f"[Semantic Scholar] Error: {error_msg}")
         
         # Search FDA
         if search_params.search_fda:
             try:
                 fda_citations = self._search_fda(query, search_params.max_results)
                 all_citations.extend(fda_citations)
-                print(f"[FDA] Found {len(fda_citations)} citations")
             except Exception as e:
                 error_msg = f"FDA search error: {str(e)}"
                 logger.error(error_msg)
                 errors.append(error_msg)
-                print(f"[FDA] Error: {error_msg}")
         
         # Search WHO
         if search_params.search_who:
             try:
                 who_citations = self._search_who(query, search_params.max_results)
                 all_citations.extend(who_citations)
-                print(f"[WHO] Found {len(who_citations)} citations")
             except Exception as e:
                 error_msg = f"WHO search error: {str(e)}"
                 logger.error(error_msg)
                 errors.append(error_msg)
-                print(f"[WHO] Error: {error_msg}")
         
         # Search Harvard Health
         if search_params.search_harvard_health:
             try:
                 harvard_health_citations = self._search_harvard_health(query, search_params.max_results)
                 all_citations.extend(harvard_health_citations)
-                print(f"[Harvard Health] Found {len(harvard_health_citations)} citations")
             except Exception as e:
                 error_msg = f"Harvard Health search error: {str(e)}"
                 logger.error(error_msg)
                 errors.append(error_msg)
-                print(f"[Harvard Health] Error: {error_msg}")
         
         # Search CDC
         if search_params.search_cdc:
             try:
                 cdc_citations = self._search_cdc(query, search_params.max_results)
                 all_citations.extend(cdc_citations)
-                print(f"[CDC] Found {len(cdc_citations)} citations")
             except Exception as e:
                 error_msg = f"CDC search error: {str(e)}"
                 logger.error(error_msg)
                 errors.append(error_msg)
-                print(f"[CDC] Error: {error_msg}")
         
         # Search Mayo Clinic
         if search_params.search_mayo_clinic:
             try:
                 mayo_citations = self._search_mayo_clinic(query, search_params.max_results)
                 all_citations.extend(mayo_citations)
-                print(f"[Mayo Clinic] Found {len(mayo_citations)} citations")
             except Exception as e:
                 error_msg = f"Mayo Clinic search error: {str(e)}"
                 logger.error(error_msg)
                 errors.append(error_msg)
-                print(f"[Mayo Clinic] Error: {error_msg}")
         
         # Search NIH/MedlinePlus
         if search_params.search_nih:
             try:
                 nih_citations = self._search_nih(query, search_params.max_results)
                 all_citations.extend(nih_citations)
-                print(f"[NIH] Found {len(nih_citations)} citations")
             except Exception as e:
                 error_msg = f"NIH search error: {str(e)}"
                 logger.error(error_msg)
                 errors.append(error_msg)
-                print(f"[NIH] Error: {error_msg}")
         
         # Search DOAJ (Directory of Open Access Journals)
         if search_params.search_doaj:
             try:
                 doaj_citations = self._search_doaj(query, search_params.max_results)
                 all_citations.extend(doaj_citations)
-                print(f"[DOAJ] Found {len(doaj_citations)} citations")
             except Exception as e:
                 error_msg = f"DOAJ search error: {str(e)}"
                 logger.error(error_msg)
                 errors.append(error_msg)
-                print(f"[DOAJ] Error: {error_msg}")
         
         # Search arXiv
         if search_params.search_arxiv:
             try:
                 arxiv_citations = self._search_arxiv(query, search_params.max_results)
                 all_citations.extend(arxiv_citations)
-                print(f"[arXiv] Found {len(arxiv_citations)} citations")
             except Exception as e:
                 error_msg = f"arXiv search error: {str(e)}"
                 logger.error(error_msg)
                 errors.append(error_msg)
-                print(f"[Sci-Hub] Error: {error_msg}")
         
         # Search bioRxiv
         if search_params.search_biorxiv:
             try:
                 biorxiv_citations = self._search_biorxiv(query, search_params.max_results)
                 all_citations.extend(biorxiv_citations)
-                print(f"[bioRxiv] Found {len(biorxiv_citations)} citations")
             except Exception as e:
                 error_msg = f"bioRxiv search error: {str(e)}"
                 logger.error(error_msg)
@@ -187,7 +163,6 @@ class CitationSearchService:
             try:
                 semantic_citations = self._search_semantic_scholar(query, search_params.max_results)
                 all_citations.extend(semantic_citations)
-                print(f"[Semantic Scholar] Found {len(semantic_citations)} citations")
             except Exception as e:
                 error_msg = f"Semantic Scholar search error: {str(e)}"
                 logger.error(error_msg)
@@ -198,12 +173,10 @@ class CitationSearchService:
             try:
                 europe_pmc_citations = self._search_europe_pmc(query, search_params.max_results)
                 all_citations.extend(europe_pmc_citations)
-                print(f"[Europe PMC] Found {len(europe_pmc_citations)} citations")
             except Exception as e:
                 error_msg = f"Europe PMC search error: {str(e)}"
                 logger.error(error_msg)
                 errors.append(error_msg)
-                print(f"[LibGen] Error: {error_msg}")
         
         # Remove duplicates based on title similarity
         unique_citations = self._deduplicate_citations(all_citations)
@@ -224,7 +197,6 @@ class CitationSearchService:
             error="; ".join(errors) if errors else None
         )
         
-        print(f"[Citation Search] Completed in {search_time:.2f}s. Found {len(final_citations)} unique citations")
         return result
     
     def _search_pubmed(self, query: str, max_results: int) -> List[Citation]:
@@ -302,7 +274,6 @@ class CitationSearchService:
         
         try:
             # Search CrossRef using their REST API directly
-            print(f"[CrossRef] Searching for: {query}")
             
             # CrossRef API endpoint
             url = "https://api.crossref.org/works"
@@ -385,7 +356,6 @@ class CitationSearchService:
         citations = []
         
         try:
-            print(f"[Semantic Scholar] Searching for: {query}")
             
             # Semantic Scholar API endpoint
             url = "https://api.semanticscholar.org/graph/v1/paper/search"
@@ -455,7 +425,6 @@ class CitationSearchService:
         citations = []
         
         try:
-            print(f"[FDA] Real web search for: {query}")
             
             # Perform real FDA search
             search_url = f"https://search.fda.gov/search?utf8=✓&affiliate=fda1&query={requests.utils.quote(query)}&commit=Search"
@@ -544,7 +513,6 @@ class CitationSearchService:
                     )
                     citations.append(citation)
             
-            print(f"[FDA] Found {len(citations)} real citations")
                 
         except requests.RequestException as e:
             logger.error(f"FDA web search error: {e}")
@@ -559,7 +527,6 @@ class CitationSearchService:
         citations = []
         
         try:
-            print(f"[WHO] Real web search for: {query}")
             
             # WHO search endpoint
             search_url = f"https://www.who.int/home/search?indexCatalogue=genericsearchindex1&searchQuery={requests.utils.quote(query)}&wordsMode=AnyWord"
@@ -620,7 +587,6 @@ class CitationSearchService:
                     logger.warning(f"Error parsing WHO result: {e}")
                     continue
             
-            print(f"[WHO] Found {len(citations)} real citations")
                 
         except Exception as e:
             logger.error(f"WHO web search error: {e}")
@@ -633,7 +599,6 @@ class CitationSearchService:
         citations = []
         
         try:
-            print(f"[Harvard Health] Real web search for: {query}")
             
             # Harvard Health search endpoint
             search_url = f"https://www.health.harvard.edu/search?q={requests.utils.quote(query)}"
@@ -696,7 +661,6 @@ class CitationSearchService:
                         logger.warning(f"Error parsing Harvard Health result: {e}")
                         continue
             
-            print(f"[Harvard Health] Found {len(citations)} real citations")
                 
         except Exception as e:
             logger.error(f"Harvard Health web search error: {e}")
@@ -709,7 +673,6 @@ class CitationSearchService:
         citations = []
         
         try:
-            print(f"[CDC] Real web search for: {query}")
             
             # CDC search endpoint
             search_url = f"https://search.cdc.gov/search?query={requests.utils.quote(query)}&utf8=✓&affiliate=cdc-main"
@@ -796,7 +759,6 @@ class CitationSearchService:
                     )
                     citations.append(citation)
             
-            print(f"[CDC] Found {len(citations)} real citations")
                     
         except Exception as e:
             logger.error(f"CDC web search error: {e}")
@@ -809,7 +771,6 @@ class CitationSearchService:
         citations = []
         
         try:
-            print(f"[Mayo Clinic] Real web search for: {query}")
             
             # Mayo Clinic search endpoint
             search_url = f"https://www.mayoclinic.org/search/search-results?q={requests.utils.quote(query)}"
@@ -899,7 +860,6 @@ class CitationSearchService:
                     )
                     citations.append(citation)
             
-            print(f"[Mayo Clinic] Found {len(citations)} real citations")
                     
         except Exception as e:
             logger.error(f"Mayo Clinic web search error: {e}")
@@ -912,7 +872,6 @@ class CitationSearchService:
         citations = []
         
         try:
-            print(f"[NIH] Searching for: {query}")
             
             # Extract ingredient name for targeted searches
             ingredient = query.split()[0].lower()
@@ -1016,7 +975,6 @@ class CitationSearchService:
     def fetch_abstract_by_doi(self, doi: str) -> Optional[Dict[str, Any]]:
         """Fetch full abstract and details by DOI."""
         try:
-            print(f"[Abstract Fetch] Fetching DOI: {doi}")
             
             # Use CrossRef API to get detailed information
             url = f"https://api.crossref.org/works/{doi}"
@@ -1068,7 +1026,6 @@ class CitationSearchService:
     def fetch_abstract_by_pmid(self, pmid: str) -> Optional[Dict[str, Any]]:
         """Fetch full abstract and details by PMID."""
         try:
-            print(f"[Abstract Fetch] Fetching PMID: {pmid}")
             
             # Use PubMed to get detailed information
             query = f"PMID:{pmid}"
@@ -1214,7 +1171,6 @@ class CitationSearchService:
         citations = []
         
         try:
-            print(f"[DOAJ] Searching for: {query}")
             
             # DOAJ API endpoint
             url = "https://doaj.org/api/search/articles/title%3A" + query.replace(" ", "%20")
@@ -1270,7 +1226,6 @@ class CitationSearchService:
         citations = []
         
         try:
-            print(f"[arXiv] Searching for: {query}")
             
             # arXiv API search for quantitative biology (q-bio) and related categories
             arxiv_url = "http://export.arxiv.org/api/query"
@@ -1351,7 +1306,6 @@ class CitationSearchService:
         citations = []
         
         try:
-            print(f"[bioRxiv] Searching for: {query}")
             
             # bioRxiv API search
             biorxiv_url = "https://api.biorxiv.org/details/biorxiv"
@@ -1444,7 +1398,6 @@ class CitationSearchService:
         citations = []
         
         try:
-            print(f"[Semantic Scholar] Searching for: {query}")
             
             # Semantic Scholar API
             api_url = "https://api.semanticscholar.org/graph/v1/paper/search"
@@ -1514,7 +1467,6 @@ class CitationSearchService:
         citations = []
         
         try:
-            print(f"[Europe PMC] Searching for: {query}")
             
             # Europe PMC API
             api_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
@@ -1583,25 +1535,3 @@ class CitationSearchService:
         return citations
 
 
-# Test the citation search
-if __name__ == "__main__":
-    # Initialize service
-    service = CitationSearchService()
-    
-    # Test search
-    search_params = CitationSearch(
-        ingredient="BHA",
-        health_claim="carcinogenic effects",
-        max_results=3
-    )
-    
-    print("Testing citation search...")
-    result = service.search_citations(search_params)
-    
-    print(f"\nFound {len(result.citations)} citations:")
-    for i, citation in enumerate(result.citations, 1):
-        print(f"\n{i}. {citation.to_apa_format()}")
-        if citation.doi:
-            print(f"   DOI: {citation.doi}")
-        if citation.pmid:
-            print(f"   PMID: {citation.pmid}") 

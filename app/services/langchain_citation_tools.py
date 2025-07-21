@@ -11,6 +11,23 @@ from app.models.citation import CitationSearch
 citation_service = CitationSearchService()
 
 
+def _format_citations_response(citations, source_name):
+    """Helper function to format citations for LangChain response."""
+    citations_list = []
+    for citation in citations:
+        citations_list.append({
+            "title": citation.title,
+            "url": citation.url,
+            "source": f"{source_name}.gov" if source_name in ["FDA", "CDC"] else source_name,
+            "abstract": citation.abstract[:150] + "..." if len(citation.abstract) > 150 else citation.abstract
+        })
+    
+    return json.dumps({
+        "source": source_name,
+        "citations": citations_list
+    })
+
+
 class CitationSearchInput(BaseModel):
     """Input for citation search."""
     ingredient: str = Field(description="The food ingredient to search for (e.g., 'Salt', 'Sugar', 'Sodium Nitrite')")
@@ -40,20 +57,7 @@ def search_fda_citations(ingredient: str, health_claim: str, max_results: int = 
         if not result.citations:
             return f"No FDA citations found for '{ingredient}' and '{health_claim}'"
         
-        # Format citations for LangChain response
-        citations_list = []
-        for citation in result.citations:
-            citations_list.append({
-                "title": citation.title,
-                "url": citation.url,
-                "source": "FDA.gov",
-                "abstract": citation.abstract[:150] + "..." if len(citation.abstract) > 150 else citation.abstract
-            })
-        
-        return json.dumps({
-            "source": "FDA",
-            "citations": citations_list
-        })
+        return _format_citations_response(result.citations, "FDA")
         
     except Exception as e:
         return f"Error searching FDA: {str(e)}"
@@ -81,20 +85,7 @@ def search_cdc_citations(ingredient: str, health_claim: str, max_results: int = 
         if not result.citations:
             return f"No CDC citations found for '{ingredient}' and '{health_claim}'"
         
-        # Format citations for LangChain response
-        citations_list = []
-        for citation in result.citations:
-            citations_list.append({
-                "title": citation.title,
-                "url": citation.url,
-                "source": "CDC.gov",
-                "abstract": citation.abstract[:150] + "..." if len(citation.abstract) > 150 else citation.abstract
-            })
-        
-        return json.dumps({
-            "source": "CDC",
-            "citations": citations_list
-        })
+        return _format_citations_response(result.citations, "CDC")
         
     except Exception as e:
         return f"Error searching CDC: {str(e)}"
@@ -122,20 +113,7 @@ def search_mayo_clinic_citations(ingredient: str, health_claim: str, max_results
         if not result.citations:
             return f"No Mayo Clinic citations found for '{ingredient}' and '{health_claim}'"
         
-        # Format citations for LangChain response
-        citations_list = []
-        for citation in result.citations:
-            citations_list.append({
-                "title": citation.title,
-                "url": citation.url,
-                "source": "Mayo Clinic",
-                "abstract": citation.abstract[:150] + "..." if len(citation.abstract) > 150 else citation.abstract
-            })
-        
-        return json.dumps({
-            "source": "Mayo Clinic",
-            "citations": citations_list
-        })
+        return _format_citations_response(result.citations, "Mayo Clinic")
         
     except Exception as e:
         return f"Error searching Mayo Clinic: {str(e)}"

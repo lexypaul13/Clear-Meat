@@ -219,10 +219,7 @@ class HealthAssessmentMCPService:
             return assessment_result
             
         except Exception as e:
-            logger.error(f"[MCP EXCEPTION DEBUG] Main MCP service failed: {e}")
-            logger.error(f"[MCP EXCEPTION DEBUG] Exception type: {type(e).__name__}")
-            import traceback
-            logger.error(f"[MCP EXCEPTION DEBUG] Full traceback: {traceback.format_exc()}")
+            logger.error(f"MCP service failed: {e}")
             return None
     
     async def _categorize_ingredients_with_gemini(self, product: ProductStructured) -> Optional[Dict[str, Any]]:
@@ -365,8 +362,7 @@ class HealthAssessmentMCPService:
                 return None
             else:
                 logger.error(f"[AI CATEGORIZATION] Unknown error type: {error_message}")
-                import traceback
-                logger.error(f"[AI CATEGORIZATION] Full traceback: {traceback.format_exc()}")
+                logger.error(f"AI categorization failed: {e}")
                 return None
     
     def _parse_ai_categorization_response(self, response_text: str) -> Optional[Dict[str, Any]]:
@@ -912,8 +908,7 @@ class HealthAssessmentMCPService:
         except Exception as e:
             logger.error(f"Error in LangChain evidence-based assessment for product {product.product.code}: {e}")
             logger.debug(f"High-risk ingredients: {len(high_risk_ingredients)}, Moderate-risk: {len(moderate_risk_ingredients)}")
-            import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
+            logger.error(f"Agent execution failed: {e}")
             return None
     
     async def _generate_evidence_based_assessment_with_fallback(
@@ -1351,16 +1346,10 @@ Remember: Base ALL micro-reports on actual scientific evidence you find using th
             assessment_data["metadata"]["product_brand"] = self._current_product.product.brand or ""
             assessment_data["metadata"]["ingredients"] = self._current_product.product.ingredients_text or ""
             
-            logger.info(f"[SUCCESS DEBUG] Assessment function completing successfully. Citations: {len(assessment_data.get('citations', []))}")
-            logger.info(f"[SUCCESS DEBUG] Assessment data keys: {list(assessment_data.keys())}")
             return assessment_data
             
         except Exception as e:
-            logger.error(f"[EXCEPTION DEBUG] Assessment function failed at parsing stage: {e}")
-            logger.error(f"[EXCEPTION DEBUG] Exception type: {type(e).__name__}")
-            logger.error(f"[EXCEPTION DEBUG] Exception details: {str(e)}")
-            import traceback
-            logger.error(f"[EXCEPTION DEBUG] Full traceback: {traceback.format_exc()}")
+            logger.error(f"Assessment parsing failed: {e}")
             return None
     
     def _split_response_into_sections(self, response_text: str) -> Dict[str, str]:
