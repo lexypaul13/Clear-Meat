@@ -380,6 +380,7 @@ def remove_favorite(
 )
 def get_explore_recommendations(
     db: Session = Depends(get_db),
+    supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user),
     limit: int = Query(30, ge=1, le=100, description="Maximum number of recommendations to return", example=20),
 ) -> Any:
@@ -391,6 +392,7 @@ def get_explore_recommendations(
     
     Args:
         db: Database session
+        supabase_service: Supabase service instance
         current_user: Current active user
         limit: Maximum number of recommendations to return (1-100, default 30)
         
@@ -416,7 +418,7 @@ def get_explore_recommendations(
         preferences["_explore_page"] = True
         
         # Get personalized recommendations
-        recommended_products = get_personalized_recommendations(db, preferences, limit)
+        recommended_products = get_personalized_recommendations(supabase_service, preferences, limit, 0)
         
         if not recommended_products:
             logger.warning("No explore recommendations found")
