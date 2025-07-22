@@ -7,6 +7,8 @@ import json
 import html
 import re
 import datetime
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status, Path
 from sqlalchemy.orm import Session
@@ -32,6 +34,116 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 router = APIRouter()
+
+# Helper functions for parallel health assessment generation
+async def generate_health_assessment_for_product(
+    product_dict: Dict[str, Any],
+    supabase_service,
+    semaphore: asyncio.Semaphore
+) -> Dict[str, Any]:
+    """
+    Generate health assessment for a single product with caching.
+    Uses semaphore to limit concurrent AI requests and checks cache first.
+    """
+    async with semaphore:
+        try:
+            code = product_dict.get('code', 'unknown')
+            logger.debug(f"Checking health assessment cache for product {code}")
+            
+            # Check if assessment already exists in cache first (24hr TTL)
+            from app.services.health_assessment_mcp_service import HealthAssessmentMCPService
+            mcp_service = HealthAssessmentMCPService()
+            
+            # Check cache using the same method as the main endpoint
+            cached_assessment = await mcp_service._get_cached_assessment(code)
+            if cached_assessment:
+                logger.debug(f"Found cached assessment for product {code}, skipping generation")
+                return cached_assessment
+            
+            logger.debug(f"No cache hit, generating new health assessment for product {code}")
+            
+            # Structure product data
+            structured_product = helpers.structure_product_data(product_dict)
+            if not structured_product:
+                logger.warning(f"Failed to structure product data for {code}")
+                return None
+            
+            # Generate assessment using MCP service
+            existing_risk_rating = product_dict.get('risk_rating')
+            
+            assessment = await mcp_service.generate_health_assessment_with_real_evidence(
+                structured_product,
+                existing_risk_rating=existing_risk_rating
+            )
+            
+            if assessment:
+                logger.debug(f"Successfully generated assessment for product {code}")
+                # Cache the assessment for future use
+                await mcp_service._cache_assessment(assessment, code)
+                # Return the assessment dict for consistent format
+                return assessment if isinstance(assessment, dict) else assessment.model_dump()
+            else:
+                logger.warning(f"Failed to generate assessment for product {code}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error generating assessment for product {product_dict.get('code', 'unknown')}: {e}")
+            return None
+
+async def generate_parallel_health_assessments(
+    products: List[Dict[str, Any]],
+    supabase_service,
+    max_concurrent: int = 3
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Generate health assessments for multiple products in parallel with caching.
+    
+    Args:
+        products: List of product dictionaries
+        supabase_service: Supabase service instance
+        max_concurrent: Maximum concurrent AI requests (default: 3)
+        
+    Returns:
+        Dict mapping product codes to their health assessments
+    """
+    semaphore = asyncio.Semaphore(max_concurrent)
+    
+    logger.info(f"Starting parallel health assessment generation for {len(products)} products (max concurrent: {max_concurrent})")
+    
+    # Create tasks for all products
+    tasks = [
+        generate_health_assessment_for_product(product, supabase_service, semaphore)
+        for product in products
+    ]
+    
+    # Execute all tasks concurrently
+    assessments = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    # Build result dictionary and track statistics
+    results = {}
+    cache_hits = 0
+    new_generations = 0
+    failures = 0
+    
+    for i, assessment in enumerate(assessments):
+        product_code = products[i].get('code', 'unknown')
+        
+        if isinstance(assessment, Exception):
+            logger.error(f"Task failed for product {product_code}: {assessment}")
+            failures += 1
+            continue
+            
+        if assessment is not None:
+            results[product_code] = assessment
+            # Note: We can't easily track cache hits vs new generations here without modifying the helper function
+            # But the helper function logs cache hits vs new generations
+        else:
+            failures += 1
+    
+    success_rate = len(results) / len(products) * 100 if products else 0
+    logger.info(f"Completed parallel assessment generation. Results: {len(results)} successful, {failures} failed (Success rate: {success_rate:.1f}%)")
+    
+    return results
 
 # Old text search patterns removed - now using AI-powered NLP search
 
@@ -711,7 +823,7 @@ def get_products(
     },
     tags=["Products", "Recommendations"]
 )
-def get_product_recommendations(
+async def get_product_recommendations(
     db: Session = Depends(get_db),
     supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user),
@@ -719,10 +831,11 @@ def get_product_recommendations(
     offset: int = Query(0, ge=0, description="Number of recommendations to skip (for pagination)", example=0),
 ) -> models.RecommendationResponse:
     """
-    Get personalized product recommendations with pagination support.
+    Get personalized product recommendations with parallel-generated health assessments.
     
     Recommendations are tailored based on the preferences set during the user onboarding process,
     including nutrition focus, additives, ethical concerns, and preferred meat types.
+    Uses parallel processing to pre-populate health assessments for instant loading.
     
     Args:
         db: Database session
@@ -731,7 +844,7 @@ def get_product_recommendations(
         offset: Number of recommendations to skip for pagination (default 0)
         
     Returns:
-        RecommendationResponse: List of recommended products with match details and pagination info
+        RecommendationResponse: List of recommended products with match details and pre-populated health assessments
     """
     try:
         # Get user preferences
@@ -767,12 +880,33 @@ def get_product_recommendations(
                 total_matches=0
             )
         
-        # Build response with match details
+        logger.info(f"Pre-populating health assessments for {len(recommended_products)} personalized products in parallel")
+        
+        # Generate health assessments in parallel for all recommended products
+        health_assessments = await generate_parallel_health_assessments(
+            recommended_products, 
+            supabase_service, 
+            max_concurrent=3  # Limit concurrent AI requests
+        )
+        
+        logger.info(f"Generated {len(health_assessments)} personalized health assessments")
+        
+        # Build response with match details and health assessments
         result = []
         for product_dict in recommended_products:
             try:
                 # Analyze why this product matches preferences
                 matches, concerns = analyze_product_match(product_dict, preferences)
+                
+                # Create Product model with health assessment if available
+                product_code = product_dict.get('code', '')
+                health_assessment = health_assessments.get(product_code)
+                
+                # Add health assessment info to the product
+                if health_assessment:
+                    # Add mobile-optimized health info to the product response
+                    mobile_assessment = _optimize_for_mobile(health_assessment)
+                    product_dict['health_assessment'] = mobile_assessment
                 
                 # Create Product model from dictionary
                 product_model = models.Product(
@@ -1257,8 +1391,8 @@ async def debug_mcp_health_assessment(
 
 @router.get("/explore", 
     response_model=models.RecommendationResponse,
-    summary="Get Public Product Recommendations",
-    description="Get product recommendations without requiring authentication - perfect for app explore pages",
+    summary="Get Public Product Recommendations with Pre-populated Health Assessments",
+    description="Get product recommendations with parallel-generated health assessments - perfect for app explore pages with instant loading",
     responses={
         200: {
             "description": "Public recommendations generated successfully",
@@ -1292,25 +1426,25 @@ async def debug_mcp_health_assessment(
     },
     tags=["Products", "Public"]
 )
-def get_public_recommendations(
+async def get_public_recommendations(
     supabase_service = Depends(get_supabase_service),
     limit: int = Query(30, ge=1, le=100, description="Maximum number of recommendations to return", example=20),
 ) -> models.RecommendationResponse:
     """
-    Get public product recommendations without requiring authentication.
+    Get public product recommendations with parallel-generated health assessments.
     
     Perfect for app explore pages where users want to browse products before signing up.
-    Uses default healthy preferences to show high-quality products with good ratings.
+    Uses parallel processing to pre-populate health assessments for instant loading.
     
     Args:
         supabase_service: Supabase service instance
         limit: Maximum number of recommendations to return (1-100, default 30)
         
     Returns:
-        RecommendationResponse: List of recommended products with match details
+        RecommendationResponse: List of recommended products with match details and pre-populated health assessments
     """
     try:
-        logger.info(f"Generating public explore recommendations (limit: {limit})")
+        logger.info(f"Generating public explore recommendations with parallel health assessments (limit: {limit})")
         
         # Use default healthy preferences for anonymous users
         default_preferences = {
@@ -1336,26 +1470,52 @@ def get_public_recommendations(
                 total_matches=0
             )
         
-        # Build response with match details
+        logger.info(f"Pre-populating health assessments for {len(recommended_products)} products in parallel")
+        
+        # Generate health assessments in parallel for all recommended products
+        health_assessments = await generate_parallel_health_assessments(
+            recommended_products, 
+            supabase_service, 
+            max_concurrent=3  # Limit concurrent AI requests
+        )
+        
+        logger.info(f"Generated {len(health_assessments)} health assessments")
+        
+        # Build response with match details and health assessments
         from app.services.recommendation_service import analyze_product_match
         result = []
         for product in recommended_products:
-            # Analyze why this product matches the default preferences
-            matches, concerns = analyze_product_match(product, default_preferences)
-            
-            # Create RecommendedProduct object
-            recommended_product = models.RecommendedProduct(
-                product=models.Product(**product),
-                match_details=models.MatchDetails(
-                    matches=matches,
-                    concerns=concerns
-                ),
-                match_score=None  # We don't expose raw scores to clients
-            )
-            
-            result.append(recommended_product)
+            try:
+                # Analyze why this product matches the default preferences
+                matches, concerns = analyze_product_match(product, default_preferences)
+                
+                # Create Product model with health assessment if available
+                product_code = product.get('code', '')
+                health_assessment = health_assessments.get(product_code)
+                
+                # Add health assessment info to the product
+                if health_assessment:
+                    # Add mobile-optimized health info to the product response
+                    mobile_assessment = _optimize_for_mobile(health_assessment)
+                    product['health_assessment'] = mobile_assessment
+                
+                # Create RecommendedProduct object
+                recommended_product = models.RecommendedProduct(
+                    product=models.Product(**product),
+                    match_details=models.MatchDetails(
+                        matches=matches,
+                        concerns=concerns
+                    ),
+                    match_score=None  # We don't expose raw scores to clients
+                )
+                
+                result.append(recommended_product)
+                
+            except Exception as e:
+                logger.warning(f"Error processing product {product.get('code', 'unknown')}: {e}")
+                continue
         
-        logger.info(f"Returning {len(result)} public recommendations")
+        logger.info(f"Returning {len(result)} public recommendations with pre-populated health assessments")
         
         return models.RecommendationResponse(
             recommendations=result,
