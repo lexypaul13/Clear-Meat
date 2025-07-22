@@ -8,6 +8,13 @@
         "--access-token",
         "sbp_f8f8e22d82ecbaf485924da30fb6ad2185d4a7a5"
       ]
+    },
+    "web-search": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-web-search@latest"
+      ]
     }
   }
 } 

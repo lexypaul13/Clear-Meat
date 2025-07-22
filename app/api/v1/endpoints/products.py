@@ -24,6 +24,7 @@ from app.services.recommendation_service import (
 )
 from app.services.health_assessment_mcp_service import HealthAssessmentMCPService
 from app.services.search_service import search_products
+from app.services.openfoodfacts_service import get_openfoodfacts_service
 from app.utils.personalization import apply_user_preferences
 
 # Configure logging for this module
@@ -1070,13 +1071,47 @@ async def get_product_health_assessment_mcp(
     """
     logger.info(f"Starting MCP health assessment for product {code}")
     try:
-        # Step 1: Fetch product data
+        # Step 1: Fetch product data from Supabase
         logger.info("Step 1: Fetching product data from Supabase")
         product_data = supabase_service.get_product_by_code(code)
+        
         if not product_data:
-            logger.warning(f"Product with code '{code}' not found")
-            raise HTTPException(status_code=404, detail=f"Product with code '{code}' not found")
-        logger.info("Step 1: Product data fetched successfully")
+            logger.warning(f"Product with code '{code}' not found in Supabase")
+            
+            # Step 1b: Try OpenFoodFacts fallback
+            logger.info("Step 1b: Trying OpenFoodFacts fallback")
+            openfoodfacts_service = get_openfoodfacts_service()
+            openfood_result = openfoodfacts_service.get_product_by_barcode(code)
+            
+            if not openfood_result.get("found"):
+                logger.warning(f"Product {code} not found in OpenFoodFacts either")
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"Product with code '{code}' not found in our database or OpenFoodFacts"
+                )
+            
+            if not openfood_result.get("is_animal_product"):
+                logger.warning(f"Product {code} found but is not an animal-based product")
+                raise HTTPException(
+                    status_code=400,
+                    detail="This product is not an animal-based product. Clear-Meat only analyzes meat, dairy, and seafood products."
+                )
+            
+            # Step 1c: Save new animal product to Supabase
+            logger.info(f"Step 1c: Saving new animal product {code} to database")
+            new_product_data = openfood_result["product_data"]
+            new_product_data["code"] = code  # Ensure barcode is included
+            
+            saved_product = supabase_service.insert_product(new_product_data)
+            if saved_product:
+                product_data = saved_product
+                logger.info(f"Successfully saved new product {code} from OpenFoodFacts")
+            else:
+                # Use the mapped data even if save failed
+                product_data = new_product_data
+                logger.warning(f"Failed to save product {code} to database, proceeding with OpenFoodFacts data")
+        
+        logger.info("Step 1: Product data obtained successfully")
 
         # Step 2: Structure product data
         logger.info("Step 2: Structuring product data")

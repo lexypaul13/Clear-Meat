@@ -270,6 +270,51 @@ class SupabaseService:
             logger.error(f"Error counting products: {e}")
             return 0
     
+    def insert_product(self, product_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Insert a new product into the products table using service role key to bypass RLS.
+        
+        Args:
+            product_data: Product data to insert
+            
+        Returns:
+            Dict: Inserted product data or None if failed
+        """
+        try:
+            # Add timestamps
+            from datetime import datetime
+            now = datetime.now().isoformat()
+            product_data['created_at'] = now
+            product_data['last_updated'] = now
+            
+            logger.info(f"Inserting product: {product_data.get('code')} - {product_data.get('name')}")
+            
+            # Force use of service role key for insert operations
+            try:
+                # Create a fresh admin client with service role key
+                if SUPABASE_SERVICE_KEY:
+                    logger.info("Using service_role key for product insert")
+                    from supabase import create_client
+                    admin_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+                    response = admin_client.table('products').insert(product_data).execute()
+                else:
+                    logger.warning("No service_role key available, using regular client")
+                    response = self.client.table('products').insert(product_data).execute()
+            except Exception as admin_error:
+                logger.error(f"Admin client failed: {admin_error}, trying regular client")
+                response = self.client.table('products').insert(product_data).execute()
+            
+            if response.data:
+                logger.info(f"Successfully inserted product {product_data.get('code')}")
+                return response.data[0]
+            else:
+                logger.error(f"No data returned when inserting product {product_data.get('code')}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error inserting product {product_data.get('code', 'unknown')}: {e}")
+            return None
+    
     # Old text search method removed - now using AI-powered NLP search service
     
     # User operations
