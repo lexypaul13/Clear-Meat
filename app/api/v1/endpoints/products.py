@@ -1260,3 +1260,117 @@ async def debug_mcp_health_assessment(
         return debug_info
 
 
+@router.get("/explore", 
+    response_model=models.RecommendationResponse,
+    summary="Get Public Product Recommendations",
+    description="Get product recommendations without requiring authentication - perfect for app explore pages",
+    responses={
+        200: {
+            "description": "Public recommendations generated successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "recommendations": [
+                            {
+                                "product": {
+                                    "code": "9876543210",
+                                    "name": "Organic Grass-Fed Ground Beef",
+                                    "brand": "Nature's Best",
+                                    "risk_rating": "Green",
+                                    "protein": 22.0,
+                                    "fat": 15.0,
+                                    "salt": 0.8
+                                },
+                                "match_details": {
+                                    "matches": ["High protein content", "Organic", "Low sodium"],
+                                    "concerns": []
+                                },
+                                "match_score": None
+                            }
+                        ],
+                        "total_matches": 25
+                    }
+                }
+            }
+        },
+        500: {"description": "Failed to generate recommendations"}
+    },
+    tags=["Products", "Public"]
+)
+def get_public_recommendations(
+    supabase_service = Depends(get_supabase_service),
+    limit: int = Query(30, ge=1, le=100, description="Maximum number of recommendations to return", example=20),
+) -> models.RecommendationResponse:
+    """
+    Get public product recommendations without requiring authentication.
+    
+    Perfect for app explore pages where users want to browse products before signing up.
+    Uses default healthy preferences to show high-quality products with good ratings.
+    
+    Args:
+        supabase_service: Supabase service instance
+        limit: Maximum number of recommendations to return (1-100, default 30)
+        
+    Returns:
+        RecommendationResponse: List of recommended products with match details
+    """
+    try:
+        logger.info(f"Generating public explore recommendations (limit: {limit})")
+        
+        # Use default healthy preferences for anonymous users
+        default_preferences = {
+            "nutrition_focus": "protein",
+            "avoid_preservatives": True,
+            "prefer_organic_or_grass_fed": True,
+            "prefer_low_risk": True,
+            "meat_preferences": ["chicken", "turkey", "beef", "fish"]  # Show variety
+        }
+        
+        # Get recommendations using the same service but with default preferences
+        recommended_products = get_personalized_recommendations(
+            supabase_service, 
+            default_preferences, 
+            limit, 
+            0  # Start from beginning
+        )
+        
+        if not recommended_products:
+            logger.warning("No public recommendations found")
+            return models.RecommendationResponse(
+                recommendations=[],
+                total_matches=0
+            )
+        
+        # Build response with match details
+        from app.services.recommendation_service import analyze_product_match
+        result = []
+        for product in recommended_products:
+            # Analyze why this product matches the default preferences
+            matches, concerns = analyze_product_match(product, default_preferences)
+            
+            # Create RecommendedProduct object
+            recommended_product = models.RecommendedProduct(
+                product=models.Product(**product),
+                match_details=models.MatchDetails(
+                    matches=matches,
+                    concerns=concerns
+                ),
+                match_score=None  # We don't expose raw scores to clients
+            )
+            
+            result.append(recommended_product)
+        
+        logger.info(f"Returning {len(result)} public recommendations")
+        
+        return models.RecommendationResponse(
+            recommendations=result,
+            total_matches=len(result)
+        )
+    except Exception as e:
+        logger.error(f"Error generating public recommendations: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate public recommendations: {str(e)}"
+        )
+
+
