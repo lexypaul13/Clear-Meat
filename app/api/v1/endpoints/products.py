@@ -474,16 +474,14 @@ async def debug_search_endpoint(
                 }
             }
         },
-        401: {"description": "Authentication required"},
         500: {"description": "Database error"}
     },
     tags=["Products"]
 )
 def get_product_count(
-    supabase_service = Depends(get_supabase_service),
-    current_user: db_models.User = Depends(get_current_active_user)
+    supabase_service = Depends(get_supabase_service)
 ) -> Dict[str, int]:
-    """Get total count of products in database. Requires authentication."""
+    """Get total count of products in database. Public endpoint."""
     try:
         total = supabase_service.count_products()
         return {"total": total}
@@ -610,7 +608,6 @@ async def test_mcp_service() -> Dict[str, Any]:
                 }
             }
         },
-        401: {"description": "Authentication required"},
         500: {"description": "Database error"}
     },
     tags=["Products"]
@@ -619,18 +616,16 @@ def get_products(
     supabase_service = Depends(get_supabase_service),
     skip: int = Query(0, ge=0, description="Number of products to skip", example=0),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of products to return", example=20),
-    risk_rating: Optional[str] = Query(None, description="Filter by risk rating", enum=["Green", "Yellow", "Red"]),
-    current_user: db_models.User = Depends(get_current_active_user)
+    risk_rating: Optional[str] = Query(None, description="Filter by risk rating", enum=["Green", "Yellow", "Red"])
 ) -> List[models.Product]:
     """
     Retrieve products with optional filtering and pagination.
     
     Args:
-        db: Database session
+        supabase_service: Supabase service instance
         skip: Number of records to skip (default: 0)
         limit: Maximum number of records to return (default: 100, max: 1000)
         risk_rating: Filter by risk rating (Green, Yellow, Red)
-        current_user: Current active user
         
     Returns:
         List[models.Product]: List of products
