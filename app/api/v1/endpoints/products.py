@@ -35,140 +35,6 @@ logger.setLevel(logging.INFO)
 
 router = APIRouter()
 
-# Helper functions for parallel health assessment generation
-async def generate_health_assessment_for_product(
-    product_dict: Dict[str, Any],
-    supabase_service,
-    semaphore: asyncio.Semaphore
-) -> Dict[str, Any]:
-    """
-    Generate health assessment for a single product with caching.
-    Uses semaphore to limit concurrent AI requests and checks cache first.
-    """
-    async with semaphore:
-        try:
-            code = product_dict.get('code', 'unknown')
-            logger.debug(f"Checking health assessment cache for product {code}")
-            
-            # Check if assessment already exists in cache first (24hr TTL)
-            from app.core.cache import cache
-            cache_key = cache.generate_key(code, prefix="health_assessment_mcp_v27_working_citations")
-            
-            cached_assessment = cache.get(cache_key)
-            if cached_assessment:
-                logger.debug(f"Found cached assessment for product {code}, skipping generation")
-                return cached_assessment
-            
-            logger.debug(f"No cache hit, generating new health assessment for product {code}")
-            
-            # Structure product data
-            structured_product = helpers.structure_product_data(product_dict)
-            if not structured_product:
-                logger.warning(f"Failed to structure product data for {code}")
-                return None
-            
-            # Generate assessment using MCP service
-            from app.services.health_assessment_mcp_service import HealthAssessmentMCPService
-            mcp_service = HealthAssessmentMCPService()
-            existing_risk_rating = product_dict.get('risk_rating')
-            
-            assessment = await mcp_service.generate_health_assessment_with_real_evidence(
-                structured_product,
-                existing_risk_rating=existing_risk_rating
-            )
-            
-            if assessment:
-                logger.debug(f"Successfully generated assessment for product {code}")
-                # Cache the assessment for future use (24hr TTL)
-                cache.set(cache_key, assessment, ttl=86400)
-                # Return the assessment dict for consistent format
-                return assessment if isinstance(assessment, dict) else assessment.model_dump()
-            else:
-                logger.warning(f"Failed to generate assessment for product {code}")
-                return None
-                
-        except Exception as e:
-            logger.error(f"Error generating assessment for product {product_dict.get('code', 'unknown')}: {e}")
-            return None
-
-async def generate_parallel_health_assessments(
-    products: List[Dict[str, Any]],
-    supabase_service,
-    max_concurrent: int = 3
-) -> Dict[str, Dict[str, Any]]:
-    """
-    Generate health assessments for multiple products in parallel with caching.
-    
-    Args:
-        products: List of product dictionaries
-        supabase_service: Supabase service instance
-        max_concurrent: Maximum concurrent AI requests (default: 3)
-        
-    Returns:
-        Dict mapping product codes to their health assessments
-    """
-    semaphore = asyncio.Semaphore(max_concurrent)
-    
-    logger.info(f"Starting parallel health assessment generation for {len(products)} products (max concurrent: {max_concurrent})")
-    
-    # Create tasks for all products
-    tasks = [
-        generate_health_assessment_for_product(product, supabase_service, semaphore)
-        for product in products
-    ]
-    
-    # Execute all tasks concurrently
-    assessments = await asyncio.gather(*tasks, return_exceptions=True)
-    
-    # Build result dictionary and track statistics
-    results = {}
-    cache_hits = 0
-    new_generations = 0
-    failures = 0
-    
-    for i, assessment in enumerate(assessments):
-        product_code = products[i].get('code', 'unknown')
-        
-        if isinstance(assessment, Exception):
-            logger.error(f"Task failed for product {product_code}: {assessment}")
-            failures += 1
-            continue
-            
-        if assessment is not None:
-            results[product_code] = assessment
-            # Note: We can't easily track cache hits vs new generations here without modifying the helper function
-            # But the helper function logs cache hits vs new generations
-        else:
-            failures += 1
-    
-    success_rate = len(results) / len(products) * 100 if products else 0
-    logger.info(f"Completed parallel assessment generation. Results: {len(results)} successful, {failures} failed (Success rate: {success_rate:.1f}%)")
-    
-    return results
-
-async def generate_background_assessments_for_top_products(
-    products: List[Dict[str, Any]], 
-    supabase_service
-) -> None:
-    """
-    Background task to generate health assessments for top products.
-    Fire-and-forget - doesn't block the main response.
-    """
-    try:
-        logger.info(f"Starting background generation for {len(products)} top products")
-        
-        # Generate assessments with minimal concurrency to avoid overloading
-        await generate_parallel_health_assessments(
-            products, 
-            supabase_service, 
-            max_concurrent=2  # Lower concurrency for background
-        )
-        
-        logger.info(f"Background generation completed for {len(products)} products")
-        
-    except Exception as e:
-        logger.warning(f"Background generation failed (non-critical): {e}")
-
 # Old text search patterns removed - now using AI-powered NLP search
 
 # Pre-computed ingredient insights lookup table for performance optimization
@@ -904,31 +770,14 @@ async def get_product_recommendations(
                 total_matches=0
             )
         
-        logger.info(f"Returning {len(recommended_products)} personalized products with cache-first approach")
+        logger.info(f"Returning {len(recommended_products)} personalized products (no pre-generation)")
         
-        # Quick cache check for existing assessments (non-blocking)
-        cached_assessments = {}
-        try:
-            from app.core.cache import cache
-            for product in recommended_products[:5]:  # Check cache for first 5 products only
-                product_code = product.get('code', '')
-                cache_key = cache.generate_key(product_code, prefix="health_assessment_mcp_v27_working_citations")
-                cached_assessment = cache.get(cache_key)
-                if cached_assessment:
-                    cached_assessments[product_code] = cached_assessment
-        except Exception as e:
-            logger.warning(f"Cache check failed, continuing without cached assessments: {e}")
-        
-        logger.info(f"Found {len(cached_assessments)} cached assessments for quick loading")
-        
-        # Build response with match details
+        # Build response with match details (no health assessment generation)
         result = []
         for product_dict in recommended_products:
             try:
                 # Analyze why this product matches preferences
                 matches, concerns = analyze_product_match(product_dict, preferences)
-                
-                # Include cached health assessment if available (no generation delay)
                 
                 # Create Product model from dictionary
                 product_model = models.Product(
@@ -1492,29 +1341,9 @@ async def get_public_recommendations(
                 total_matches=0
             )
         
-        # Quick cache check for existing assessments (non-blocking)
-        cached_assessments = {}
-        try:
-            from app.core.cache import cache
-            for product in recommended_products[:5]:  # Check cache for first 5 products only
-                product_code = product.get('code', '')
-                cache_key = cache.generate_key(product_code, prefix="health_assessment_mcp_v27_working_citations")
-                cached_assessment = cache.get(cache_key)
-                if cached_assessment:
-                    cached_assessments[product_code] = cached_assessment
-        except Exception as e:
-            logger.warning(f"Cache check failed for explore endpoint: {e}")
+        logger.info(f"Returning {len(recommended_products)} public products (no pre-generation)")
         
-        logger.info(f"Explore endpoint: Found {len(cached_assessments)} cached assessments")
-        
-        # Background generation for first 3 products (fire-and-forget)
-        asyncio.create_task(
-            generate_background_assessments_for_top_products(
-                recommended_products[:3], supabase_service
-            )
-        )
-        
-        # Build response with match details and health assessments
+        # Build response with match details (no health assessment generation)
         from app.services.recommendation_service import analyze_product_match
         result = []
         for product in recommended_products:
@@ -1522,14 +1351,10 @@ async def get_public_recommendations(
                 # Analyze why this product matches the default preferences
                 matches, concerns = analyze_product_match(product, default_preferences)
                 
-                # Check if we have cached health assessment for this product
-                product_code = product.get('code', '')
-                health_assessment = cached_assessments.get(product_code)
-                
                 # Create RecommendedProduct object
                 recommended_product = models.RecommendedProduct(
                     product=models.Product(**product),
-                    match_details=models.MatchDetails(
+                    match_details=models.ProductMatch(
                         matches=matches,
                         concerns=concerns
                     ),
@@ -1542,7 +1367,7 @@ async def get_public_recommendations(
                 logger.warning(f"Error processing product {product.get('code', 'unknown')}: {e}")
                 continue
         
-        logger.info(f"Returning {len(result)} public recommendations with pre-populated health assessments")
+        logger.info(f"Returning {len(result)} public recommendations (no pre-generation)")
         
         return models.RecommendationResponse(
             recommendations=result,
