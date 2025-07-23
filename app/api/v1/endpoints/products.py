@@ -51,11 +51,10 @@ async def generate_health_assessment_for_product(
             logger.debug(f"Checking health assessment cache for product {code}")
             
             # Check if assessment already exists in cache first (24hr TTL)
-            from app.services.health_assessment_mcp_service import HealthAssessmentMCPService
-            mcp_service = HealthAssessmentMCPService()
+            from app.core.cache import cache
+            cache_key = cache.generate_key(code, prefix="health_assessment_mcp_v27_working_citations")
             
-            # Check cache using the same method as the main endpoint
-            cached_assessment = await mcp_service._get_cached_assessment(code)
+            cached_assessment = cache.get(cache_key)
             if cached_assessment:
                 logger.debug(f"Found cached assessment for product {code}, skipping generation")
                 return cached_assessment
@@ -69,6 +68,8 @@ async def generate_health_assessment_for_product(
                 return None
             
             # Generate assessment using MCP service
+            from app.services.health_assessment_mcp_service import HealthAssessmentMCPService
+            mcp_service = HealthAssessmentMCPService()
             existing_risk_rating = product_dict.get('risk_rating')
             
             assessment = await mcp_service.generate_health_assessment_with_real_evidence(
@@ -78,8 +79,8 @@ async def generate_health_assessment_for_product(
             
             if assessment:
                 logger.debug(f"Successfully generated assessment for product {code}")
-                # Cache the assessment for future use
-                await mcp_service._cache_assessment(assessment, code)
+                # Cache the assessment for future use (24hr TTL)
+                cache.set(cache_key, assessment, ttl=86400)
                 # Return the assessment dict for consistent format
                 return assessment if isinstance(assessment, dict) else assessment.model_dump()
             else:
@@ -902,11 +903,8 @@ async def get_product_recommendations(
                 product_code = product_dict.get('code', '')
                 health_assessment = health_assessments.get(product_code)
                 
-                # Add health assessment info to the product
-                if health_assessment:
-                    # Add mobile-optimized health info to the product response
-                    mobile_assessment = _optimize_for_mobile(health_assessment)
-                    product_dict['health_assessment'] = mobile_assessment
+                # Health assessment is pre-generated and cached - iOS app will get instant responses
+                # when requesting individual product health assessments later
                 
                 # Create Product model from dictionary
                 product_model = models.Product(
@@ -1493,11 +1491,8 @@ async def get_public_recommendations(
                 product_code = product.get('code', '')
                 health_assessment = health_assessments.get(product_code)
                 
-                # Add health assessment info to the product
-                if health_assessment:
-                    # Add mobile-optimized health info to the product response
-                    mobile_assessment = _optimize_for_mobile(health_assessment)
-                    product['health_assessment'] = mobile_assessment
+                # Health assessment is pre-generated and cached - iOS app will get instant responses
+                # when requesting individual product health assessments later
                 
                 # Create RecommendedProduct object
                 recommended_product = models.RecommendedProduct(
