@@ -146,6 +146,29 @@ async def generate_parallel_health_assessments(
     
     return results
 
+async def generate_background_assessments_for_top_products(
+    products: List[Dict[str, Any]], 
+    supabase_service
+) -> None:
+    """
+    Background task to generate health assessments for top products.
+    Fire-and-forget - doesn't block the main response.
+    """
+    try:
+        logger.info(f"Starting background generation for {len(products)} top products")
+        
+        # Generate assessments with minimal concurrency to avoid overloading
+        await generate_parallel_health_assessments(
+            products, 
+            supabase_service, 
+            max_concurrent=2  # Lower concurrency for background
+        )
+        
+        logger.info(f"Background generation completed for {len(products)} products")
+        
+    except Exception as e:
+        logger.warning(f"Background generation failed (non-critical): {e}")
+
 # Old text search patterns removed - now using AI-powered NLP search
 
 # Pre-computed ingredient insights lookup table for performance optimization
@@ -881,30 +904,31 @@ async def get_product_recommendations(
                 total_matches=0
             )
         
-        logger.info(f"Pre-populating health assessments for {len(recommended_products)} personalized products in parallel")
+        logger.info(f"Returning {len(recommended_products)} personalized products with cache-first approach")
         
-        # Generate health assessments in parallel for all recommended products
-        health_assessments = await generate_parallel_health_assessments(
-            recommended_products, 
-            supabase_service, 
-            max_concurrent=3  # Limit concurrent AI requests
-        )
+        # Quick cache check for existing assessments (non-blocking)
+        cached_assessments = {}
+        try:
+            from app.core.cache import cache
+            for product in recommended_products[:5]:  # Check cache for first 5 products only
+                product_code = product.get('code', '')
+                cache_key = cache.generate_key(product_code, prefix="health_assessment_mcp_v27_working_citations")
+                cached_assessment = cache.get(cache_key)
+                if cached_assessment:
+                    cached_assessments[product_code] = cached_assessment
+        except Exception as e:
+            logger.warning(f"Cache check failed, continuing without cached assessments: {e}")
         
-        logger.info(f"Generated {len(health_assessments)} personalized health assessments")
+        logger.info(f"Found {len(cached_assessments)} cached assessments for quick loading")
         
-        # Build response with match details and health assessments
+        # Build response with match details
         result = []
         for product_dict in recommended_products:
             try:
                 # Analyze why this product matches preferences
                 matches, concerns = analyze_product_match(product_dict, preferences)
                 
-                # Create Product model with health assessment if available
-                product_code = product_dict.get('code', '')
-                health_assessment = health_assessments.get(product_code)
-                
-                # Health assessment is pre-generated and cached - iOS app will get instant responses
-                # when requesting individual product health assessments later
+                # Include cached health assessment if available (no generation delay)
                 
                 # Create Product model from dictionary
                 product_model = models.Product(
@@ -1468,16 +1492,27 @@ async def get_public_recommendations(
                 total_matches=0
             )
         
-        logger.info(f"Pre-populating health assessments for {len(recommended_products)} products in parallel")
+        # Quick cache check for existing assessments (non-blocking)
+        cached_assessments = {}
+        try:
+            from app.core.cache import cache
+            for product in recommended_products[:5]:  # Check cache for first 5 products only
+                product_code = product.get('code', '')
+                cache_key = cache.generate_key(product_code, prefix="health_assessment_mcp_v27_working_citations")
+                cached_assessment = cache.get(cache_key)
+                if cached_assessment:
+                    cached_assessments[product_code] = cached_assessment
+        except Exception as e:
+            logger.warning(f"Cache check failed for explore endpoint: {e}")
         
-        # Generate health assessments in parallel for all recommended products
-        health_assessments = await generate_parallel_health_assessments(
-            recommended_products, 
-            supabase_service, 
-            max_concurrent=3  # Limit concurrent AI requests
+        logger.info(f"Explore endpoint: Found {len(cached_assessments)} cached assessments")
+        
+        # Background generation for first 3 products (fire-and-forget)
+        asyncio.create_task(
+            generate_background_assessments_for_top_products(
+                recommended_products[:3], supabase_service
+            )
         )
-        
-        logger.info(f"Generated {len(health_assessments)} health assessments")
         
         # Build response with match details and health assessments
         from app.services.recommendation_service import analyze_product_match
@@ -1487,12 +1522,9 @@ async def get_public_recommendations(
                 # Analyze why this product matches the default preferences
                 matches, concerns = analyze_product_match(product, default_preferences)
                 
-                # Create Product model with health assessment if available
+                # Check if we have cached health assessment for this product
                 product_code = product.get('code', '')
-                health_assessment = health_assessments.get(product_code)
-                
-                # Health assessment is pre-generated and cached - iOS app will get instant responses
-                # when requesting individual product health assessments later
+                health_assessment = cached_assessments.get(product_code)
                 
                 # Create RecommendedProduct object
                 recommended_product = models.RecommendedProduct(
