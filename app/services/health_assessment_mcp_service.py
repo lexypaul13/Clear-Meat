@@ -1212,45 +1212,29 @@ class HealthAssessmentMCPService:
         all_ingredients = self._extract_all_ingredients(ingredients_text)
         ingredients_list = ", ".join(all_ingredients)
         
-        return f"""You are a food safety expert analyzing this specific {product_name}.
+        return f"""You are a food scientist analyzing this {product_name}.
 
-COMPLETE INGREDIENT LIST TO ANALYZE:
-{ingredients_list}
+INGREDIENTS TO CATEGORIZE: {ingredients_list}
 
-CRITICAL TASK: Analyze EVERY SINGLE ingredient listed above. Do not skip any ingredient.
+TASK: Sort ALL ingredients into risk categories based on scientific evidence:
 
-For EACH ingredient, determine its risk level based on:
-1. Scientific evidence of health effects
-2. Concentration in this specific product type ({product_name})
-3. Cumulative effects when combined with other ingredients
-4. Typical consumption patterns for this product
+HIGH RISK: Known health risks (carcinogens, toxic additives)
+MODERATE RISK: Health concerns requiring moderation (high sodium, preservatives, allergens)  
+LOW RISK: Generally safe ingredients
 
-CATEGORIES:
-- HIGH RISK: Ingredients with strong scientific evidence of serious health risks (e.g., known carcinogens, ingredients that significantly increase disease risk)
-- MODERATE RISK: Ingredients with some health concerns that require moderation (e.g., high sodium/sugar content, common allergens, some preservatives)
-- LOW RISK: Generally recognized as safe (GRAS) ingredients with minimal health concerns
+IMPORTANT: Only provide health analysis for HIGH and MODERATE risk ingredients (max 80 characters each). Low risk ingredients need NO analysis.
 
-For EACH ingredient provide a specific health analysis (max 180 characters) based on:
-- Its specific health effects
-- Why it's concerning/safe in this product context
-- Relevant scientific evidence
-
-FORMAT YOUR RESPONSE EXACTLY:
-
+FORMAT:
 HIGH RISK INGREDIENTS:
-- [Ingredient name]: [Specific health analysis, max 180 chars]
+- [Name]: [Brief health concern, max 80 chars]
 
-MODERATE RISK INGREDIENTS:
-- [Ingredient name]: [Specific health analysis, max 180 chars]
+MODERATE RISK INGREDIENTS:  
+- [Name]: [Brief health concern, max 80 chars]
 
 LOW RISK INGREDIENTS:
-- [Ingredient name]: [Specific health analysis, max 180 chars]
+- [Name only, no analysis needed]
 
-CRITICAL RULES:
-1. You MUST categorize ALL {len(all_ingredients)} ingredients listed above
-2. Base categorization on this specific product context, not general rules
-3. Provide unique, specific analysis for each ingredient
-4. Never use generic statements - be specific to the ingredient and product"""
+Categorize all {len(all_ingredients)} ingredients above."""
     
     def _build_evidence_assessment_prompt(
         self, 
