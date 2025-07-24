@@ -761,13 +761,17 @@ async def get_product_recommendations(
         # Log user preferences for debugging
         logger.info(f"🎯 User {current_user.id} preferences: {preferences}")
         
+        # Get total count first (without pagination)
+        total_products = get_personalized_recommendations(supabase_service, preferences, 1000, 0)  # Get a large set to count
+        total_count = len(total_products)
+        
         # Get personalized recommendations using Supabase with pagination
         recommended_products = get_personalized_recommendations(supabase_service, preferences, page_size, offset)
         
         if not recommended_products:
             return models.RecommendationResponse(
                 recommendations=[],
-                total_matches=0
+                total_matches=total_count
             )
         
         logger.info(f"Returning {len(recommended_products)} personalized products (no pre-generation)")
@@ -816,7 +820,7 @@ async def get_product_recommendations(
         
         return models.RecommendationResponse(
             recommendations=result,
-            total_matches=len(result)
+            total_matches=total_count
         )
     except Exception as e:
         raise HTTPException(
@@ -1326,6 +1330,10 @@ async def get_public_recommendations(
             "meat_preferences": ["chicken", "turkey", "beef", "fish"]  # Show variety
         }
         
+        # Get total count first (without pagination)
+        total_products = get_personalized_recommendations(supabase_service, default_preferences, 1000, 0)  # Get a large set to count
+        total_count = len(total_products)
+        
         # Get recommendations using the same service but with default preferences
         recommended_products = get_personalized_recommendations(
             supabase_service, 
@@ -1338,7 +1346,7 @@ async def get_public_recommendations(
             logger.warning("No public recommendations found")
             return models.RecommendationResponse(
                 recommendations=[],
-                total_matches=0
+                total_matches=total_count
             )
         
         logger.info(f"Returning {len(recommended_products)} public products (no pre-generation)")
@@ -1371,7 +1379,7 @@ async def get_public_recommendations(
         
         return models.RecommendationResponse(
             recommendations=result,
-            total_matches=len(result)
+            total_matches=total_count
         )
     except Exception as e:
         logger.error(f"Error generating public recommendations: {str(e)}")
