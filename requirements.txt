@@ -1,6 +1,6 @@
 # Core API requirements
-fastapi>=0.110.0,<0.115.0
-uvicorn[standard]==0.27.1
+fastapi>=0.110.0,<0.112.0
+uvicorn[standard]==0.25.0
 sqlalchemy==2.0.25
 pydantic[email]
 pydantic-settings
@@ -12,7 +12,7 @@ Jinja2==3.1.4
 psycopg2-binary==2.9.9
 
 # HTTP client
-httpx>=0.28.1,<0.29.0
+httpx>=0.25.0,<0.28.0
 
 # Web scraping
 requests==2.31.0
@@ -54,4 +54,3 @@ redis>=4.5.0
 
 # Performance optimizations
 selectolax>=0.3.0  # Fast HTML parsing (10x faster than BeautifulSoup)
-aiohttp>=3.9.0     # Async HTTP client with connection pooling
