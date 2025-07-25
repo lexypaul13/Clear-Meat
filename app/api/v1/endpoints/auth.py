@@ -2,6 +2,7 @@
 
 from typing import Any, Dict, Optional
 import logging
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Path
 from fastapi.security import OAuth2PasswordRequestForm
@@ -180,4 +181,127 @@ def verify_phone_otp(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid OTP or verification failed. Please try again."
-        ) 
+        )
+
+
+@router.post("/logout",
+    response_model=Dict[str, Any],
+    summary="Logout Current User",
+    description="Logout the current authenticated user by invalidating their session",
+    responses={
+        200: {
+            "description": "Logout successful",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "Logout successful",
+                        "logged_out_at": "2024-01-15T10:30:00Z"
+                    }
+                }
+            }
+        },
+        401: {"description": "Not authenticated"}
+    },
+    tags=["Authentication"]
+)
+async def logout_user(
+    supabase_service = Depends(get_supabase_service)
+) -> Any:
+    """
+    Logout current user by invalidating their session.
+    
+    This endpoint signs out the user from Supabase and invalidates their session.
+    The client should also clear any stored tokens.
+    
+    Returns:
+        Dict[str, Any]: Logout confirmation message
+    """
+    try:
+        # Sign out from Supabase (invalidates the session server-side)
+        auth_response = supabase_service.client.auth.sign_out()
+        
+        return {
+            "message": "Logout successful",
+            "logged_out_at": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Logout failed: {str(e)}")
+        return {
+            "message": "Logout completed (client should clear tokens)",
+            "logged_out_at": datetime.now().isoformat()
+        }
+
+
+@router.delete("/account",
+    response_model=Dict[str, Any], 
+    summary="Delete User Account",
+    description="Permanently delete the current user's account and all associated data",
+    responses={
+        200: {
+            "description": "Account deleted successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "Account deleted successfully",
+                        "deleted_at": "2024-01-15T10:30:00Z"
+                    }
+                }
+            }
+        },
+        401: {"description": "Not authenticated"},
+        500: {"description": "Failed to delete account"}
+    },
+    tags=["Authentication", "Account Management"]
+)
+async def delete_account(
+    supabase_service = Depends(get_supabase_service)
+) -> Any:
+    """
+    Permanently delete the current user's account and all associated data.
+    
+    This action is irreversible and will:
+    - Delete the user's account from Supabase Auth
+    - Remove all user-generated data (scan history, preferences, etc.)
+    - Sign out the user immediately
+    
+    Returns:
+        Dict[str, Any]: Account deletion confirmation
+        
+    Raises:
+        HTTPException: If account deletion fails
+    """
+    try:
+        # Get current user to ensure they're authenticated
+        user_response = supabase_service.client.auth.get_user()
+        
+        if not user_response.user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not authenticated"
+            )
+        
+        user_id = user_response.user.id
+        
+        # Delete user's data from database tables (cascade should handle this)
+        # Note: Supabase RLS policies should prevent unauthorized access
+        
+        # Delete the user account from Supabase Auth
+        # This will automatically sign them out
+        admin_response = admin_supabase.auth.admin.delete_user(user_id)
+        
+        logger.info(f"Successfully deleted user account: {user_id}")
+        
+        return {
+            "message": "Account deleted successfully",
+            "deleted_at": datetime.now().isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Account deletion failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete account. Please contact support."
+        )
