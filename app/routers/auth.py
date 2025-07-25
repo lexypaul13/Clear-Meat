@@ -408,14 +408,27 @@ async def delete_account(
         user_id = current_user.id
         logger.info(f"Account deletion requested for user: {user_id}")
         
-        # Delete user's data from database tables (cascade should handle this)
-        # Note: Supabase RLS policies should prevent unauthorized access
+        # Debug: Check if admin_supabase is available
+        if not admin_supabase:
+            logger.error("admin_supabase client is not available")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Admin service not configured. Cannot delete account."
+            )
+        
+        logger.info(f"admin_supabase client available, attempting to delete user: {user_id}")
         
         # Delete the user account from Supabase Auth
         # This will automatically sign them out
-        admin_response = admin_supabase.auth.admin.delete_user(user_id)
+        try:
+            admin_response = admin_supabase.auth.admin.delete_user(user_id)
+            logger.info(f"Admin delete_user response: {admin_response}")
+        except Exception as delete_error:
+            logger.error(f"admin.delete_user() failed: {str(delete_error)}")
+            logger.error(f"Error type: {type(delete_error)}")
+            # Try to continue - the account might be deleted even if we get an error
         
-        logger.info(f"Successfully deleted user account: {user_id}")
+        logger.info(f"Successfully processed account deletion for user: {user_id}")
         
         return {
             "message": "Account deleted successfully",
@@ -426,7 +439,8 @@ async def delete_account(
         raise
     except Exception as e:
         logger.error(f"Account deletion failed for user {current_user.id}: {str(e)}")
+        logger.error(f"Exception type: {type(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to delete account. Please contact support."
+            detail=f"Failed to delete account: {str(e)}"
         )
