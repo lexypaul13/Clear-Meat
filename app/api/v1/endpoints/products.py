@@ -761,9 +761,8 @@ async def get_product_recommendations(
         # Log user preferences for debugging
         logger.info(f"🎯 User {current_user.id} preferences: {preferences}")
         
-        # Get total count first (without pagination)
-        total_products = get_personalized_recommendations(supabase_service, preferences, 1000, 0)  # Get a large set to count
-        total_count = len(total_products)
+        # Get total count using efficient database query
+        total_count = supabase_service.count_products()
         
         # Get personalized recommendations using Supabase with pagination
         recommended_products = get_personalized_recommendations(supabase_service, preferences, page_size, offset)
@@ -1330,9 +1329,8 @@ async def get_public_recommendations(
             "meat_preferences": ["chicken", "turkey", "beef", "fish"]  # Show variety
         }
         
-        # Get total count first (without pagination)
-        total_products = get_personalized_recommendations(supabase_service, default_preferences, 1000, 0)  # Get a large set to count
-        total_count = len(total_products)
+        # Get total count using efficient database query
+        total_count = supabase_service.count_products()
         
         # Get recommendations using the same service but with default preferences
         recommended_products = get_personalized_recommendations(
