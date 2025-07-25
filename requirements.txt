@@ -43,7 +43,7 @@ lxml>=4.9.0
 
 # LangChain for Google Gemini tool integration
 langchain==0.1.0
-langchain-google-genai==1.0.0
+langchain-google-genai==1.0.1
 langchain-core==0.1.0
 
 # Additional dependencies
