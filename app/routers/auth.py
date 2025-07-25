@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.core.supabase import supabase, admin_supabase
 from app.db import models as db_models
 from app.db.supabase_client import get_supabase_service
+from app.internal.dependencies import get_current_user
 import logging
 
 router = APIRouter()
@@ -327,6 +328,7 @@ def register_user(
     tags=["Authentication"]
 )
 async def logout_user(
+    current_user: db_models.User = Depends(get_current_user),
     supabase_service = Depends(get_supabase_service)
 ) -> Any:
     """
@@ -339,16 +341,23 @@ async def logout_user(
         Dict[str, Any]: Logout confirmation message
     """
     try:
-        # Sign out from Supabase (invalidates the session server-side)
-        auth_response = supabase_service.client.auth.sign_out()
+        # Log user logout attempt
+        logger.info(f"User logout requested: {current_user.id}")
         
+        # Sign out from Supabase (invalidates the session server-side)
+        # Note: The current_user dependency already validates the JWT token
+        auth_response = supabase.auth.sign_out()
+        
+        logger.info(f"User {current_user.id} logged out successfully")
         return {
             "message": "Logout successful",
             "logged_out_at": datetime.now().isoformat()
         }
         
     except Exception as e:
-        logger.error(f"Logout failed: {str(e)}")
+        logger.error(f"Logout failed for user {current_user.id}: {str(e)}")
+        # Still return success since the JWT validation already happened
+        # Client should clear tokens regardless
         return {
             "message": "Logout completed (client should clear tokens)",
             "logged_out_at": datetime.now().isoformat()
@@ -377,6 +386,7 @@ async def logout_user(
     tags=["Authentication", "Account Management"]
 )
 async def delete_account(
+    current_user: db_models.User = Depends(get_current_user),
     supabase_service = Depends(get_supabase_service)
 ) -> Any:
     """
@@ -394,16 +404,9 @@ async def delete_account(
         HTTPException: If account deletion fails
     """
     try:
-        # Get current user to ensure they're authenticated
-        user_response = supabase_service.client.auth.get_user()
-        
-        if not user_response.user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not authenticated"
-            )
-        
-        user_id = user_response.user.id
+        # Use the authenticated user from dependency
+        user_id = current_user.id
+        logger.info(f"Account deletion requested for user: {user_id}")
         
         # Delete user's data from database tables (cascade should handle this)
         # Note: Supabase RLS policies should prevent unauthorized access
@@ -422,7 +425,7 @@ async def delete_account(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Account deletion failed: {str(e)}")
+        logger.error(f"Account deletion failed for user {current_user.id}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete account. Please contact support."
