@@ -440,7 +440,14 @@ async def delete_account(
     except Exception as e:
         logger.error(f"Account deletion failed for user {current_user.id}: {str(e)}")
         logger.error(f"Exception type: {type(e)}")
+        # For debugging, return more detailed error information
+        error_details = {
+            "error": str(e),
+            "error_type": str(type(e)),
+            "user_id": getattr(current_user, 'id', 'unknown'),
+            "admin_supabase_available": admin_supabase is not None
+        }
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete account: {str(e)}"
+            detail=f"Account deletion debug info: {error_details}"
         )
