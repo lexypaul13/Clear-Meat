@@ -1,5 +1,5 @@
 # Core API requirements
-fastapi>=0.110.0,<0.112.0
+fastapi==0.110.0
 uvicorn[standard]==0.25.0
 sqlalchemy==2.0.25
 pydantic[email]
@@ -12,7 +12,7 @@ Jinja2==3.1.4
 psycopg2-binary==2.9.9
 
 # HTTP client
-httpx>=0.25.0,<0.28.0
+httpx==0.25.2
 
 # Web scraping
 requests==2.31.0
@@ -29,7 +29,7 @@ passlib[bcrypt]==1.7.4
 python-multipart==0.0.9
 
 # AI services
-google-generativeai>=0.8.0,<0.9.0
+google-generativeai==0.8.3
 backoff==2.2.1
 
 # Essential packages
@@ -42,15 +42,15 @@ pymed==0.8.9
 lxml>=4.9.0
 
 # LangChain for Google Gemini tool integration
-langchain>=0.1.0
-langchain-google-genai==2.0.10
-langchain-core>=0.1.0
+langchain==0.1.20
+langchain-google-genai==1.0.10
+langchain-core==0.1.52
 
 # Additional dependencies
-urllib3>=1.26.0,<3.0.0
+urllib3==1.26.18
 
 # Redis for distributed caching
-redis>=4.5.0
+redis==4.6.0
 
 # Performance optimizations
-selectolax>=0.3.0  # Fast HTML parsing (10x faster than BeautifulSoup)
+selectolax==0.3.21  # Fast HTML parsing (10x faster than BeautifulSoup)
