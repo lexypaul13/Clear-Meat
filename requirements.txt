@@ -42,9 +42,9 @@ pymed==0.8.9
 lxml>=4.9.0
 
 # LangChain for Google Gemini tool integration
-langchain==0.1.0
-langchain-google-genai==1.0.1
-langchain-core==0.1.0
+langchain==0.2.6
+langchain-google-genai==1.0.7
+langchain-core==0.2.10
 
 # Additional dependencies
 urllib3==1.26.18
