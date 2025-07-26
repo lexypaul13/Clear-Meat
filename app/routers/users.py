@@ -47,7 +47,7 @@ def get_current_user_profile(
         id=current_user.id,
         email=current_user.email,
         full_name=current_user.full_name,
-        is_active=current_user.is_active,
+        is_active=True,  # Default to True since field doesn't exist in DB model
         preferences=current_user.preferences
     )
 
@@ -151,7 +151,7 @@ def update_current_user(
         id=current_user.id,
         email=current_user.email,
         full_name=current_user.full_name,
-        is_active=current_user.is_active,
+        is_active=True,  # Default to True since field doesn't exist in DB model
         preferences=current_user.preferences
     )
 
