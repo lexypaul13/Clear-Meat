@@ -155,9 +155,11 @@ def get_current_user(
                             logger.warning(f"User {payload['sub']} not found in local DB. Creating record.")
                             
                             # Extract user data from token
-                            user_email = payload.get('email', '')
+                            user_email = payload.get('email') or f"{payload['sub']}@supabase.local"
                             user_metadata = payload.get('user_metadata', {}) or {}
                             full_name = user_metadata.get('full_name', '')
+                            
+                            logger.debug(f"Creating user with email: {user_email}, full_name: {full_name}")
                             
                             # Create new user in local database
                             new_user = db_models.User(
