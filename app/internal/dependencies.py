@@ -130,6 +130,7 @@ def get_current_user(
                     )
                 
                 logger.debug(f"JWT decode successful, payload role: {payload.get('role')}")
+                logger.debug(f"JWT payload sub: {payload.get('sub')}, email: {payload.get('email')}")
                 
                 # Flexible validation for Supabase tokens
                 # Check if it's a Supabase token (has 'role' claim)
@@ -149,7 +150,19 @@ def get_current_user(
                         
                         # Get user from database - for authenticated tokens
                         logger.debug(f"Looking up user in database: {payload['sub']}")
-                        user = supabase_service.query(db_models.User).filter(db_models.User.id == payload["sub"]).first()
+                        client = supabase_service.get_client()
+                        result = client.table('profiles').select('*').eq('id', payload['sub']).execute()
+                        user = None
+                        if result.data:
+                            user_data = result.data[0]
+                            user = type('User', (object,), {
+                                'id': user_data['id'],
+                                'email': user_data['email'],
+                                'full_name': user_data['full_name'],
+                                'preferences': user_data.get('preferences'),
+                                'created_at': user_data.get('created_at'),
+                                'updated_at': user_data.get('updated_at')
+                            })()
                         if not user:
                             # User not found in local DB - create them
                             logger.warning(f"User {payload['sub']} not found in local DB. Creating record.")
@@ -169,14 +182,32 @@ def get_current_user(
                             )
                             
                             try:
-                                supabase_service.add(new_user)
-                                supabase_service.commit()
-                                supabase_service.refresh(new_user)
-                                logger.info(f"Created new user record for Supabase user {payload['sub']}")
-                                return new_user
+                                # Use Supabase client directly to insert user
+                                client = supabase_service.get_client()
+                                result = client.table('profiles').insert({
+                                    'id': payload['sub'],
+                                    'email': user_email,
+                                    'full_name': full_name
+                                }).execute()
+                                
+                                if result.data:
+                                    logger.info(f"Created new user record for Supabase user {payload['sub']}")
+                                    # Return the created user data
+                                    user_data = result.data[0]
+                                    created_user = type('User', (object,), {
+                                        'id': user_data['id'],
+                                        'email': user_data['email'],
+                                        'full_name': user_data['full_name'],
+                                        'preferences': user_data.get('preferences'),
+                                        'created_at': user_data.get('created_at'),
+                                        'updated_at': user_data.get('updated_at')
+                                    })()
+                                    return created_user
+                                else:
+                                    raise Exception("No data returned from insert")
+                                    
                             except Exception as e:
                                 logger.error(f"Failed to create user record: {e}")
-                                supabase_service.rollback()
                                 # Create temporary user object for this request
                                 temp_user = type('TempUser', (object,), {
                                     'id': payload['sub'],
