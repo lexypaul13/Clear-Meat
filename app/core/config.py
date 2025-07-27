@@ -1,5 +1,6 @@
 """Settings module for the MeatWise API."""
 
+import logging
 import os
 import secrets
 import sys
@@ -34,6 +35,7 @@ class Settings(BaseSettings):
         """Ensure auth bypass is not enabled in production."""
         is_production = os.getenv("ENVIRONMENT", "").lower() == "production"
         if v and is_production:
+            logging.error("ENABLE_AUTH_BYPASS cannot be true in production!")
             print("ERROR: ENABLE_AUTH_BYPASS cannot be true in production!", file=sys.stderr)
             raise ValueError("Auth bypass is not allowed in production")
         return v
@@ -43,10 +45,13 @@ class Settings(BaseSettings):
         """Validate the secret key."""
         if not v or len(v) < 32:
             if os.environ.get("ENVIRONMENT", "").lower() == "production":
+                logging.error("SECRET_KEY must be set in production with at least 32 characters!")
                 print("ERROR: SECRET_KEY must be set in production with at least 32 characters!", file=sys.stderr)
                 raise ValueError("SECRET_KEY is required in production")
             else:
                 # Warn that we're using a generated key
+                logging.warning("No SECRET_KEY environment variable set! Using a randomly generated key.")
+                logging.warning("This is insecure for production environments - set a SECRET_KEY environment variable.")
                 print("WARNING: No SECRET_KEY environment variable set! Using a randomly generated key.", file=sys.stderr)
                 print("This is insecure for production environments - set a SECRET_KEY environment variable.", file=sys.stderr)
             return secrets.token_urlsafe(32)
@@ -98,6 +103,7 @@ class Settings(BaseSettings):
                 raise ValueError(f"Invalid format for BACKEND_CORS_ORIGINS: {raw_value}")
 
         except (ValueError, TypeError, json.JSONDecodeError) as e:
+            logging.warning(f"Failed to parse BACKEND_CORS_ORIGINS ('{raw_value}'). Error: {e}. Using empty list.")
             print(f"WARNING: Failed to parse BACKEND_CORS_ORIGINS ('{raw_value}'). Error: {e}. Using empty list.", file=sys.stderr)
             return [] # Return empty list on parsing failure
 
@@ -158,6 +164,7 @@ class Settings(BaseSettings):
         env_var_name = info.field_name
         # Check if the value is missing (either None or empty string from os.getenv default)
         if not v:
+            logging.warning(f"Environment variable '{env_var_name}' is not set. Supabase features may not work.")
             print(f"WARNING: Environment variable '{env_var_name}' is not set. Supabase features may not work.", file=sys.stderr)
         return v
 
@@ -174,6 +181,7 @@ class Settings(BaseSettings):
     def warn_if_gemini_missing(cls, v: str) -> str:
         """Warn if Gemini API Key is not set."""
         if not v:
+            logging.warning("Environment variable 'GEMINI_API_KEY' is not set. Gemini features may not work.")
             print("WARNING: Environment variable 'GEMINI_API_KEY' is not set. Gemini features may not work.", file=sys.stderr)
         return v
 

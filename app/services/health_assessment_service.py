@@ -648,7 +648,7 @@ def _build_health_assessment_prompt(product: ProductStructured, similar_products
         return """{"ingredients_assessment": {"high_risk": [], "moderate_risk": [], "low_risk": []}}"""
     
     # Build the streamlined prompt with pre-parsed ingredients
-    logger.info(f"DEBUG: Parsed ingredients for Gemini: {ingredients_list}")
+    logger.info(f"Parsed ingredients for Gemini: {ingredients_list}")
     prompt = f"""You will receive:
 {{
   "ingredients": {json.dumps(ingredients_list)}

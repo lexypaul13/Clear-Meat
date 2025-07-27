@@ -1180,8 +1180,7 @@ async def debug_mcp_health_assessment(
     supabase_service = Depends(get_supabase_service)
 ) -> Dict[str, Any]:
     """
-    DEBUG ENDPOINT: Shows detailed error information for MCP health assessment.
-    TEMPORARY - Will be removed after fixing the main endpoint.
+    Debug endpoint for MCP health assessment troubleshooting.
     """
     debug_info = {
         "step": "starting",

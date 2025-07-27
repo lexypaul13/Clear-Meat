@@ -1,5 +1,6 @@
 """Product router for the MeatWise API."""
 
+import logging
 from typing import Any, List, Optional, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -103,7 +104,7 @@ def get_products(
         return result
     except Exception as e:
         # Log the error
-        print(f"Error retrieving products: {str(e)}")
+        logging.error(f"Error retrieving products: {str(e)}")
         raise HTTPException(
             status_code=500, 
             detail=f"Error retrieving products: {str(e)}"
@@ -207,7 +208,7 @@ def get_product(
         raise
     except Exception as e:
         # Log the error for debugging
-        print(f"Error processing product {code}: {str(e)}")
+        logging.error(f"Error processing product {code}: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Error processing product data: {str(e)}"

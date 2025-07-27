@@ -173,8 +173,7 @@ def get_user_scan_history(
 def add_scan_history(
     scan_in: models.ScanHistoryCreate,
     db: Session = Depends(get_db),
-    # TODO: Implement proper authentication dependency
-    current_user_id: str = "current_user_id",
+    current_user: db_models.User = Depends(get_current_active_user),
 ) -> Any:
     """
     Add a scan to user's history.
@@ -182,7 +181,7 @@ def add_scan_history(
     Args:
         scan_in: Scan data
         db: Database session
-        current_user_id: Current user ID from auth dependency
+        current_user: Current authenticated user
         
     Returns:
         models.ScanHistory: Created scan history entry
@@ -196,7 +195,7 @@ def add_scan_history(
         raise HTTPException(status_code=404, detail="Product not found")
     
     scan = db_models.ScanHistory(
-        user_id=current_user_id,
+        user_id=current_user.id,
         **scan_in.model_dump(),
     )
     db.add(scan)
@@ -260,8 +259,7 @@ def get_user_favorites(
 def add_favorite(
     favorite_in: models.UserFavoriteCreate,
     db: Session = Depends(get_db),
-    # TODO: Implement proper authentication dependency
-    current_user_id: str = "current_user_id",
+    current_user: db_models.User = Depends(get_current_active_user),
 ) -> Any:
     """
     Add a product to user's favorites.
@@ -269,7 +267,7 @@ def add_favorite(
     Args:
         favorite_in: Favorite data
         db: Database session
-        current_user_id: Current user ID from auth dependency
+        current_user: Current authenticated user
         
     Returns:
         models.UserFavorite: Created favorite entry
@@ -286,7 +284,7 @@ def add_favorite(
     existing = (
         db.query(db_models.UserFavorite)
         .filter(
-            db_models.UserFavorite.user_id == current_user_id,
+            db_models.UserFavorite.user_id == current_user.id,
             db_models.UserFavorite.product_code == favorite_in.product_code,
         )
         .first()
@@ -295,7 +293,7 @@ def add_favorite(
         raise HTTPException(status_code=400, detail="Product already in favorites")
     
     favorite = db_models.UserFavorite(
-        user_id=current_user_id,
+        user_id=current_user.id,
         **favorite_in.model_dump(),
     )
     db.add(favorite)
@@ -308,8 +306,7 @@ def add_favorite(
 def remove_favorite(
     product_code: str,
     db: Session = Depends(get_db),
-    # TODO: Implement proper authentication dependency
-    current_user_id: str = "current_user_id",
+    current_user: db_models.User = Depends(get_current_active_user),
 ) -> Any:
     """
     Remove a product from user's favorites.
@@ -317,7 +314,7 @@ def remove_favorite(
     Args:
         product_code: Product barcode
         db: Database session
-        current_user_id: Current user ID from auth dependency
+        current_user: Current authenticated user
         
     Returns:
         dict: Success message
@@ -328,7 +325,7 @@ def remove_favorite(
     favorite = (
         db.query(db_models.UserFavorite)
         .filter(
-            db_models.UserFavorite.user_id == current_user_id,
+            db_models.UserFavorite.user_id == current_user.id,
             db_models.UserFavorite.product_code == product_code,
         )
         .first()

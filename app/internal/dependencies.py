@@ -98,7 +98,7 @@ def get_current_user(
                         "dummy_key",  # Key required even when verification is disabled
                         options={
                             "verify_signature": False,  # Disable signature verification for Supabase tokens
-                            "verify_exp": False,       # Disable expiration check temporarily
+                            "verify_exp": False,       # Disable expiration check for Supabase tokens
                             "verify_iat": False,
                             "require_exp": False,      # Don't require expiration
                             "require_iat": False,
