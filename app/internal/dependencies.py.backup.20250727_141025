@@ -205,16 +205,15 @@ def get_current_user(
             logger.warning("Supabase client not available for token verification.")
             return verify_manually()
 
-        # Skip Supabase client verification due to configuration issues
-        # Go directly to manual verification which handles Supabase tokens correctly
-        logger.info("Using manual JWT verification for all tokens")
-        return verify_manually()
-        
-        # Original Supabase verification commented out until JWT secret is configured
-        # try:
-        #     response = supabase.auth.get_user(token)
-        #     if not response or not hasattr(response, 'user') or not response.user:
-        #         return verify_manually()
+        # First, try to validate via Supabase
+        try:
+            # Verify token directly with Supabase
+            logger.debug("Attempting to verify token with Supabase")
+            response = supabase.auth.get_user(token)
+            
+            if not response or not hasattr(response, 'user') or not response.user:
+                logger.warning("Supabase token verification returned no user.")
+                return verify_manually()
             
             # Extract user data from the Supabase response
             supabase_user = response.user
