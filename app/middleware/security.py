@@ -579,4 +579,6 @@ def add_security_middleware(app: FastAPI) -> None:
     )
     
     # Add JWT error handler middleware LAST (so it's applied FIRST in the chain)
-    app.add_middleware(JWTErrorHandlerMiddleware) 
+    # DISABLED: This middleware uses wrong JWT validation for Supabase tokens
+    # Our get_current_user dependency handles authentication properly
+    # app.add_middleware(JWTErrorHandlerMiddleware) 
