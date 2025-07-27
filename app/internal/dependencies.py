@@ -256,11 +256,22 @@ def get_current_user(
                 
                     # Legacy token handling
                     logger.debug(f"Legacy token - looking up user: {payload['sub']}")
-                    user = supabase_service.query(db_models.User).filter(db_models.User.id == payload["sub"]).first()
-                    if not user:
+                    client = supabase_service.get_client()
+                    result = client.table('profiles').select('*').eq('id', payload['sub']).execute()
+                    if result.data:
+                        user_data = result.data[0]
+                        user = type('User', (object,), {
+                            'id': user_data['id'],
+                            'email': user_data['email'],
+                            'full_name': user_data['full_name'],
+                            'preferences': user_data.get('preferences'),
+                            'created_at': user_data.get('created_at'),
+                            'updated_at': user_data.get('updated_at')
+                        })()
+                        return user
+                    else:
                         logger.warning(f"User not found in database: {payload['sub']}")
                         raise credentials_exception
-                    return user
                 
             except JWTError as e:
                 logger.error(f"JWT decode error: {e}")
