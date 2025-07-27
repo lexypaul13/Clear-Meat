@@ -151,8 +151,41 @@ def get_current_user(
                         logger.debug(f"Looking up user in database: {payload['sub']}")
                         user = supabase_service.query(db_models.User).filter(db_models.User.id == payload["sub"]).first()
                         if not user:
-                            logger.warning(f"User not found in database: {payload['sub']}")
-                            raise credentials_exception
+                            # User not found in local DB - create them
+                            logger.warning(f"User {payload['sub']} not found in local DB. Creating record.")
+                            
+                            # Extract user data from token
+                            user_email = payload.get('email', '')
+                            user_metadata = payload.get('user_metadata', {}) or {}
+                            full_name = user_metadata.get('full_name', '')
+                            
+                            # Create new user in local database
+                            new_user = db_models.User(
+                                id=payload['sub'],
+                                email=user_email,
+                                full_name=full_name
+                            )
+                            
+                            try:
+                                supabase_service.add(new_user)
+                                supabase_service.commit()
+                                supabase_service.refresh(new_user)
+                                logger.info(f"Created new user record for Supabase user {payload['sub']}")
+                                return new_user
+                            except Exception as e:
+                                logger.error(f"Failed to create user record: {e}")
+                                supabase_service.rollback()
+                                # Create temporary user object for this request
+                                temp_user = type('TempUser', (object,), {
+                                    'id': payload['sub'],
+                                    'email': user_email,
+                                    'full_name': full_name,
+                                    'preferences': None,
+                                    'created_at': datetime.now(),
+                                    'updated_at': datetime.now()
+                                })()
+                                return temp_user
+                        
                         logger.debug(f"User found: {user.email}")
                         return user
                         
