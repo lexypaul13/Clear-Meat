@@ -39,6 +39,13 @@ def get_current_user(
     Raises:
         HTTPException: If token is invalid
     """
+    # Add detailed logging for debugging
+    logger.info("=== AUTHENTICATION DEBUG START ===")
+    logger.info(f"Token received: {'YES' if token else 'NO'}")
+    if token:
+        logger.info(f"Token length: {len(token)}")
+        logger.info(f"Token starts with: {token[:20]}...")
+    
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -72,6 +79,7 @@ def get_current_user(
     # If no token provided
     if token is None:
         logger.warning("No authentication token provided")
+        logger.info("=== AUTHENTICATION DEBUG END (NO TOKEN) ===")
         raise credentials_exception
         
     try:
