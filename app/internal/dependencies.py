@@ -91,7 +91,13 @@ def get_current_user(
             logger.info("Using manual JWT verification")
             try:
                 # First, decode without verification to check if it's a Supabase token
-                unverified_payload = jwt.decode(token, "dummy_key", options={"verify_signature": False})
+                unverified_payload = jwt.decode(token, "dummy_key", options={
+                    "verify_signature": False,
+                    "verify_aud": False,
+                    "verify_iss": False,
+                    "verify_exp": False,
+                    "verify_iat": False
+                })
                 is_supabase_token = (
                     unverified_payload.get("iss") and "supabase" in unverified_payload.get("iss", "").lower()
                 ) or unverified_payload.get("role") in ["anon", "authenticated"]
