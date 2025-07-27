@@ -215,81 +215,81 @@ def get_current_user(
         #     response = supabase.auth.get_user(token)
         #     if not response or not hasattr(response, 'user') or not response.user:
         #         return verify_manually()
-            
-            # Extract user data from the Supabase response
-            supabase_user = response.user
-            user_id = supabase_user.id
-            
-            # Ensure user_id is a string (convert UUID if needed)
-            user_id = str(user_id)
-                
-            user_email = getattr(supabase_user, 'email', None)
-            
-            # Log success for debugging
-            logger.debug(f"Successfully verified token for user {user_id}")
-            
-            # Try to fetch user from our database
-            user = supabase_service.query(db_models.User).filter(db_models.User.id == user_id).first()
-            
-            if user:
-                # User found in database - ensure ID is string
-                if hasattr(user.id, 'hex') or isinstance(user.id, uuid.UUID):
-                    user.id = str(user.id)
-                logger.debug(f"User {user_id} found in local DB.")
-                return user
-            else:
-                # User exists in Supabase but not in our database yet
-                # Create temporary user object with data from Supabase
-                logger.warning(f"User {user_id} not found in local DB profiles. Creating record.")
-                user_metadata = getattr(supabase_user, 'user_metadata', {}) or {}
-                full_name = user_metadata.get('full_name', '')
-                # role = user_metadata.get('role', 'basic') # Role field removed from model
-                
-                # --- Restoring INSERT logic --- 
-                # Create and save the user to our database
-                # Pass only fields that exist in the db_models.User model
-                new_user = db_models.User(
-                    id=user_id,
-                    email=user_email,
-                    full_name=full_name,
-                    # preferences=None # Initialize preferences if needed
-                )
-                
-                # Add the user to the database to avoid recreating it on every request
-                # This might fail if there are transaction/timing issues with auth.users
-                try:
-                    supabase_service.add(new_user)
-                    supabase_service.commit()
-                    supabase_service.refresh(new_user)
-                    logger.info(f"Created new user record for Supabase user {user_id}")
-                    return new_user
-                except Exception as insert_exc:
-                    logger.error(f"Failed to insert user {user_id} into local DB: {insert_exc}")
-                    supabase_service.rollback()
-                    # If insert fails, fall back to manual verification for this request
-                    logger.warning("Falling back to manual verification due to DB insert failure.")
-                    return verify_manually()
-
-                # --- Removed temporary object creation logic ---
-                # temp_user_obj = type('TempUser', (object,), {
-                #     'id': user_id,
-                #     'email': user_email,
-                #     'full_name': full_name,
-                #     'preferences': None, # No preferences known yet
-                #     'created_at': None, # Not available without DB record
-                #     'updated_at': None  # Not available without DB record
-                # })
-                # return temp_user_obj
-            
-        except Exception as e:
-            # Log the specific error from Supabase or DB interaction
-            logger.warning(f"Supabase/DB error during user lookup/creation: {str(e)}. Falling back to manual verification.")
-            # Rollback any potential transaction changes from failed insert attempt
-            try:
-                supabase_service.rollback()
-            except Exception as rb_exc:
-                 logger.error(f"Error during rollback: {rb_exc}")
-            return verify_manually()
+        #     
+        #     # Extract user data from the Supabase response
+        #     supabase_user = response.user
+        #     user_id = supabase_user.id
+        #     
+        #     # Ensure user_id is a string (convert UUID if needed)
+        #     user_id = str(user_id)
+        #         
+        #     user_email = getattr(supabase_user, 'email', None)
+        #     
+        #     # Log success for debugging
+        #     logger.debug(f"Successfully verified token for user {user_id}")
+        #     
+        #     # Try to fetch user from our database
+        #     user = supabase_service.query(db_models.User).filter(db_models.User.id == user_id).first()
+        #     
+        #     if user:
+        #         # User found in database - ensure ID is string
+        #         if hasattr(user.id, 'hex') or isinstance(user.id, uuid.UUID):
+        #             user.id = str(user.id)
+        #         logger.debug(f"User {user_id} found in local DB.")
+        #         return user
+        #     else:
+        #         # User exists in Supabase but not in our database yet
+        #         # Create temporary user object with data from Supabase
+        #         logger.warning(f"User {user_id} not found in local DB profiles. Creating record.")
+        #         user_metadata = getattr(supabase_user, 'user_metadata', {}) or {}
+        #         full_name = user_metadata.get('full_name', '')
+        #         # role = user_metadata.get('role', 'basic') # Role field removed from model
+        #         
+        #         # --- Restoring INSERT logic --- 
+        #         # Create and save the user to our database
+        #         # Pass only fields that exist in the db_models.User model
+        #         new_user = db_models.User(
+        #             id=user_id,
+        #             email=user_email,
+        #             full_name=full_name,
+        #             # preferences=None # Initialize preferences if needed
+        #         )
+        #         
+        #         # Add the user to the database to avoid recreating it on every request
+        #         # This might fail if there are transaction/timing issues with auth.users
+        #         try:
+        #             supabase_service.add(new_user)
+        #             supabase_service.commit()
+        #             supabase_service.refresh(new_user)
+        #             logger.info(f"Created new user record for Supabase user {user_id}")
+        #             return new_user
+        #         except Exception as insert_exc:
+        #             logger.error(f"Failed to insert user {user_id} into local DB: {insert_exc}")
+        #             supabase_service.rollback()
+        #             # If insert fails, fall back to manual verification for this request
+        #             logger.warning("Falling back to manual verification due to DB insert failure.")
+        #             return verify_manually()
+        # 
+        #         # --- Removed temporary object creation logic ---
+        #         # temp_user_obj = type('TempUser', (object,), {
+        #         #     'id': user_id,
+        #         #     'email': user_email,
+        #         #     'full_name': full_name,
+        #         #     'preferences': None, # No preferences known yet
+        #         #     'created_at': None, # Not available without DB record
+        #         #     'updated_at': None  # Not available without DB record
+        #         # })
+        #         # return temp_user_obj
+        #         
+        # except Exception as e:
+        #     # Log the specific error from Supabase or DB interaction
+        #     logger.warning(f"Supabase/DB error during user lookup/creation: {str(e)}. Falling back to manual verification.")
+        #     # Rollback any potential transaction changes from failed insert attempt
+        #     try:
+        #         supabase_service.rollback()
+        #     except Exception as rb_exc:
+        #          logger.error(f"Error during rollback: {rb_exc}")
+        #     return verify_manually()
             
     except Exception as e:
         logger.exception(f"Unexpected error during authentication: {str(e)}")
