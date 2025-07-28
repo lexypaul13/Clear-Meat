@@ -319,14 +319,25 @@ async def search_products(
         
         # Create OR conditions for text search
         conditions = []
-        search_terms = q.lower().split()
         
-        for term in search_terms:
+        # First, try exact match on the full query (more likely to find exact product names)
+        full_query = q.strip()
+        if full_query:
             conditions.extend([
-                f'name.ilike.%{term}%',
-                f'brand.ilike.%{term}%',
-                f'ingredients_text.ilike.%{term}%'
+                f'name.ilike.%{full_query}%',
+                f'brand.ilike.%{full_query}%'
             ])
+        
+        # Then split and search individual terms (fallback for partial matches)
+        search_terms = q.lower().split()
+        for term in search_terms:
+            # Skip very short words to reduce noise
+            if len(term) > 2:
+                conditions.extend([
+                    f'name.ilike.%{term}%',
+                    f'brand.ilike.%{term}%',
+                    f'ingredients_text.ilike.%{term}%'
+                ])
         
         if conditions:
             search_query = search_query.or_(','.join(conditions))
@@ -336,6 +347,32 @@ async def search_products(
         
         response = search_query.execute()
         results = response.data or []
+        
+        # Sort results to prioritize exact matches
+        def calculate_relevance(product):
+            """Calculate relevance score for sorting."""
+            score = 0
+            name = (product.get('name') or '').lower()
+            brand = (product.get('brand') or '').lower()
+            query_lower = q.lower()
+            
+            # Exact match in name or brand gets highest score
+            if query_lower in name:
+                score += 100
+            if query_lower in brand:
+                score += 50
+                
+            # Partial matches for each term
+            for term in search_terms:
+                if term in name:
+                    score += 10
+                if term in brand:
+                    score += 5
+                    
+            return score
+        
+        # Sort by relevance score (highest first)
+        results.sort(key=calculate_relevance, reverse=True)
         
         return {
             "query": q,
