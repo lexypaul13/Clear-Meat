@@ -55,8 +55,6 @@ def get_current_user_profile(
 @router.put("/me", response_model=UserResponse)
 def update_current_user(
     user_in: UserUpdate,
-    db: Session = Depends(get_db),
-    supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user),
 ) -> Any:
     """
@@ -64,96 +62,88 @@ def update_current_user(
     
     Args:
         user_in: Updated user data
-        db: Database session
         current_user: Current user from auth dependency
         
     Returns:
         UserResponse: Updated user details
     """
-    # Check if we're in testing mode
-    is_testing = os.getenv("TESTING", "false").lower() == "true"
-    
-    update_data = user_in.model_dump(exclude_unset=True, exclude_none=True)
-    
-    # In testing mode, skip database operations
-    if is_testing:
-        # For testing, just return a mocked updated user without DB operations
-        mock_user = {
-            "id": _convert_uuid_to_str(current_user.id),
-            "email": update_data.get("email", current_user.email),
-            "full_name": update_data.get("full_name", current_user.full_name),
-            "created_at": current_user.created_at,
-            "updated_at": datetime.now(),
-            "preferences": current_user.preferences
-        }
+    try:
+        # Get Supabase client
+        from app.db.supabase_client import get_admin_supabase
+        admin_client = get_admin_supabase()
+        if not admin_client:
+            raise HTTPException(status_code=500, detail="Database service unavailable")
         
-        # Handle preferences separately if provided
-        preferences = update_data.get("preferences")
-        if preferences:
+        update_data = user_in.model_dump(exclude_unset=True, exclude_none=True)
+        
+        # Extract preferences to handle separately
+        preferences = update_data.pop("preferences", None)
+        
+        # Build update data for Supabase
+        supabase_update = {}
+        
+        # Handle preferences
+        if preferences is not None:
+            # Merge with existing preferences if any
             existing_preferences = getattr(current_user, "preferences", {}) or {}
             if isinstance(existing_preferences, str):
                 try:
                     existing_preferences = json.loads(existing_preferences)
-                except:
+                except json.JSONDecodeError:
+                    logger.warning(f"Could not decode existing preferences for user {current_user.id}")
                     existing_preferences = {}
-            mock_user["preferences"] = {**existing_preferences, **preferences}
             
-        return mock_user
-    
-    # Extract preferences to handle separately
-    preferences = update_data.pop("preferences", None)
-    if preferences:
-        # Merge with existing preferences if any
-        existing_preferences = getattr(current_user, "preferences", {}) or {}
-        if isinstance(existing_preferences, str):
-            try:
-                existing_preferences = json.loads(existing_preferences)
-            except json.JSONDecodeError:
-                logger.warning(f"Could not decode existing preferences for user {current_user.id}: {existing_preferences}")
-                existing_preferences = {}
+            # Update with new preferences
+            merged_preferences = {**existing_preferences, **preferences}
+            supabase_update["preferences"] = merged_preferences
         
-        # Update with new preferences
-        merged_preferences = {**existing_preferences, **preferences}
-        current_user.preferences = merged_preferences # SQLAlchemy handles JSONB serialization
-    
-    # Hash password if provided
-    if "password" in update_data and update_data["password"]:
-        # Note: Supabase handles password updates via its own mechanisms
-        # We should probably prevent password updates via this endpoint or use Supabase admin API
-        logger.warning("Password update attempted via /users/me endpoint. This might not work as expected with Supabase Auth.")
-        # update_data["hashed_password"] = security.get_password_hash(update_data["password"])
-        del update_data["password"]
-    
-    # Update allowed fields (excluding preferences, password)
-    allowed_fields = ["email", "full_name"] # Only allow updating these via this endpoint
-    for key, value in update_data.items():
-        if key in allowed_fields:
-            setattr(current_user, key, value)
-        elif key not in ["preferences", "password"]:
-            logger.warning(f"Attempted to update unallowed field '{key}' via /users/me")
-
-    
-    db.add(current_user)
-    db.commit()
-    db.refresh(current_user)
-    
-    # Convert UUID fields to strings to ensure compatibility
-    user_dict = {
-        "id": _convert_uuid_to_str(current_user.id),
-        "email": current_user.email,
-        "full_name": current_user.full_name,
-        "created_at": current_user.created_at,
-        "updated_at": current_user.updated_at,
-        "preferences": current_user.preferences
-    }
-    
-    return UserResponse(
-        id=current_user.id,
-        email=current_user.email,
-        full_name=current_user.full_name,
-        is_active=True,  # Default to True since field doesn't exist in DB model
-        preferences=current_user.preferences
-    )
+        # Update allowed fields
+        allowed_fields = ["email", "full_name"]
+        for key, value in update_data.items():
+            if key in allowed_fields:
+                supabase_update[key] = value
+            elif key not in ["preferences", "password"]:
+                logger.warning(f"Attempted to update unallowed field '{key}' via /users/me")
+        
+        # Password updates should be handled via Supabase auth, not here
+        if "password" in update_data:
+            logger.warning("Password update attempted via /users/me endpoint. Use auth endpoints instead.")
+            del update_data["password"]
+        
+        # Only update if there's something to update
+        if supabase_update:
+            # Add updated_at timestamp
+            supabase_update["updated_at"] = datetime.now().isoformat()
+            
+            # Update in Supabase
+            result = admin_client.table('profiles').update(supabase_update).eq('id', str(current_user.id)).execute()
+            
+            if not result.data:
+                raise HTTPException(status_code=404, detail="User not found")
+            
+            # Get the updated user data
+            updated_user = result.data[0]
+        else:
+            # No updates, just return current user data
+            result = admin_client.table('profiles').select('*').eq('id', str(current_user.id)).execute()
+            if not result.data:
+                raise HTTPException(status_code=404, detail="User not found")
+            updated_user = result.data[0]
+        
+        # Return updated user
+        return UserResponse(
+            id=updated_user['id'],
+            email=updated_user['email'],
+            full_name=updated_user.get('full_name', ''),
+            is_active=True,
+            preferences=updated_user.get('preferences', {})
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating user: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update user")
 
 
 @router.get("/history", response_model=List[ScanHistory])
