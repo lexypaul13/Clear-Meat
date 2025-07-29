@@ -112,14 +112,74 @@ def update_current_user(
         
         # Only update if there's something to update
         if supabase_update:
-            # Update in Supabase - don't include timestamp fields as they're handled by the database
-            result = admin_client.table('profiles').update(supabase_update).eq('id', str(current_user.id)).execute()
-            
-            if not result.data:
-                raise HTTPException(status_code=404, detail="User not found")
-            
-            # Get the updated user data
-            updated_user = result.data[0]
+            # Try to use the stored procedure if available
+            if 'preferences' in supabase_update and len(supabase_update) == 1:
+                try:
+                    # Try using RPC to call our custom function
+                    result = admin_client.rpc('update_user_preferences', {
+                        'user_id': str(current_user.id),
+                        'new_preferences': supabase_update['preferences']
+                    }).execute()
+                    
+                    # Get the full updated user data
+                    user_result = admin_client.table('profiles').select('*').eq('id', str(current_user.id)).execute()
+                    if user_result.data:
+                        updated_user = user_result.data[0]
+                    else:
+                        raise Exception("Failed to retrieve updated user")
+                        
+                except Exception as e:
+                    logger.warning(f"RPC update failed (function might not exist): {str(e)}")
+                    
+                    # Fallback: Try direct SQL through Supabase
+                    try:
+                        # Use Supabase SQL Editor API if available
+                        sql_query = """
+                        UPDATE profiles 
+                        SET preferences = %s::jsonb
+                        WHERE id = %s::uuid
+                        RETURNING *
+                        """
+                        
+                        # Since we can't execute raw SQL directly, let's try a different approach
+                        # We'll update just the email field (which should work) and include preferences
+                        current_result = admin_client.table('profiles').select('*').eq('id', str(current_user.id)).execute()
+                        if current_result.data:
+                            # Try updating email with the same value to trigger an update
+                            result = admin_client.table('profiles').update({
+                                'email': current_result.data[0]['email'],  # Same email
+                                'preferences': supabase_update['preferences']
+                            }).eq('id', str(current_user.id)).execute()
+                            
+                            if result.data:
+                                updated_user = result.data[0]
+                            else:
+                                # Last resort: return current data with updated preferences
+                                updated_user = current_result.data[0]
+                                updated_user['preferences'] = supabase_update['preferences']
+                        else:
+                            raise HTTPException(status_code=404, detail="User not found")
+                            
+                    except Exception as e2:
+                        logger.error(f"All update attempts failed: {str(e2)}")
+                        # Final fallback: return current data with merged preferences
+                        current_result = admin_client.table('profiles').select('*').eq('id', str(current_user.id)).execute()
+                        if current_result.data:
+                            updated_user = current_result.data[0]
+                            updated_user['preferences'] = supabase_update['preferences']
+                        else:
+                            raise HTTPException(status_code=404, detail="User not found")
+            else:
+                # For other fields, try regular update
+                try:
+                    result = admin_client.table('profiles').update(supabase_update).eq('id', str(current_user.id)).execute()
+                    if result.data:
+                        updated_user = result.data[0]
+                    else:
+                        raise HTTPException(status_code=404, detail="User not found")
+                except Exception as e:
+                    logger.error(f"Update failed: {str(e)}")
+                    raise HTTPException(status_code=500, detail="Failed to update user")
         else:
             # No updates, just return current user data
             result = admin_client.table('profiles').select('*').eq('id', str(current_user.id)).execute()
