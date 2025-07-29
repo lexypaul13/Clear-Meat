@@ -479,43 +479,22 @@ def _apply_mixed_preferences(
 
 def _get_expanded_meat_types(preferred_types: Set[str], page_num: int) -> Set[str]:
     """
-    Expand meat types based on page number for content variety.
+    Return only user's preferred meat types to respect dietary restrictions.
     
     Args:
         preferred_types: User's preferred meat types
         page_num: Current page number (0, 1, 2, ...)
         
     Returns:
-        Expanded set of meat types
+        User's preferred meat types only (no expansion)
     """
     if not preferred_types:
         return set()
     
-    # Page 1: Strict preferences only
-    if page_num == 0:
-        return preferred_types
-    
-    # Define adjacent meat types for expansion
-    adjacent_types = {
-        'chicken': ['turkey'],
-        'turkey': ['chicken'],
-        'beef': ['lamb'],
-        'lamb': ['beef'],
-        'pork': ['beef'],  # Pork users might like beef
-        'fish': ['chicken']  # Fish users might like lean chicken
-    }
-    
-    expanded = set(preferred_types)
-    
-    # Page 2+: Add adjacent types
-    if page_num >= 1:
-        for meat_type in preferred_types:
-            if meat_type in adjacent_types:
-                expanded.update(adjacent_types[meat_type])
-        
-        logger.info(f"🔄 Expanded meat types from {list(preferred_types)} to {list(expanded)}")
-    
-    return expanded
+    # ALWAYS return only user's preferred types to respect dietary restrictions
+    # (Religious, health, or personal reasons require strict adherence)
+    logger.info(f"🥩 Using strict meat type filtering: {list(preferred_types)} (page {page_num})")
+    return preferred_types
 
 
 def _get_flexible_nutrition_thresholds(nutrition_focus: str, user_preferences: Dict[str, Any], page_num: int) -> Dict[str, float]:
