@@ -634,8 +634,8 @@ async def get_personalized_explore(
         user_preferences = current_user.preferences or {}
         
         # Get all available products from Supabase instead of SQLAlchemy
-        from app.db.supabase_client import get_supabase_public
-        supabase_client = get_supabase_public()
+        from app.db.supabase_client import get_supabase
+        supabase_client = get_supabase()
         if not supabase_client:
             raise Exception("Supabase client not available")
         
