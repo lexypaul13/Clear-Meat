@@ -2,7 +2,7 @@
 import json
 from typing import List, Dict, Any
 from langchain.tools import tool
-from langchain.pydantic_v1 import BaseModel, Field
+from pydantic import BaseModel, Field
 
 from app.services.citation_tools import CitationSearchService
 from app.models.citation import CitationSearch
