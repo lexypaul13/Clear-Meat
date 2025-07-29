@@ -51,8 +51,6 @@ def get_personalized_recommendations(
         List of product dictionaries that best match the user preferences
     """
     try:
-        logger.info(f"🔍 get_personalized_recommendations called with preferences: {user_preferences}")
-        logger.info(f"🔍 Parameters: page_size={page_size}, offset={offset}")
         start_time = time.time()
         
         # Check cache first
@@ -65,9 +63,7 @@ def get_personalized_recommendations(
         logger.info(f"Generating personalized recommendations using optimized query")
         
         # Get optimized recommendations using SQL-based filtering and scoring
-        logger.info(f"🔍 About to call _get_optimized_recommendations")
         recommendations = _get_optimized_recommendations(supabase_service, user_preferences, page_size, offset)
-        logger.info(f"🔍 _get_optimized_recommendations returned {len(recommendations) if recommendations else 'None'} recommendations")
         
         # Cache the results
         _cache_recommendations(cache_key, recommendations)

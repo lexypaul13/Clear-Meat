@@ -430,7 +430,22 @@ def get_explore_recommendations(
             # Analyze why this product matches preferences
             matches, concerns = analyze_product_match(product, preferences)
             
-            # Create RecommendedProduct object
+            # Create RecommendedProduct object with proper datetime handling
+            # Convert string dates to datetime objects for model validation
+            if isinstance(product.get('last_updated'), str):
+                from datetime import datetime
+                try:
+                    product['last_updated'] = datetime.fromisoformat(product['last_updated'].replace('Z', '+00:00'))
+                except (ValueError, AttributeError):
+                    product['last_updated'] = datetime.now()
+            
+            if isinstance(product.get('created_at'), str):
+                try:
+                    product['created_at'] = datetime.fromisoformat(product['created_at'].replace('Z', '+00:00'))
+                except (ValueError, AttributeError):
+                    from datetime import datetime
+                    product['created_at'] = datetime.now()
+            
             recommended_product = models.RecommendedProduct(
                 product=models.Product.model_validate(product),
                 match_details=models.ProductMatch(
@@ -449,9 +464,7 @@ def get_explore_recommendations(
             total_matches=len(result)
         )
     except Exception as e:
-        logger.error(f"Error generating explore recommendations: {str(e)}", exc_info=True)
-        logger.error(f"Error type: {type(e).__name__}")
-        logger.error(f"User preferences were: {preferences}")
+        logger.error(f"Error generating explore recommendations: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to generate explore recommendations: {str(e)}"
