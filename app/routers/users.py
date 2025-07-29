@@ -692,7 +692,10 @@ async def get_personalized_explore(
         
         return result
     except Exception as e:
-        logger.error("Error in personalized explore")
+        logger.error(f"Error in personalized explore: {str(e)}")
+        logger.error(f"Full exception: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 def score_product_by_preferences(product, preferences, all_products):
