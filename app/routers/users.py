@@ -626,8 +626,6 @@ async def get_recommendations(
 
 @router.get("/explore")
 async def get_personalized_explore(
-    db: Session = Depends(get_db),
-    supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user),
 ):
     """Get personalized product recommendations for explore page using rule-based scoring."""
@@ -635,8 +633,23 @@ async def get_personalized_explore(
         # Get user preferences
         user_preferences = current_user.preferences or {}
         
-        # Get all available products from database
-        products = db.query(db_models.Product).all()
+        # Get all available products from Supabase instead of SQLAlchemy
+        from app.db.supabase_client import get_supabase_public
+        supabase_client = get_supabase_public()
+        if not supabase_client:
+            raise Exception("Supabase client not available")
+        
+        # Query products using Supabase
+        products_result = supabase_client.table('products').select('*').execute()
+        if not products_result.data:
+            logger.warning("No products found in database for explore recommendations")
+            return []
+        
+        # Convert to objects with proper attributes
+        products = []
+        for product_data in products_result.data:
+            product = type('Product', (object,), product_data)()
+            products.append(product)
         
         if not products:
             logger.warning("No products found in database for explore recommendations")
