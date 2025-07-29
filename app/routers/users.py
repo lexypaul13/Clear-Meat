@@ -638,6 +638,10 @@ async def get_personalized_explore(
         # Get all available products from database
         products = db.query(db_models.Product).all()
         
+        if not products:
+            logger.warning("No products found in database for explore recommendations")
+            return []
+        
         # Filter products by preferred meat types if specified
         preferred_types = user_preferences.get('preferred_meat_types', [])
         if preferred_types:
@@ -663,32 +667,31 @@ async def get_personalized_explore(
         from app.models.product import Product as ProductModel
         result = []
         for product in recommended_products:
-            result.append(
-                ProductModel(
-                    code=product.code,
-                    name=product.name,
-                    brand=product.brand,
-                    description=product.description,
-                    ingredients_text=product.ingredients_text,
-                    calories=product.calories,
-                    protein=product.protein,
-                    fat=product.fat,
-                    carbohydrates=product.carbohydrates,
-                    salt=product.salt,
-                    meat_type=product.meat_type,
-                    contains_nitrites=product.contains_nitrites,
-                    contains_phosphates=product.contains_phosphates,
-                    contains_preservatives=product.contains_preservatives,
-                    antibiotic_free=product.antibiotic_free,
-                    hormone_free=product.hormone_free,
-                    pasture_raised=product.pasture_raised,
-                    risk_rating=product.risk_rating,
-                    image_url=product.image_url,
-                    last_updated=product.last_updated,
-                    created_at=product.created_at,
-                    ingredients=[]
+            try:
+                # Only include fields that exist in the Product model
+                result.append(
+                    ProductModel(
+                        code=product.code,
+                        name=product.name,
+                        brand=product.brand,
+                        description=product.description,
+                        ingredients_text=product.ingredients_text,
+                        calories=product.calories,
+                        protein=product.protein,
+                        fat=product.fat,
+                        carbohydrates=product.carbohydrates,
+                        salt=product.salt,
+                        meat_type=product.meat_type,
+                        risk_rating=product.risk_rating,
+                        image_url=product.image_url,
+                        last_updated=product.last_updated,
+                        created_at=product.created_at
+                    )
                 )
-            )
+            except Exception as e:
+                logger.error(f"Failed to convert product {product.code} to model: {str(e)}")
+                logger.error(f"Product data: code={product.code}, name={product.name}")
+                continue
         
         return result
     except Exception as e:
