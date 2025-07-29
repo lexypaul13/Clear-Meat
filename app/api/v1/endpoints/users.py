@@ -449,7 +449,9 @@ def get_explore_recommendations(
             total_matches=len(result)
         )
     except Exception as e:
-        logger.error(f"Error generating explore recommendations: {str(e)}")
+        logger.error(f"Error generating explore recommendations: {str(e)}", exc_info=True)
+        logger.error(f"Error type: {type(e).__name__}")
+        logger.error(f"User preferences were: {preferences}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to generate explore recommendations: {str(e)}"
