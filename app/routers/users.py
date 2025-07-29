@@ -112,10 +112,7 @@ def update_current_user(
         
         # Only update if there's something to update
         if supabase_update:
-            # Add updated_at timestamp
-            supabase_update["updated_at"] = datetime.now().isoformat()
-            
-            # Update in Supabase
+            # Update in Supabase - don't include timestamp fields as they're handled by the database
             result = admin_client.table('profiles').update(supabase_update).eq('id', str(current_user.id)).execute()
             
             if not result.data:
