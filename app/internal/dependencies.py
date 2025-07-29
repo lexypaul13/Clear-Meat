@@ -195,12 +195,20 @@ def get_current_user(
                                 if not admin_client:
                                     raise Exception("Admin client not available")
                                 
-                                # Use upsert to handle existing profiles gracefully
-                                result = admin_client.table('profiles').upsert({
-                                    'id': payload['sub'],
-                                    'email': user_email,
-                                    'full_name': full_name
-                                }, on_conflict='id').execute()
+                                # Check if profile already exists first
+                                existing_check = admin_client.table('profiles').select('id').eq('id', payload['sub']).execute()
+                                
+                                if existing_check.data:
+                                    # Profile exists, just return it
+                                    logger.info(f"Profile already exists for user {payload['sub']}")
+                                    result = admin_client.table('profiles').select('*').eq('id', payload['sub']).execute()
+                                else:
+                                    # Profile doesn't exist, create it
+                                    result = admin_client.table('profiles').insert({
+                                        'id': payload['sub'],
+                                        'email': user_email,
+                                        'full_name': full_name
+                                    }).execute()
                                 
                                 if result.data:
                                     logger.info(f"Created new user record for Supabase user {payload['sub']}")
