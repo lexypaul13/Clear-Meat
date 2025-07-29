@@ -189,9 +189,13 @@ def get_current_user(
                             )
                             
                             try:
-                                # Use Supabase client directly to insert user
-                                client = supabase_service.get_client()
-                                result = client.table('profiles').insert({
+                                # Use service role client to create user profile (bypasses RLS)
+                                from app.db.supabase_client import get_admin_supabase
+                                admin_client = get_admin_supabase()
+                                if not admin_client:
+                                    raise Exception("Admin client not available")
+                                
+                                result = admin_client.table('profiles').insert({
                                     'id': payload['sub'],
                                     'email': user_email,
                                     'full_name': full_name
