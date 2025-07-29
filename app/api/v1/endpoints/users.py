@@ -432,7 +432,7 @@ def get_explore_recommendations(
             
             # Create RecommendedProduct object
             recommended_product = models.RecommendedProduct(
-                product=models.Product.from_orm(product),
+                product=models.Product.model_validate(product),
                 match_details=models.ProductMatch(
                     matches=matches, 
                     concerns=concerns
