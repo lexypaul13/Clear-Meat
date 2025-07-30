@@ -2344,18 +2344,18 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
             logger.info(f"[Quick Assessment] Creating assessment from categorization")
             
             # Determine grade from existing rating or ingredient risk
-            grade = self._determine_grade_from_risk_rating(existing_risk_rating)
-            if not grade:
+            if existing_risk_rating:
+                grade, color = self._map_risk_rating_to_grade_color(existing_risk_rating)
+            else:
+                # Fallback based on ingredient risk
                 if len(high_risk_ingredients) >= 2:
-                    grade = "D"
+                    grade, color = "D", "Red"
                 elif len(high_risk_ingredients) >= 1:
-                    grade = "C"
+                    grade, color = "C", "Yellow"
                 elif len(moderate_risk_ingredients) >= 3:
-                    grade = "C"
+                    grade, color = "C", "Yellow"
                 else:
-                    grade = "B"
-            
-            color = self._grade_to_color(grade)
+                    grade, color = "B", "Green"
             
             # Create quick summary (no AI needed)
             product_name = product.product.name or "this product"
