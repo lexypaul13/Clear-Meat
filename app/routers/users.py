@@ -693,39 +693,43 @@ async def get_personalized_explore(
             recommended_products = filtered_products[:limit]
         
         # Convert to Pydantic models for response
+        logger.info("Converting to Pydantic models...")
         from app.models.product import Product as ProductModel
         result = []
-        for product in recommended_products:
+        for i, product in enumerate(recommended_products):
             try:
                 # Only include fields that exist in the Product model
                 result.append(
                     ProductModel(
-                        code=product.code,
-                        name=product.name,
-                        brand=product.brand,
-                        description=product.description,
-                        ingredients_text=product.ingredients_text,
-                        calories=product.calories,
-                        protein=product.protein,
-                        fat=product.fat,
-                        carbohydrates=product.carbohydrates,
-                        salt=product.salt,
-                        meat_type=product.meat_type,
-                        risk_rating=product.risk_rating,
-                        image_url=product.image_url,
-                        last_updated=product.last_updated,
-                        created_at=product.created_at
+                        code=getattr(product, 'code', ''),
+                        name=getattr(product, 'name', ''),
+                        brand=getattr(product, 'brand', ''),
+                        description=getattr(product, 'description', ''),
+                        ingredients_text=getattr(product, 'ingredients_text', ''),
+                        calories=getattr(product, 'calories', None),
+                        protein=getattr(product, 'protein', None),
+                        fat=getattr(product, 'fat', None),
+                        carbohydrates=getattr(product, 'carbohydrates', None),
+                        salt=getattr(product, 'salt', None),
+                        meat_type=getattr(product, 'meat_type', None),
+                        risk_rating=getattr(product, 'risk_rating', None),
+                        image_url=getattr(product, 'image_url', None),
+                        last_updated=getattr(product, 'last_updated', None),
+                        created_at=getattr(product, 'created_at', None)
                     )
                 )
             except Exception as e:
-                logger.error(f"Failed to convert product {product.code} to model: {str(e)}")
-                logger.error(f"Product data: code={product.code}, name={product.name}")
+                logger.error(f"Failed to convert product {i} to model: {str(e)}")
+                logger.error(f"Product data: code={getattr(product, 'code', 'N/A')}, name={getattr(product, 'name', 'N/A')}")
                 continue
+        
+        logger.info(f"Successfully converted {len(result)} products to models")
         
         # Return paginated response with optimized metadata
         # Use simple hasMore logic: if we got fewer results than requested, no more pages
         has_more = len(result) == limit
         
+        logger.info(f"Returning response with {len(result)} recommendations")
         return {
             "recommendations": result,
             "totalMatches": offset + len(result) + (1 if has_more else 0),  # Estimated count
@@ -831,7 +835,10 @@ def apply_diversity_factor(scored_products, limit, preferred_types):
     
     # If no preferred types, use all available types from scored products
     if not preferred_types:
-        preferred_types = sorted(list(set(p.meat_type for p, _ in scored_products if p.meat_type)))
+        preferred_types = sorted(list(set(
+            getattr(p, 'meat_type', None) for p, _ in scored_products 
+            if getattr(p, 'meat_type', None)
+        )))
     
     if not preferred_types:
         return [product for product, score in scored_products[:limit]]
@@ -846,8 +853,8 @@ def apply_diversity_factor(scored_products, limit, preferred_types):
     
     # Group products by meat type
     for product, score in scored_products:
-        meat_type = product.meat_type
-        if meat_type in type_products:
+        meat_type = getattr(product, 'meat_type', None)
+        if meat_type and meat_type in type_products:
             type_products[meat_type].append((product, score))
     
     # Distribute slots fairly across meat types
