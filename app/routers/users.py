@@ -611,6 +611,8 @@ async def get_recommendations(
 
 @router.get("/explore")
 async def get_personalized_explore(
+    offset: int = 0,
+    limit: int = 30,
     current_user: db_models.User = Depends(get_current_active_user),
 ):
     """Get personalized product recommendations for explore page using rule-based scoring."""
@@ -624,42 +626,58 @@ async def get_personalized_explore(
         if not supabase_client:
             raise Exception("Supabase client not available")
         
-        # Query products using Supabase
-        products_result = supabase_client.table('products').select('*').execute()
+        # Get preferred meat types for database filtering
+        preferred_types = user_preferences.get('preferred_meat_types', [])
+        
+        # Build Supabase query with database-level filtering
+        query = supabase_client.table('products').select('*')
+        
+        # Filter by meat types at database level if specified
+        if preferred_types:
+            query = query.in_('meat_type', preferred_types)
+            logger.info(f"Filtering at database level for meat types: {preferred_types}")
+        
+        # Add pagination at database level
+        query = query.range(offset, offset + limit - 1)
+        
+        # Execute the optimized query
+        products_result = query.execute()
         if not products_result.data:
             logger.warning("No products found in database for explore recommendations")
-            return []
+            return {
+                "recommendations": [],
+                "totalMatches": 0,
+                "hasMore": False
+            }
         
         # Convert to objects with proper attributes
-        products = []
+        filtered_products = []
         for product_data in products_result.data:
             product = type('Product', (object,), product_data)()
-            products.append(product)
+            filtered_products.append(product)
         
-        if not products:
-            logger.warning("No products found in database for explore recommendations")
-            return []
+        logger.info(f"Retrieved {len(filtered_products)} products from database")
         
-        # Filter products by preferred meat types if specified
-        preferred_types = user_preferences.get('preferred_meat_types', [])
-        if preferred_types:
-            filtered_products = [p for p in products if p.meat_type in preferred_types]
-            logger.info(f"Filtered to {len(filtered_products)} products matching preferred meat types")
-        else:
-            filtered_products = products
-            logger.info("No meat type preferences specified, using all products")
+        # Pre-compute max nutritional values once for all products (O(n) instead of O(n²))
+        max_values = compute_max_nutritional_values(filtered_products)
         
         # Score products based on preferences
         scored_products = []
         for product in filtered_products:
-            score = score_product_by_preferences(product, user_preferences, filtered_products)
+            score = score_product_by_preferences_optimized(product, user_preferences, max_values)
             scored_products.append((product, score))
         
         # Sort by score (highest first)
         scored_products.sort(key=lambda x: x[1], reverse=True)
         
+        # Get total count for pagination metadata
+        total_count_result = supabase_client.table('products').select('id', count='exact')
+        if preferred_types:
+            total_count_result = total_count_result.in_('meat_type', preferred_types)
+        total_count = total_count_result.execute().count or 0
+        
         # Apply diversity factor to ensure representation of different meat types
-        recommended_products = apply_diversity_factor(scored_products, 30, preferred_types)
+        recommended_products = apply_diversity_factor(scored_products, limit, preferred_types)
         
         # Convert to Pydantic models for response
         from app.models.product import Product as ProductModel
@@ -691,7 +709,14 @@ async def get_personalized_explore(
                 logger.error(f"Product data: code={product.code}, name={product.name}")
                 continue
         
-        return result
+        # Return paginated response with metadata
+        return {
+            "recommendations": result,
+            "totalMatches": total_count,
+            "hasMore": offset + len(result) < total_count,
+            "offset": offset,
+            "limit": limit
+        }
     except Exception as e:
         logger.error(f"Error in personalized explore: {str(e)}")
         logger.error(f"Full exception: {type(e).__name__}: {e}")
@@ -830,4 +855,96 @@ def apply_diversity_factor(scored_products, limit, preferred_types):
         for product, score in remaining_products[:remaining_slots]:
             selected_products.append(product)
     
-    return selected_products[:limit] 
+    return selected_products[:limit]
+
+def compute_max_nutritional_values(products):
+    """Pre-compute max nutritional values once to avoid O(n²) calculations."""
+    max_protein = 0
+    max_fat = 0
+    max_sodium = 0
+    
+    for product in products:
+        try:
+            if product.protein is not None:
+                max_protein = max(max_protein, float(product.protein))
+            if product.fat is not None:
+                max_fat = max(max_fat, float(product.fat))
+            if product.salt is not None:
+                max_sodium = max(max_sodium, float(product.salt))
+        except (ValueError, TypeError):
+            continue
+    
+    return {
+        'max_protein': max_protein if max_protein > 0 else 1,
+        'max_fat': max_fat if max_fat > 0 else 1, 
+        'max_sodium': max_sodium if max_sodium > 0 else 1
+    }
+
+def score_product_by_preferences_optimized(product, preferences, max_values):
+    """Optimized scoring function using pre-computed max values."""
+    search_text = (f"{product.name or ''} {product.brand or ''} "
+                  f"{product.description or ''} {product.ingredients_text or ''}").lower()
+    
+    # Normalize nutritional values using pre-computed max values
+    protein = 0
+    fat = 0
+    sodium = 0
+    
+    try:
+        if product.protein is not None:
+            protein = float(product.protein) / max_values['max_protein']
+        if product.fat is not None:
+            fat = float(product.fat) / max_values['max_fat']
+        if product.salt is not None:
+            sodium = float(product.salt) / max_values['max_sodium']
+    except (ValueError, TypeError):
+        pass
+    
+    # Optimized weights using dict lookup
+    weights = {
+        'protein': 1.5 if preferences.get('nutrition_focus') == 'protein' else 1.0,
+        'fat': 1.5 if preferences.get('nutrition_focus') == 'fat' else 1.0,
+        'sodium': 1.5 if preferences.get('prefer_reduced_sodium') else 1.0,
+        'antibiotic': 1.5 if preferences.get('prefer_antibiotic_free') else 1.2,
+        'grass': 1.2,
+        'preservatives': 1.5 if preferences.get('prefer_no_preservatives') else 1.2
+    }
+    
+    # Check preservatives (negative score)
+    preservative_free = 1.0
+    if preferences.get('prefer_no_preservatives'):
+        preservative_keywords = {'sorbate', 'benzoate', 'nitrite', 'sulfite', 'bha', 'bht', 'sodium erythorbate'}
+        if any(kw in search_text for kw in preservative_keywords) or getattr(product, 'contains_preservatives', False):
+            preservative_free = 0.0
+    
+    # Check antibiotic-free (positive score)
+    antibiotic_free = 0.0
+    if preferences.get('prefer_antibiotic_free'):
+        antibiotic_keywords = {'antibiotic-free', 'no antibiotics', 'raised without antibiotics'}
+        if any(kw in search_text for kw in antibiotic_keywords) or getattr(product, 'antibiotic_free', False):
+            antibiotic_free = 1.0
+    
+    # Check grass-fed/pasture-raised (positive score)
+    pasture_raised = 0.0
+    grass_keywords = {'grass-fed', 'pasture-raised', 'free-range'}
+    if any(kw in search_text for kw in grass_keywords) or getattr(product, 'pasture_raised', False):
+        pasture_raised = 1.0
+    
+    # Meat type preference (using set for O(1) lookup)
+    meat_type_match = 0.0
+    preferred_types = set(preferences.get('preferred_meat_types', []))
+    if preferred_types and getattr(product, 'meat_type', None) in preferred_types:
+        meat_type_match = 1.0
+    
+    # Calculate final score
+    score = (
+        (weights['protein'] * protein) +
+        (weights['fat'] * (1 - fat)) +  # Lower fat is better
+        (weights['sodium'] * (1 - sodium)) +  # Lower sodium is better
+        (weights['antibiotic'] * antibiotic_free) +
+        (weights['grass'] * pasture_raised) +
+        (weights['preservatives'] * preservative_free) +
+        (1.5 * meat_type_match)
+    )
+    
+    return score 
