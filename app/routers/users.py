@@ -836,8 +836,9 @@ def apply_diversity_factor(scored_products, limit, preferred_types):
     # If no preferred types, use all available types from scored products
     if not preferred_types:
         preferred_types = sorted(list(set(
-            getattr(p, 'meat_type', None) for p, _ in scored_products 
-            if getattr(p, 'meat_type', None)
+            p.get('meat_type') if isinstance(p, dict) else getattr(p, 'meat_type', None) 
+            for p, _ in scored_products 
+            if (p.get('meat_type') if isinstance(p, dict) else getattr(p, 'meat_type', None))
         )))
     
     if not preferred_types:
@@ -851,15 +852,25 @@ def apply_diversity_factor(scored_products, limit, preferred_types):
     type_counts = {meat_type: 0 for meat_type in preferred_types}
     type_products = {meat_type: [] for meat_type in preferred_types}
     
-    # Group products by meat type
+    # Group products by meat type (handle both dict and object types)
     for product, score in scored_products:
-        meat_type = getattr(product, 'meat_type', None)
+        if isinstance(product, dict):
+            meat_type = product.get('meat_type')
+        else:
+            meat_type = getattr(product, 'meat_type', None)
+            
         if meat_type and meat_type in type_products:
             type_products[meat_type].append((product, score))
     
-    # Distribute slots fairly across meat types
+    # Distribute slots fairly across meat types with timeout protection
     remaining_slots = limit
-    while remaining_slots > 0 and any(type_products[mt] for mt in preferred_types):
+    max_iterations = limit * 2  # Prevent infinite loops
+    iteration_count = 0
+    
+    while remaining_slots > 0 and any(type_products[mt] for mt in preferred_types) and iteration_count < max_iterations:
+        iteration_count += 1
+        made_progress = False
+        
         for meat_type in preferred_types:
             if remaining_slots <= 0:
                 break
@@ -868,6 +879,11 @@ def apply_diversity_factor(scored_products, limit, preferred_types):
                 selected_products.append(product)
                 type_counts[meat_type] += 1
                 remaining_slots -= 1
+                made_progress = True
+        
+        # If no progress was made in this iteration, break to prevent infinite loop
+        if not made_progress:
+            break
     
     # Fill remaining slots with best remaining products if needed
     if remaining_slots > 0:
@@ -888,15 +904,22 @@ def compute_max_nutritional_values(products):
     
     for product in products:
         try:
-            protein_val = getattr(product, 'protein', None)
+            # Handle both dict and object types
+            if isinstance(product, dict):
+                protein_val = product.get('protein')
+                fat_val = product.get('fat')
+                salt_val = product.get('salt')
+            else:
+                protein_val = getattr(product, 'protein', None)
+                fat_val = getattr(product, 'fat', None)
+                salt_val = getattr(product, 'salt', None)
+            
             if protein_val is not None:
                 max_protein = max(max_protein, float(protein_val))
             
-            fat_val = getattr(product, 'fat', None)
             if fat_val is not None:
                 max_fat = max(max_fat, float(fat_val))
             
-            salt_val = getattr(product, 'salt', None)
             if salt_val is not None:
                 max_sodium = max(max_sodium, float(salt_val))
         except (ValueError, TypeError, AttributeError) as e:
@@ -910,11 +933,17 @@ def compute_max_nutritional_values(products):
 
 def score_product_by_preferences_optimized(product, preferences, max_values):
     """Optimized scoring function using pre-computed max values."""
-    # Safely build search text with attribute access
-    name = getattr(product, 'name', '') or ''
-    brand = getattr(product, 'brand', '') or ''
-    description = getattr(product, 'description', '') or ''
-    ingredients = getattr(product, 'ingredients_text', '') or ''
+    # Handle both dict and object types for attribute access
+    if isinstance(product, dict):
+        name = product.get('name', '') or ''
+        brand = product.get('brand', '') or ''
+        description = product.get('description', '') or ''
+        ingredients = product.get('ingredients_text', '') or ''
+    else:
+        name = getattr(product, 'name', '') or ''
+        brand = getattr(product, 'brand', '') or ''
+        description = getattr(product, 'description', '') or ''
+        ingredients = getattr(product, 'ingredients_text', '') or ''
     
     search_text = f"{name} {brand} {description} {ingredients}".lower()
     
@@ -924,15 +953,21 @@ def score_product_by_preferences_optimized(product, preferences, max_values):
     sodium = 0
     
     try:
-        protein_val = getattr(product, 'protein', None)
+        if isinstance(product, dict):
+            protein_val = product.get('protein')
+            fat_val = product.get('fat')
+            salt_val = product.get('salt')
+        else:
+            protein_val = getattr(product, 'protein', None)
+            fat_val = getattr(product, 'fat', None)
+            salt_val = getattr(product, 'salt', None)
+        
         if protein_val is not None:
             protein = float(protein_val) / max_values['max_protein']
         
-        fat_val = getattr(product, 'fat', None)
         if fat_val is not None:
             fat = float(fat_val) / max_values['max_fat']
         
-        salt_val = getattr(product, 'salt', None)
         if salt_val is not None:
             sodium = float(salt_val) / max_values['max_sodium']
     except (ValueError, TypeError, AttributeError):
