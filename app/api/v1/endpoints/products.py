@@ -1020,6 +1020,119 @@ def get_product(
         )
 
 
+@router.get("/{code}/health-assessment-quick", 
+    response_model=Dict[str, Any],
+    responses={
+        200: {
+            "description": "Quick health assessment (3-5 seconds)",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "quick": {
+                            "summary": "Quick mobile-optimized response",
+                            "value": {
+                                "summary": "This product contains preservatives requiring moderation...",
+                                "grade": "C",
+                                "color": "Yellow", 
+                                "high_risk": [{"name": "E250", "risk": "Linked to potential concerns"}],
+                                "moderate_risk": [],
+                                "nutrition": [
+                                    {"nutrient": "Salt", "amount": "2350 mg", "eval": "high", "comment": "High sodium content"}
+                                ],
+                                "meta": {"product": "Product Name", "generated": "2025-07-30", "is_quick": True}
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        404: {"description": "Product not found"},
+        500: {"description": "Internal server error"}
+    }
+)
+async def get_product_health_assessment_quick(
+    code: str,
+    db: Session = Depends(get_db),
+    supabase_service = Depends(get_supabase_service),
+    current_user: db_models.User = Depends(get_current_active_user)
+) -> Dict[str, Any]:
+    """
+    Generate a quick health assessment in 3-5 seconds (no citations).
+    
+    This endpoint prioritizes speed over completeness:
+    - Skips citation research (saves 30-50 seconds)
+    - Uses cached ingredient categorizations
+    - Returns mobile-optimized format only
+    - 3-second timeout on AI calls
+    
+    Use this for instant mobile feedback, then call the full endpoint for details.
+    """
+    logger.info(f"Starting QUICK health assessment for product {code}")
+    try:
+        # Step 1: Fetch product data (same as full endpoint)
+        product_data = supabase_service.get_product_by_code(code)
+        
+        if not product_data:
+            # Quick OpenFoodFacts fallback with shorter timeout
+            openfoodfacts_service = get_openfoodfacts_service()
+            openfood_result = openfoodfacts_service.get_product_by_barcode(code)
+            
+            if not openfood_result.get("found") or not openfood_result.get("is_animal_product"):
+                raise HTTPException(status_code=404, detail="Product not found or not an animal-based product")
+            
+            product_data = openfood_result["product_data"]
+            product_data["code"] = code
+        
+        # Step 2: Structure product data
+        structured_product = helpers.structure_product_data(product_data)
+        if not structured_product:
+            raise HTTPException(status_code=500, detail="Failed to structure product data")
+
+        # Step 3: Generate QUICK assessment (no citations, 3-second timeout)
+        mcp_service = HealthAssessmentMCPService()
+        existing_risk_rating = product_data.get('risk_rating')
+        
+        try:
+            # Use quick assessment method with timeout
+            assessment = await asyncio.wait_for(
+                mcp_service.generate_quick_health_assessment(structured_product, existing_risk_rating),
+                timeout=5.0  # 5-second total timeout
+            )
+        except asyncio.TimeoutError:
+            logger.warning(f"Quick assessment timed out for {code}, using fallback")
+            assessment = mcp_service.create_minimal_fallback_assessment(structured_product, existing_risk_rating)
+        
+        if not assessment:
+            if existing_risk_rating:
+                assessment = mcp_service.create_minimal_fallback_assessment(structured_product, existing_risk_rating)
+            else:
+                raise HTTPException(status_code=404, detail="Product assessment not available")
+        
+        # Always optimize for mobile (quick endpoint is mobile-first)
+        assessment = _optimize_for_mobile(assessment)
+        
+        # Add quick assessment metadata
+        assessment["meta"] = assessment.get("meta", {})
+        assessment["meta"]["is_quick"] = True
+        assessment["meta"]["generated"] = datetime.now().strftime("%Y-%m-%d")
+        
+        from fastapi.responses import JSONResponse
+        response = JSONResponse(content=assessment)
+        
+        # Add aggressive caching for quick results
+        response.headers["Cache-Control"] = "public, max-age=3600"  # 1 hour
+        response.headers["ETag"] = f'"{code}-quick-{hash(str(assessment))}"'
+        
+        logger.info(f"Quick health assessment completed for {code}")
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Quick assessment error: {e.__class__.__name__}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Quick assessment failed")
+
+
 @router.get("/{code}/health-assessment-mcp", 
     response_model=Dict[str, Any],
     responses={

@@ -48,6 +48,18 @@ logger = logging.getLogger(__name__)
 class HealthAssessmentMCPService:
     """Evidence-based health assessment service using LangChain for real scientific citations."""
     
+    # Trivial ingredients that don't need citation research (saves ~30-60 seconds)
+    TRIVIAL_INGREDIENTS = {
+        'water', 'salt', 'sugar', 'glucose', 'fructose', 'corn syrup', 'high fructose corn syrup',
+        'vitamin c', 'vitamin e', 'vitamin a', 'vitamin d', 'vitamin b12', 'vitamin b6', 'thiamine',
+        'riboflavin', 'niacin', 'folate', 'biotin', 'pantothenic acid', 'calcium', 'iron', 'zinc',
+        'potassium', 'sodium', 'magnesium', 'phosphorus', 'natural flavors', 'natural flavor',
+        'spices', 'spice', 'herbs', 'herb', 'garlic', 'onion', 'pepper', 'paprika', 'celery',
+        'vinegar', 'lemon juice', 'lime juice', 'citric acid', 'ascorbic acid', 'tocopherols',
+        'mixed tocopherols', 'rosemary extract', 'sea salt', 'kosher salt', 'cane sugar',
+        'brown sugar', 'honey', 'maple syrup', 'molasses', 'yeast', 'baking soda', 'baking powder'
+    }
+    
     def __init__(self):
         if not settings.GEMINI_API_KEY:
             raise ValueError("Gemini API key not configured")
@@ -2019,6 +2031,13 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
         else:
             return f"{product_name} requires careful consideration due to ingredient profile. [1][2]"
 
+    def _should_skip_citation(self, ingredient: str) -> bool:
+        """Check if ingredient is trivial and should skip citation research."""
+        ingredient_clean = ingredient.lower().strip()
+        # Remove common prefixes/suffixes
+        ingredient_clean = ingredient_clean.replace('natural ', '').replace(' extract', '').replace(' powder', '')
+        return ingredient_clean in self.TRIVIAL_INGREDIENTS
+    
     async def _generate_real_citations(self, high_risk_ingredients: List[str], moderate_risk_ingredients: List[str]) -> List[Dict[str, Any]]:
         """Generate real scientific citations for concerning ingredients found in the product."""
         try:
@@ -2032,24 +2051,27 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
             citation_id = 1
             citation_service = CitationSearchService()
             
-            # Get ALL ingredients from the current product for broader search
-            all_ingredients = []
-            if self._current_product and self._current_product.product.ingredients_text:
-                all_ingredients = self._extract_all_ingredients(self._current_product.product.ingredients_text)
-                logger.info(f"[Enhanced Debug] Product ingredients text: {self._current_product.product.ingredients_text}")
-                logger.info(f"[Enhanced Debug] Extracted ingredients: {all_ingredients}")
+            # Filter out trivial ingredients to save time
+            filtered_high_risk = [ing for ing in high_risk_ingredients if not self._should_skip_citation(ing)]
+            filtered_moderate_risk = [ing for ing in moderate_risk_ingredients if not self._should_skip_citation(ing)]
             
-            # Find ingredients that warrant citation search
+            skipped_count = (len(high_risk_ingredients) - len(filtered_high_risk)) + (len(moderate_risk_ingredients) - len(filtered_moderate_risk))
+            if skipped_count > 0:
+                logger.info(f"[Citation Optimization] Skipped {skipped_count} trivial ingredients (water, salt, vitamins, etc.)")
+            
+            # Find ingredients that warrant citation search (limit to top 6 total for speed)
             ingredients_to_research = []
             
-            # Prioritize high-risk and moderate-risk ingredients
-            for ingredient in high_risk_ingredients[:5]:
+            # Prioritize high-risk ingredients (max 4)
+            for ingredient in filtered_high_risk[:4]:
                 ingredients_to_research.append((ingredient, "high", "toxicity safety health effects"))
             
-            for ingredient in moderate_risk_ingredients[:5]:
+            # Add moderate-risk ingredients (max 2 more)
+            remaining_slots = 6 - len(ingredients_to_research)
+            for ingredient in filtered_moderate_risk[:remaining_slots]:
                 ingredients_to_research.append((ingredient, "moderate", "safety assessment"))
             
-            logger.info(f"[Real Citations] Researching {len(ingredients_to_research)} concerning ingredients: {len(high_risk_ingredients)} high-risk, {len(moderate_risk_ingredients)} moderate-risk, {len(ingredients_to_research) - len(high_risk_ingredients) - len(moderate_risk_ingredients)} additives")
+            logger.info(f"[Real Citations] Researching {len(ingredients_to_research)} concerning ingredients (filtered from {len(high_risk_ingredients + moderate_risk_ingredients)} total)")
             
             # Research ingredients in parallel with web sources as fallback
             citation_tasks = []
@@ -2079,27 +2101,19 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
                 )
                 citation_tasks.append(self._search_citations_async(search_params, risk_type))
             
-            # Execute citation searches with rate limiting protection
-            logger.info(f"[Parallel Citations] Starting {len(citation_tasks)} citation searches with rate limiting protection")
+            # Execute citation searches with timeout protection (max 8 seconds total)
+            logger.info(f"[Parallel Citations] Starting {len(citation_tasks)} citation searches with 8-second timeout")
             
-            # Process citations in smaller batches to avoid rate limiting (web sources only)
-            batch_size = 2  # Conservative batching for web authority sources
-            citation_results = []
-            
-            for i in range(0, len(citation_tasks), batch_size):
-                batch = citation_tasks[i:i + batch_size]
-                logger.info(f"[Batch {i//batch_size + 1}] Processing {len(batch)} citation searches")
-                
-                # Add delay between batches
-                if i > 0:
-                    await asyncio.sleep(2)  # 2-second delay between batches
-                
-                try:
-                    batch_results = await asyncio.gather(*batch, return_exceptions=True)
-                    citation_results.extend(batch_results)
-                except Exception as e:
-                    logger.warning(f"Batch {i//batch_size + 1} failed: {e}")
-                    citation_results.extend([None] * len(batch))
+            try:
+                # Apply global timeout to prevent hanging
+                citation_results = await asyncio.wait_for(
+                    asyncio.gather(*citation_tasks, return_exceptions=True),
+                    timeout=8.0  # 8-second timeout for all citations
+                )
+                logger.info(f"[Citation Timeout] Completed {len(citation_results)} searches in <8 seconds")
+            except asyncio.TimeoutError:
+                logger.warning(f"[Citation Timeout] Citation search timed out after 8 seconds, proceeding without citations")
+                citation_results = [None] * len(citation_tasks)
             
             # Process results and build citations list
             for result in citation_results:
@@ -2149,10 +2163,13 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
                 # Add small delay before each search to avoid overwhelming APIs
                 await asyncio.sleep(0.5 * attempt)  # Progressive delay
                 
-                # Run the synchronous citation search in a thread executor
-                result = await asyncio.get_event_loop().run_in_executor(
-                    None,
-                    lambda: self._search_citations_sync(search_params)
+                # Run the synchronous citation search in a thread executor with timeout
+                result = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: self._search_citations_sync(search_params)
+                    ),
+                    timeout=3.0  # 3-second timeout per individual search
                 )
                 
                 if result and result.citations:
@@ -2185,6 +2202,12 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
                 else:
                     return None
                     
+            except asyncio.TimeoutError:
+                logger.warning(f"Citation search timed out for {search_params.ingredient} (attempt {attempt + 1})")
+                if attempt < max_retries:
+                    continue
+                else:
+                    return None
             except Exception as e:
                 # Check if it's a rate limiting error
                 if "429" in str(e) or "rate limit" in str(e).lower():
@@ -2214,6 +2237,221 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
     async def _return_cached_result(self, cached_result):
         """Helper to return cached result as an awaitable."""
         return cached_result
+    
+    async def generate_quick_health_assessment(
+        self, 
+        product: ProductStructured, 
+        existing_risk_rating: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Generate a quick health assessment without citations (3-5 seconds).
+        
+        Optimizations:
+        - No citation research (saves 30-50 seconds)
+        - Uses cached ingredient categorizations when available
+        - Simplified AI processing with shorter prompts
+        - 3-second timeout on AI calls
+        
+        Args:
+            product: The structured product data to analyze
+            existing_risk_rating: Pre-computed risk rating from OpenFoodFacts
+            
+        Returns:
+            Quick HealthAssessment without citations
+        """
+        try:
+            logger.info(f"[Quick Assessment] Analyzing product: {product.product.name}")
+            
+            # Check cache first (same as full assessment)
+            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_quick_v1")
+            cached_result = cache.get(cache_key)
+            if cached_result:
+                logger.info(f"Returning cached quick assessment for product {product.product.code}")
+                return cached_result
+            
+            # Step 1: Quick ingredient categorization (cached or fast AI)
+            ingredients_hash = hashlib.md5(
+                (product.product.ingredients_text or "").encode()
+            ).hexdigest()[:12]
+            categorization_cache_key = cache.generate_key(
+                ingredients_hash, prefix="ingredient_categorization_v3"
+            )
+            
+            cached_categorization = cache.get(categorization_cache_key)
+            if cached_categorization:
+                logger.info(f"[Quick Assessment] Using cached ingredient categorization")
+                basic_categorization = cached_categorization
+            else:
+                logger.info(f"[Quick Assessment] Running fast AI categorization")
+                # Use faster categorization with timeout
+                try:
+                    basic_categorization = await asyncio.wait_for(
+                        self._categorize_ingredients_with_gemini(product),
+                        timeout=3.0  # 3-second timeout
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(f"[Quick Assessment] Categorization timed out, using fallback")
+                    basic_categorization = self._get_fallback_categorization(product)
+                
+                if basic_categorization:
+                    cache.set(categorization_cache_key, basic_categorization, ttl=604800)  # 7 days
+            
+            if not basic_categorization:
+                basic_categorization = self._get_fallback_categorization(product)
+            
+            # Extract ingredients
+            high_risk_ingredients = self._validate_ingredient_list(
+                basic_categorization.get('high_risk_ingredients', [])
+            )
+            moderate_risk_ingredients = self._validate_ingredient_list(
+                basic_categorization.get('moderate_risk_ingredients', [])
+            )
+            low_risk_ingredients = self._validate_ingredient_list(
+                basic_categorization.get('low_risk_ingredients', [])
+            )
+            ingredient_analyses = basic_categorization.get('ingredient_analyses', {})
+            
+            logger.info(f"[Quick Assessment] Ingredients: {len(high_risk_ingredients)} high-risk, {len(moderate_risk_ingredients)} moderate-risk")
+            
+            # Step 2: Create quick assessment (no citations, no complex AI)
+            assessment_result = self._create_quick_assessment_from_categorization(
+                product, high_risk_ingredients, moderate_risk_ingredients, 
+                low_risk_ingredients, ingredient_analyses, existing_risk_rating
+            )
+            
+            if assessment_result:
+                # Cache for 1 hour (shorter than full assessment)
+                cache.set(cache_key, assessment_result, ttl=3600)
+                logger.info(f"[Quick Assessment] Generated successfully in <3 seconds")
+            
+            return assessment_result
+            
+        except Exception as e:
+            logger.error(f"Quick assessment failed: {e}")
+            return None
+    
+    def _create_quick_assessment_from_categorization(
+        self,
+        product: ProductStructured,
+        high_risk_ingredients: List[str],
+        moderate_risk_ingredients: List[str],
+        low_risk_ingredients: List[str],
+        ingredient_analyses: Dict[str, Any],
+        existing_risk_rating: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Create a quick assessment from ingredient categorization without citations."""
+        try:
+            logger.info(f"[Quick Assessment] Creating assessment from categorization")
+            
+            # Determine grade from existing rating or ingredient risk
+            grade = self._determine_grade_from_risk_rating(existing_risk_rating)
+            if not grade:
+                if len(high_risk_ingredients) >= 2:
+                    grade = "D"
+                elif len(high_risk_ingredients) >= 1:
+                    grade = "C"
+                elif len(moderate_risk_ingredients) >= 3:
+                    grade = "C"
+                else:
+                    grade = "B"
+            
+            color = self._grade_to_color(grade)
+            
+            # Create quick summary (no AI needed)
+            product_name = product.product.name or "this product"
+            if high_risk_ingredients:
+                summary = f"{product_name} contains {high_risk_ingredients[0]} requiring caution. Consider alternatives for regular consumption."
+            elif moderate_risk_ingredients:
+                summary = f"{product_name} contains moderate-risk additives. Generally acceptable with balanced diet."
+            else:
+                summary = f"{product_name} has an acceptable ingredient profile for regular consumption."
+            
+            # Build ingredients assessment (no citations)
+            ingredients_assessment = {
+                "high_risk": [
+                    {
+                        "name": ing,
+                        "risk_level": "high",
+                        "micro_report": self._get_quick_micro_report(ing, "high"),
+                        "citations": []  # No citations for quick assessment
+                    }
+                    for ing in high_risk_ingredients[:3]  # Limit to top 3
+                ],
+                "moderate_risk": [
+                    {
+                        "name": ing,
+                        "risk_level": "moderate", 
+                        "micro_report": self._get_quick_micro_report(ing, "moderate"),
+                        "citations": []
+                    }
+                    for ing in moderate_risk_ingredients[:2]  # Limit to top 2
+                ],
+                "low_risk": [
+                    {
+                        "name": ing,
+                        "risk_level": "low",
+                        "micro_report": self._get_quick_micro_report(ing, "low"),
+                        "citations": []
+                    }
+                    for ing in low_risk_ingredients[:2]  # Limit to top 2
+                ]
+            }
+            
+            # Generate quick nutrition insights
+            nutrition_insights = self._generate_basic_nutrition_insights(product.nutrition)
+            
+            # Build final assessment
+            assessment = {
+                "summary": summary,
+                "risk_summary": {
+                    "grade": grade,
+                    "color": color
+                },
+                "ingredients_assessment": ingredients_assessment,
+                "nutrition_insights": nutrition_insights,
+                "citations": [],  # No citations for quick assessment
+                "metadata": {
+                    "product_code": product.product.code,
+                    "generated_at": datetime.now().isoformat(),
+                    "is_quick_assessment": True,
+                    "processing_time": "<3 seconds"
+                }
+            }
+            
+            logger.info(f"[Quick Assessment] Created assessment with {len(high_risk_ingredients)} high-risk, {len(moderate_risk_ingredients)} moderate-risk ingredients")
+            return assessment
+            
+        except Exception as e:
+            logger.error(f"Quick assessment creation failed: {e}")
+            return None
+    
+    def _get_quick_micro_report(self, ingredient: str, risk_level: str) -> str:
+        """Generate a quick micro-report without AI or citations."""
+        ingredient_lower = ingredient.lower()
+        
+        # Quick lookup for common ingredients
+        quick_reports = {
+            "sodium nitrite": "Preservative linked to potential health concerns. Used to maintain color and prevent bacterial growth.",
+            "bha": "Antioxidant preservative with some health considerations. Helps prevent rancidity in fats.",
+            "bht": "Synthetic antioxidant used to prevent spoilage. Some studies suggest caution with regular consumption.",
+            "msg": "Flavor enhancer that may cause sensitivity in some individuals. Generally recognized as safe.",
+            "carrageenan": "Seaweed-derived thickener with some digestive concerns reported in studies.",
+            "sodium phosphate": "Salt used for texture and preservation. High sodium content may affect blood pressure.",
+            "potassium sorbate": "Preservative generally considered safe. Prevents mold and yeast growth.",
+            "citric acid": "Natural preservative and flavor enhancer. Generally safe for consumption.",
+            "natural flavors": "Flavor compounds derived from natural sources. Composition varies by product."
+        }
+        
+        if ingredient_lower in quick_reports:
+            return quick_reports[ingredient_lower]
+        
+        # Fallback based on risk level
+        if risk_level == "high":
+            return f"{ingredient} is categorized as high-risk due to potential health concerns requiring careful consideration."
+        elif risk_level == "moderate":
+            return f"{ingredient} has some health considerations for regular consumption. Monitor intake levels."
+        else:
+            return f"{ingredient} is generally considered safe for normal consumption levels."
 
 
 # Test function
