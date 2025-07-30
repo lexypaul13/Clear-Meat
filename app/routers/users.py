@@ -670,11 +670,8 @@ async def get_personalized_explore(
         # Sort by score (highest first)
         scored_products.sort(key=lambda x: x[1], reverse=True)
         
-        # Get total count for pagination metadata
-        total_count_result = supabase_client.table('products').select('code', count='exact')
-        if preferred_types:
-            total_count_result = total_count_result.in_('meat_type', preferred_types)
-        total_count = total_count_result.execute().count or 0
+        # Use simple pagination logic to avoid expensive count queries
+        # This eliminates timeout issues while maintaining pagination functionality
         
         # Apply diversity factor to ensure representation of different meat types
         recommended_products = apply_diversity_factor(scored_products, limit, preferred_types)
@@ -709,11 +706,14 @@ async def get_personalized_explore(
                 logger.error(f"Product data: code={product.code}, name={product.name}")
                 continue
         
-        # Return paginated response with metadata
+        # Return paginated response with optimized metadata
+        # Use simple hasMore logic: if we got fewer results than requested, no more pages
+        has_more = len(result) == limit
+        
         return {
             "recommendations": result,
-            "totalMatches": total_count,
-            "hasMore": offset + len(result) < total_count,
+            "totalMatches": offset + len(result) + (1 if has_more else 0),  # Estimated count
+            "hasMore": has_more,
             "offset": offset,
             "limit": limit
         }
