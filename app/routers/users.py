@@ -671,7 +671,7 @@ async def get_personalized_explore(
         scored_products.sort(key=lambda x: x[1], reverse=True)
         
         # Get total count for pagination metadata
-        total_count_result = supabase_client.table('products').select('id', count='exact')
+        total_count_result = supabase_client.table('products').select('code', count='exact')
         if preferred_types:
             total_count_result = total_count_result.in_('meat_type', preferred_types)
         total_count = total_count_result.execute().count or 0
