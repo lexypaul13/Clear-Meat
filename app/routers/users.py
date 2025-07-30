@@ -650,31 +650,47 @@ async def get_personalized_explore(
                 "hasMore": False
             }
         
-        # Convert to objects with proper attributes
+        # Convert to objects with proper attributes using a simple namespace
+        from types import SimpleNamespace
         filtered_products = []
         for product_data in products_result.data:
-            product = type('Product', (object,), product_data)()
+            # Use SimpleNamespace for proper attribute access
+            product = SimpleNamespace(**product_data)
             filtered_products.append(product)
         
         logger.info(f"Retrieved {len(filtered_products)} products from database")
         
-        # Pre-compute max nutritional values once for all products (O(n) instead of O(n²))
-        max_values = compute_max_nutritional_values(filtered_products)
-        
-        # Score products based on preferences
-        scored_products = []
-        for product in filtered_products:
-            score = score_product_by_preferences_optimized(product, user_preferences, max_values)
-            scored_products.append((product, score))
-        
-        # Sort by score (highest first)
-        scored_products.sort(key=lambda x: x[1], reverse=True)
-        
-        # Use simple pagination logic to avoid expensive count queries
-        # This eliminates timeout issues while maintaining pagination functionality
-        
-        # Apply diversity factor to ensure representation of different meat types
-        recommended_products = apply_diversity_factor(scored_products, limit, preferred_types)
+        try:
+            # Pre-compute max nutritional values once for all products (O(n) instead of O(n²))
+            logger.info("Computing max nutritional values...")
+            max_values = compute_max_nutritional_values(filtered_products)
+            logger.info(f"Max values computed: {max_values}")
+            
+            # Score products based on preferences
+            logger.info("Starting product scoring...")
+            scored_products = []
+            for i, product in enumerate(filtered_products):
+                try:
+                    score = score_product_by_preferences_optimized(product, user_preferences, max_values)
+                    scored_products.append((product, score))
+                except Exception as score_error:
+                    logger.error(f"Error scoring product {i}: {str(score_error)}")
+                    # Use default score on error
+                    scored_products.append((product, 0.0))
+            
+            logger.info(f"Scored {len(scored_products)} products")
+            
+            # Sort by score (highest first)
+            scored_products.sort(key=lambda x: x[1], reverse=True)
+            
+            # Apply diversity factor to ensure representation of different meat types
+            logger.info("Applying diversity factor...")
+            recommended_products = apply_diversity_factor(scored_products, limit, preferred_types)
+            logger.info(f"Selected {len(recommended_products)} products after diversity")
+        except Exception as processing_error:
+            logger.error(f"Error processing products: {str(processing_error)}")
+            # Return first N products as fallback
+            recommended_products = filtered_products[:limit]
         
         # Convert to Pydantic models for response
         from app.models.product import Product as ProductModel
@@ -865,13 +881,18 @@ def compute_max_nutritional_values(products):
     
     for product in products:
         try:
-            if product.protein is not None:
-                max_protein = max(max_protein, float(product.protein))
-            if product.fat is not None:
-                max_fat = max(max_fat, float(product.fat))
-            if product.salt is not None:
-                max_sodium = max(max_sodium, float(product.salt))
-        except (ValueError, TypeError):
+            protein_val = getattr(product, 'protein', None)
+            if protein_val is not None:
+                max_protein = max(max_protein, float(protein_val))
+            
+            fat_val = getattr(product, 'fat', None)
+            if fat_val is not None:
+                max_fat = max(max_fat, float(fat_val))
+            
+            salt_val = getattr(product, 'salt', None)
+            if salt_val is not None:
+                max_sodium = max(max_sodium, float(salt_val))
+        except (ValueError, TypeError, AttributeError) as e:
             continue
     
     return {
@@ -882,8 +903,13 @@ def compute_max_nutritional_values(products):
 
 def score_product_by_preferences_optimized(product, preferences, max_values):
     """Optimized scoring function using pre-computed max values."""
-    search_text = (f"{product.name or ''} {product.brand or ''} "
-                  f"{product.description or ''} {product.ingredients_text or ''}").lower()
+    # Safely build search text with attribute access
+    name = getattr(product, 'name', '') or ''
+    brand = getattr(product, 'brand', '') or ''
+    description = getattr(product, 'description', '') or ''
+    ingredients = getattr(product, 'ingredients_text', '') or ''
+    
+    search_text = f"{name} {brand} {description} {ingredients}".lower()
     
     # Normalize nutritional values using pre-computed max values
     protein = 0
@@ -891,13 +917,18 @@ def score_product_by_preferences_optimized(product, preferences, max_values):
     sodium = 0
     
     try:
-        if product.protein is not None:
-            protein = float(product.protein) / max_values['max_protein']
-        if product.fat is not None:
-            fat = float(product.fat) / max_values['max_fat']
-        if product.salt is not None:
-            sodium = float(product.salt) / max_values['max_sodium']
-    except (ValueError, TypeError):
+        protein_val = getattr(product, 'protein', None)
+        if protein_val is not None:
+            protein = float(protein_val) / max_values['max_protein']
+        
+        fat_val = getattr(product, 'fat', None)
+        if fat_val is not None:
+            fat = float(fat_val) / max_values['max_fat']
+        
+        salt_val = getattr(product, 'salt', None)
+        if salt_val is not None:
+            sodium = float(salt_val) / max_values['max_sodium']
+    except (ValueError, TypeError, AttributeError):
         pass
     
     # Optimized weights using dict lookup
