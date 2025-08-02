@@ -1503,6 +1503,7 @@ YOUR ANALYSIS MUST BE RESEARCH-DRIVEN, DETAILED, AND EVIDENCE-BASED."""
             assessment_data["metadata"]["product_code"] = self._current_product.product.code
             assessment_data["metadata"]["product_name"] = self._current_product.product.name
             assessment_data["metadata"]["product_brand"] = self._current_product.product.brand or ""
+            assessment_data["metadata"]["product_image_url"] = self._current_product.product.image_url or ""
             assessment_data["metadata"]["ingredients"] = self._current_product.product.ingredients_text or ""
             
             return assessment_data

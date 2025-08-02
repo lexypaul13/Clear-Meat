@@ -136,6 +136,12 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
             "summary": truncate_text(assessment.get("summary", ""), 200),
             "grade": assessment.get("risk_summary", {}).get("grade", ""),
             "color": assessment.get("risk_summary", {}).get("color", ""),
+            "product_info": {
+                "name": assessment.get("metadata", {}).get("product_name", ""),
+                "brand": assessment.get("metadata", {}).get("product_brand", ""),
+                "image_url": assessment.get("metadata", {}).get("product_image_url", ""),
+                "code": assessment.get("metadata", {}).get("product_code", "")
+            },
             "high_risk": [],
             "moderate_risk": [],
             "low_risk": [],
