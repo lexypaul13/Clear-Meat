@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional, List
 import google.generativeai as genai
 from pydantic import ValidationError
 from app.core.config import settings
-from app.core.cache import cache
+from app.core.cache import cache, CacheService
 from app.models.product import HealthAssessment, ProductStructured
 from app.services.citation_tools import CitationSearchService
 from app.services.async_citation_search import search_citations_for_health_assessment
@@ -44,7 +44,7 @@ class HealthAssessmentWithCitations:
         """
         try:
             # Generate cache key
-            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_cited")
+            cache_key = CacheService.generate_key(product.product.code, prefix="health_assessment_cited")
             
             # Check cache first
             cached_result = cache.get(cache_key)

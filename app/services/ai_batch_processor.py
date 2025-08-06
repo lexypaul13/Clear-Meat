@@ -13,7 +13,7 @@ import threading
 
 import google.generativeai as genai
 from app.core.config import settings
-from app.core.cache import cache
+from app.core.cache import cache, CacheService
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +98,7 @@ class AIBatchProcessor:
             The AI response
         """
         # Check cache first
-        cache_key = cache.generate_key(
+        cache_key = CacheService.generate_key(
             request.request_type.value, 
             request.prompt[:100],  # Use first 100 chars for caching
             prefix="ai_batch"

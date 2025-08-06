@@ -29,6 +29,7 @@ from app.services.search_service import search_products
 from app.services.openfoodfacts_service import get_openfoodfacts_service
 from app.utils.personalization import apply_user_preferences
 from app.core import cache
+from app.core.cache import CacheService
 
 # Configure logging for this module
 logger = logging.getLogger(__name__)
@@ -1049,21 +1050,30 @@ async def complete_ai_assessment_in_background(
         
         if assessment:
             # Cache the completed assessment
-            cache_key = CacheService.generate_key(code, prefix="health_assessment_mcp_v27_working_citations")
-            cache.set(cache_key, assessment, ttl=86400)  # Cache for 24 hours
-            logger.info(f"[Background] ✅ Completed and cached AI assessment for {code}")
+            try:
+                cache_key = CacheService.generate_key(code, prefix="health_assessment_mcp_v27_working_citations")
+                cache.set(cache_key, assessment, ttl=86400)  # Cache for 24 hours
+                logger.info(f"[Background] ✅ Completed and cached AI assessment for {code}")
+            except Exception as cache_error:
+                logger.error(f"[Background] Failed to cache assessment for {code}: {cache_error}")
         else:
             logger.error(f"[Background] Failed to generate AI assessment for {code}")
         
         # Clear the processing flag
-        processing_key = CacheService.generate_key(f"{code}_processing", prefix="assessment_status")
-        cache.delete(processing_key)
+        try:
+            processing_key = CacheService.generate_key(f"{code}_processing", prefix="assessment_status")
+            cache.delete(processing_key)
+        except Exception as cache_error:
+            logger.error(f"[Background] Failed to clear processing flag: {cache_error}")
         
     except Exception as e:
-        logger.error(f"[Background] Error generating AI assessment for {code}: {e}")
+        logger.error(f"[Background] Error generating AI assessment for {code}: {type(e).__name__}: {str(e)}", exc_info=True)
         # Clear the processing flag even on error
-        processing_key = CacheService.generate_key(f"{code}_processing", prefix="assessment_status")
-        cache.delete(processing_key)
+        try:
+            processing_key = CacheService.generate_key(f"{code}_processing", prefix="assessment_status")
+            cache.delete(processing_key)
+        except Exception as cache_error:
+            logger.error(f"[Background] Failed to clear processing flag: {cache_error}")
 
 
 @router.get("/{code}/health-assessment-mcp", 
@@ -1217,7 +1227,6 @@ async def get_product_health_assessment_mcp(
         logger.info(f"Using existing risk_rating from database: {existing_risk_rating}")
         
         # Check if already processing in background
-        from app.core.cache import CacheService
         processing_key = CacheService.generate_key(f"{code}_processing", prefix="assessment_status")
         is_processing = cache.get(processing_key)
         

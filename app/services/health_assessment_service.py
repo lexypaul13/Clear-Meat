@@ -13,7 +13,7 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.cache import cache  # Use unified cache
+from app.core.cache import cache, CacheService  # Use unified cache
 from app.models.product import HealthAssessment, ProductStructured
 from app.api.v1.models import EnhancedHealthAssessment, Citation
 from app.db import models as db_models
@@ -117,7 +117,7 @@ def generate_health_assessment(product: ProductStructured, db: Optional[Session]
     
     # Generate cache key based on ingredients hash for better cache reuse
     ingredients_hash = _hash_ingredients(product.product.ingredients_text or "")
-    cache_key = cache.generate_key(f"{product.product.code}:{ingredients_hash}", prefix="health_assessment")
+    cache_key = CacheService.generate_key(f"{product.product.code}:{ingredients_hash}", prefix="health_assessment")
     
     # Check cache first with more detailed logging
     cached_result = cache.get(cache_key)
@@ -177,7 +177,7 @@ def _get_similar_products(db: Session, target_product: ProductStructured) -> Lis
     """Get similar products from database for recommendations - OPTIMIZED."""
     try:
         # Cache similar products lookup
-        cache_key = cache.generate_key(
+        cache_key = CacheService.generate_key(
             f"{target_product.product.meat_type}:similar", 
             prefix="similar_products"
         )

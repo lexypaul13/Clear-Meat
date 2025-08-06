@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func
 
 from app.core.config import settings
-from app.core.cache import cache  # Use unified cache
+from app.core.cache import cache, CacheService  # Use unified cache
 from app.db import models as db_models
 
 logger = logging.getLogger(__name__)
@@ -124,7 +124,7 @@ def parse_natural_language_query(query: str) -> SearchIntent:
     """Parse natural language query into structured search intent."""
     
     # Create cache key for this query
-    cache_key = cache.generate_key(query.lower(), prefix="search_intent")
+    cache_key = CacheService.generate_key(query.lower(), prefix="search_intent")
     
     # Check cache first
     cached_intent = cache.get(cache_key)

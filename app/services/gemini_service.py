@@ -6,7 +6,7 @@ import logging
 import time
 import random
 from app.core.config import settings
-from app.core.cache import cache  # Use unified cache
+from app.core.cache import cache, CacheService  # Use unified cache
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +80,7 @@ def _generate_cache_key(user_preferences, available_products, recent_scans) -> s
     }
     
     key_string = json.dumps(key_data, sort_keys=True)
-    return cache.generate_key(key_string, prefix="recommendations")
+    return CacheService.generate_key(key_string, prefix="recommendations")
 
 def _build_recommendation_prompt(user_preferences, available_products, recent_scans=None):
     """Build prompt for Gemini with user context and products."""

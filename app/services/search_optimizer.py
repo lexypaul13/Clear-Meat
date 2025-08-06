@@ -10,7 +10,7 @@ from sqlalchemy.sql import text
 
 from app.db import models as db_models
 from app.services.search_service import SearchIntent, calculate_match_score
-from app.core.cache import cache
+from app.core.cache import cache, CacheService
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ class SearchOptimizer:
         
         for group_key, group_intents in grouped_intents.items():
             # Check cache for the group
-            cache_key = cache.generate_key(group_key, prefix="search_batch")
+            cache_key = CacheService.generate_key(group_key, prefix="search_batch")
             cached_results = cache.get(cache_key)
             
             if cached_results:
@@ -88,7 +88,7 @@ class SearchOptimizer:
     
     def _get_intent_key(self, intent: SearchIntent) -> str:
         """Generate a unique key for an intent."""
-        return cache.generate_key(intent.to_dict(), prefix="intent")
+        return CacheService.generate_key(intent.to_dict(), prefix="intent")
     
     def _execute_optimized_query(self, intent: SearchIntent, limit: int) -> List[db_models.Product]:
         """Execute an optimized database query using proper indexes."""
