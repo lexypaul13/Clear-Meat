@@ -1049,20 +1049,20 @@ async def complete_ai_assessment_in_background(
         
         if assessment:
             # Cache the completed assessment
-            cache_key = cache.generate_key(code, prefix="health_assessment_mcp_v27_working_citations")
+            cache_key = CacheService.generate_key(code, prefix="health_assessment_mcp_v27_working_citations")
             cache.set(cache_key, assessment, ttl=86400)  # Cache for 24 hours
             logger.info(f"[Background] ✅ Completed and cached AI assessment for {code}")
         else:
             logger.error(f"[Background] Failed to generate AI assessment for {code}")
         
         # Clear the processing flag
-        processing_key = cache.generate_key(f"{code}_processing", prefix="assessment_status")
+        processing_key = CacheService.generate_key(f"{code}_processing", prefix="assessment_status")
         cache.delete(processing_key)
         
     except Exception as e:
         logger.error(f"[Background] Error generating AI assessment for {code}: {e}")
         # Clear the processing flag even on error
-        processing_key = cache.generate_key(f"{code}_processing", prefix="assessment_status")
+        processing_key = CacheService.generate_key(f"{code}_processing", prefix="assessment_status")
         cache.delete(processing_key)
 
 
@@ -1217,7 +1217,8 @@ async def get_product_health_assessment_mcp(
         logger.info(f"Using existing risk_rating from database: {existing_risk_rating}")
         
         # Check if already processing in background
-        processing_key = cache.generate_key(f"{code}_processing", prefix="assessment_status")
+        from app.core.cache import CacheService
+        processing_key = CacheService.generate_key(f"{code}_processing", prefix="assessment_status")
         is_processing = cache.get(processing_key)
         
         # Add timeout for mobile requests (15 seconds max)
