@@ -1176,11 +1176,22 @@ async def get_product_health_assessment_mcp(
         existing_risk_rating = product_data.get('risk_rating')  # e.g., "Green", "Yellow", "Red"
         logger.info(f"Using existing risk_rating from database: {existing_risk_rating}")
         
+        # Add timeout for mobile requests (15 seconds max)
+        timeout_seconds = 15 if format == "mobile" else 30
+        
         try:
-            assessment = await mcp_service.generate_health_assessment_with_real_evidence(
-                structured_product, 
-                existing_risk_rating=existing_risk_rating
+            # Use asyncio.wait_for to add timeout
+            import asyncio
+            assessment = await asyncio.wait_for(
+                mcp_service.generate_health_assessment_with_real_evidence(
+                    structured_product, 
+                    existing_risk_rating=existing_risk_rating
+                ),
+                timeout=timeout_seconds
             )
+        except asyncio.TimeoutError:
+            logger.warning(f"Health assessment timed out after {timeout_seconds}s, using fallback")
+            assessment = None
         except Exception as e:
             logger.error(f"Error during health assessment generation: {e}")
             assessment = None

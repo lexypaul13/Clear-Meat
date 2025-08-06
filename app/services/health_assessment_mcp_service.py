@@ -958,26 +958,72 @@ class HealthAssessmentMCPService:
         }
     
     def create_minimal_fallback_assessment(self, product: ProductStructured, existing_risk_rating: str) -> Dict[str, Any]:
-        """Create a minimal assessment when all AI processing fails, using only OpenFoodFacts risk_rating."""
+        """Create a minimal but informative assessment when AI processing fails or times out."""
         
         # Map risk rating to grade and color
         grade, color = self._map_risk_rating_to_grade_color(existing_risk_rating)
         
+        # Quick pattern-based ingredient analysis (no AI needed)
+        ingredients_text = (product.product.ingredients_text or "").lower()
+        high_risk = []
+        moderate_risk = []
+        
+        # Check for known problematic ingredients
+        if 'sodium nitrite' in ingredients_text or 'sodium nitrate' in ingredients_text:
+            high_risk.append({
+                "name": "Sodium Nitrite/Nitrate",
+                "risk_level": "high",
+                "micro_report": "Preservative linked to potential health concerns when consumed regularly.",
+                "citations": []
+            })
+        
+        if 'bha' in ingredients_text or 'bht' in ingredients_text:
+            high_risk.append({
+                "name": "BHA/BHT",
+                "risk_level": "high",
+                "micro_report": "Synthetic antioxidant with potential safety concerns.",
+                "citations": []
+            })
+        
+        if 'msg' in ingredients_text or 'monosodium glutamate' in ingredients_text:
+            moderate_risk.append({
+                "name": "MSG (Monosodium Glutamate)",
+                "risk_level": "moderate",
+                "micro_report": "Flavor enhancer that may cause reactions in sensitive individuals.",
+                "citations": []
+            })
+        
+        if 'phosphate' in ingredients_text:
+            moderate_risk.append({
+                "name": "Phosphates",
+                "risk_level": "moderate",
+                "micro_report": "Preservative that may affect mineral balance when consumed in excess.",
+                "citations": []
+            })
+        
+        # Generate summary based on risk level
+        if high_risk:
+            summary = f"This {product.product.meat_type or 'meat'} product contains preservatives that require moderation. Consider limiting consumption."
+        elif moderate_risk:
+            summary = f"This {product.product.meat_type or 'meat'} product contains additives. Suitable for occasional consumption."
+        else:
+            summary = f"This {product.product.meat_type or 'meat'} product appears to have minimal additives based on quick analysis."
+        
         # Create minimal assessment structure
         assessment_data = {
-            "summary": f"Basic assessment for {product.product.name or 'this product'} based on database classification.",
+            "summary": summary,
             "risk_summary": {
                 "grade": grade,
                 "color": color
             },
             "ingredients_assessment": {
-                "high_risk": [],
-                "moderate_risk": [],
-                "low_risk": [
+                "high_risk": high_risk,
+                "moderate_risk": moderate_risk,
+                "low_risk": [] if (high_risk or moderate_risk) else [
                     {
                         "name": "Basic Ingredients",
                         "risk_level": "low",
-                        "micro_report": "Standard product ingredients. Full analysis unavailable.",
+                        "micro_report": "Standard meat product ingredients.",
                         "citations": []
                     }
                 ]
@@ -998,7 +1044,7 @@ class HealthAssessmentMCPService:
                 "product_name": product.product.name,
                 "product_brand": product.product.brand or "",
                 "ingredients": product.product.ingredients_text or "",
-                "assessment_type": "Minimal Fallback Assessment"
+                "assessment_type": "Quick Assessment (Timeout Fallback)"
             }
         }
         
