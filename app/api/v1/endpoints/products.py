@@ -10,7 +10,7 @@ import datetime
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status, Path
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status, Path, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
 import uuid
@@ -28,6 +28,7 @@ from app.services.health_assessment_mcp_service import HealthAssessmentMCPServic
 from app.services.search_service import search_products
 from app.services.openfoodfacts_service import get_openfoodfacts_service
 from app.utils.personalization import apply_user_preferences
+from app.core import cache
 
 # Configure logging for this module
 logger = logging.getLogger(__name__)
@@ -1027,6 +1028,44 @@ def get_product(
 
 
 
+async def complete_ai_assessment_in_background(
+    code: str,
+    structured_product: Any,
+    existing_risk_rating: str,
+    mcp_service: HealthAssessmentMCPService
+):
+    """
+    Complete AI health assessment generation in the background.
+    This runs after the initial response has been sent to the client.
+    """
+    try:
+        logger.info(f"[Background] Starting full AI assessment for {code}")
+        
+        # Generate the full AI assessment without timeout
+        assessment = await mcp_service.generate_health_assessment_with_real_evidence(
+            structured_product,
+            existing_risk_rating=existing_risk_rating
+        )
+        
+        if assessment:
+            # Cache the completed assessment
+            cache_key = cache.generate_key(code, prefix="health_assessment_mcp_v27_working_citations")
+            cache.set(cache_key, assessment, ttl=86400)  # Cache for 24 hours
+            logger.info(f"[Background] ✅ Completed and cached AI assessment for {code}")
+        else:
+            logger.error(f"[Background] Failed to generate AI assessment for {code}")
+        
+        # Clear the processing flag
+        processing_key = cache.generate_key(f"{code}_processing", prefix="assessment_status")
+        cache.delete(processing_key)
+        
+    except Exception as e:
+        logger.error(f"[Background] Error generating AI assessment for {code}: {e}")
+        # Clear the processing flag even on error
+        processing_key = cache.generate_key(f"{code}_processing", prefix="assessment_status")
+        cache.delete(processing_key)
+
+
 @router.get("/{code}/health-assessment-mcp", 
     response_model=Dict[str, Any],
     responses={
@@ -1076,6 +1115,7 @@ def get_product(
 )
 async def get_product_health_assessment_mcp(
     code: str,
+    background_tasks: BackgroundTasks,
     format: Optional[str] = Query(None, regex="^(mobile|full)$", description="Response format: 'mobile' for optimized mobile response, 'full' for complete data"),
     db: Session = Depends(get_db),
     supabase_service = Depends(get_supabase_service),
@@ -1176,6 +1216,10 @@ async def get_product_health_assessment_mcp(
         existing_risk_rating = product_data.get('risk_rating')  # e.g., "Green", "Yellow", "Red"
         logger.info(f"Using existing risk_rating from database: {existing_risk_rating}")
         
+        # Check if already processing in background
+        processing_key = cache.generate_key(f"{code}_processing", prefix="assessment_status")
+        is_processing = cache.get(processing_key)
+        
         # Add timeout for mobile requests (15 seconds max)
         timeout_seconds = 15 if format == "mobile" else 30
         
@@ -1190,8 +1234,35 @@ async def get_product_health_assessment_mcp(
                 timeout=timeout_seconds
             )
         except asyncio.TimeoutError:
-            logger.warning(f"Health assessment timed out after {timeout_seconds}s, using fallback")
-            assessment = None
+            logger.warning(f"Health assessment timed out after {timeout_seconds}s")
+            
+            # Start background processing if not already running
+            if not is_processing:
+                logger.info(f"Starting background AI processing for {code}")
+                # Mark as processing
+                cache.set(processing_key, True, ttl=300)  # 5 minute flag
+                
+                # Create background task to continue AI processing
+                background_tasks.add_task(
+                    complete_ai_assessment_in_background,
+                    code,
+                    structured_product,
+                    existing_risk_rating,
+                    mcp_service
+                )
+                
+                # Create informative fallback with "processing" status
+                assessment = mcp_service.create_minimal_fallback_assessment(structured_product, existing_risk_rating)
+                assessment["metadata"]["assessment_status"] = "processing"
+                assessment["metadata"]["retry_after_seconds"] = 30
+                assessment["summary"] = assessment["summary"] + " Full AI analysis is being generated - check back in 30 seconds."
+            else:
+                logger.info(f"AI processing already in progress for {code}")
+                assessment = mcp_service.create_minimal_fallback_assessment(structured_product, existing_risk_rating)
+                assessment["metadata"]["assessment_status"] = "processing"
+                assessment["metadata"]["retry_after_seconds"] = 15
+            
+            assessment = assessment
         except Exception as e:
             logger.error(f"Error during health assessment generation: {e}")
             assessment = None
