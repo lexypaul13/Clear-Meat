@@ -28,8 +28,7 @@ from app.services.health_assessment_mcp_service import HealthAssessmentMCPServic
 from app.services.search_service import search_products
 from app.services.openfoodfacts_service import get_openfoodfacts_service
 from app.utils.personalization import apply_user_preferences
-from app.core import cache
-from app.core.cache import CacheService
+from app.core.cache import cache, CacheService
 
 # Configure logging for this module
 logger = logging.getLogger(__name__)

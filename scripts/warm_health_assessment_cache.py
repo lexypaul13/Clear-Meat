@@ -10,8 +10,7 @@ from typing import List, Dict, Any
 from app.db.supabase_client import get_supabase_service
 from app.services.health_assessment_mcp_service import HealthAssessmentMCPService
 from app.utils import helpers
-from app.core import cache
-from app.core.cache import CacheService
+from app.core.cache import cache, CacheService
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
