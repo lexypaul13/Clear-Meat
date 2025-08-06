@@ -787,7 +787,7 @@ async def get_product_recommendations(
                 # Default preferences if none are set
                 "nutrition_focus": "protein",
                 "avoid_preservatives": True,
-                "meat_preferences": ["chicken", "beef", "pork"]
+                "preferred_meat_types": ["chicken", "turkey", "beef"]  # Use correct field name, no pork by default
             }
         
         # If preferences is a string (JSON), parse it
@@ -798,7 +798,7 @@ async def get_product_recommendations(
                 preferences = {
                     "nutrition_focus": "protein",
                     "avoid_preservatives": True,
-                    "meat_preferences": ["chicken", "beef", "pork"]
+                    "preferred_meat_types": ["chicken", "turkey", "beef"]  # Use correct field name, no pork by default
                 }
         
         # Log user preferences for debugging

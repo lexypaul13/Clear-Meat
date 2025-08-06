@@ -43,7 +43,7 @@ router = APIRouter()
                         "preferences": {
                             "nutrition_focus": "protein",
                             "avoid_preservatives": True,
-                            "meat_preferences": ["chicken", "turkey"]
+                            "preferred_meat_types": ["chicken", "turkey"]
                         }
                     }
                 }
@@ -86,7 +86,7 @@ def get_current_user(
                         "preferences": {
                             "nutrition_focus": "low_sodium",
                             "avoid_preservatives": True,
-                            "meat_preferences": ["chicken", "turkey", "fish"]
+                            "preferred_meat_types": ["chicken", "turkey", "fish"]
                         }
                     }
                 }
@@ -103,7 +103,7 @@ def update_current_user(
         "preferences": {
             "nutrition_focus": "low_sodium",
             "avoid_preservatives": True,
-            "meat_preferences": ["chicken", "turkey"]
+            "preferred_meat_types": ["chicken", "turkey"]
         }
     }),
     supabase_service = Depends(get_supabase_service),
@@ -408,7 +408,7 @@ def get_explore_recommendations(
                 "nutrition_focus": "protein",
                 "avoid_preservatives": True,
                 "prefer_organic_or_grass_fed": True,
-                "meat_preferences": ["chicken", "beef", "pork"]
+                "preferred_meat_types": ["chicken", "turkey", "beef"]  # Use correct field name, no pork by default
             }
             
         # Add a stronger diversity factor for explore page

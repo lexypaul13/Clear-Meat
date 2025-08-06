@@ -888,12 +888,12 @@ def _get_preferred_meat_types(preferences: Dict[str, Any]) -> Set[str]:
     Returns:
         Set of preferred meat types
     """
-    # Try new preferences model first
-    meat_preferences = preferences.get("meat_preferences", [])
+    # Try the correct field name from UserPreferences model first
+    meat_preferences = preferences.get("preferred_meat_types", [])
     
-    # If empty, try legacy preferences
-    if not meat_preferences and "preferred_meat_types" in preferences:
-        meat_preferences = preferences["preferred_meat_types"]
+    # If empty, try the alternate field name used in some places
+    if not meat_preferences and "meat_preferences" in preferences:
+        meat_preferences = preferences["meat_preferences"]
         
     # Ensure we have a set (for efficient lookups)
     return set(meat_preferences) if meat_preferences else set()

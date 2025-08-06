@@ -2039,6 +2039,57 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
         ingredient_clean = ingredient_clean.replace('natural ', '').replace(' extract', '').replace(' powder', '')
         return ingredient_clean in self.TRIVIAL_INGREDIENTS
     
+    def _get_ingredient_specific_search_terms(self, ingredient: str, risk_level: str) -> str:
+        """Generate ingredient-specific search terms for more relevant citations."""
+        ingredient_lower = ingredient.lower()
+        
+        # Specific search strategies for common problematic ingredients
+        if 'sodium phosphate' in ingredient_lower or 'phosphate' in ingredient_lower:
+            return "sodium phosphate food additive preservative hypertension health effects"
+        
+        elif 'nitrite' in ingredient_lower or 'nitrate' in ingredient_lower:
+            return "sodium nitrite nitrate processed meat preservative cancer health effects"
+        
+        elif 'bha' in ingredient_lower or 'bht' in ingredient_lower:
+            return "BHA BHT antioxidant preservative carcinogenic health safety"
+        
+        elif 'carrageenan' in ingredient_lower:
+            return "carrageenan food additive inflammatory bowel health effects"
+        
+        elif 'msg' in ingredient_lower or 'monosodium glutamate' in ingredient_lower:
+            return "monosodium glutamate MSG food additive headache health effects"
+        
+        elif 'artificial color' in ingredient_lower or 'dye' in ingredient_lower or any(color in ingredient_lower for color in ['red 40', 'yellow 6', 'blue 1']):
+            return "artificial food coloring dye hyperactivity health effects children"
+        
+        elif 'high fructose corn syrup' in ingredient_lower or 'hfcs' in ingredient_lower:
+            return "high fructose corn syrup HFCS obesity diabetes health effects"
+        
+        elif 'trans fat' in ingredient_lower or 'partially hydrogenated' in ingredient_lower:
+            return "trans fat partially hydrogenated oil cardiovascular health effects"
+        
+        elif any(sugar in ingredient_lower for sugar in ['sugar', 'syrup', 'dextrose', 'fructose']):
+            return f"{ingredient} added sugar diabetes obesity health effects"
+        
+        elif any(preservative in ingredient_lower for preservative in ['benzoate', 'sorbate', 'sulfite']):
+            return f"{ingredient} food preservative allergic reaction health effects"
+        
+        elif 'powder' in ingredient_lower and any(natural in ingredient_lower for natural in ['cherry', 'apple', 'berry', 'fruit']):
+            # For natural flavor powders, focus on additive safety
+            base_ingredient = ingredient_lower.replace(' powder', '').replace(' extract', '')
+            return f"{base_ingredient} powder natural flavoring food additive safety"
+        
+        elif 'extract' in ingredient_lower:
+            # For extracts, focus on processing and safety
+            base_ingredient = ingredient_lower.replace(' extract', '')
+            return f"{base_ingredient} extract food flavoring processing safety"
+        
+        # Default search terms based on risk level
+        elif risk_level == "high":
+            return f"{ingredient} food additive toxicity carcinogenic health effects"
+        else:
+            return f"{ingredient} food additive safety health assessment"
+    
     async def _generate_real_citations(self, high_risk_ingredients: List[str], moderate_risk_ingredients: List[str]) -> List[Dict[str, Any]]:
         """Generate real scientific citations for concerning ingredients found in the product."""
         try:
@@ -2065,12 +2116,14 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
             
             # Prioritize high-risk ingredients (max 4)
             for ingredient in filtered_high_risk[:4]:
-                ingredients_to_research.append((ingredient, "high", "toxicity safety health effects"))
+                health_claim = self._get_ingredient_specific_search_terms(ingredient, "high")
+                ingredients_to_research.append((ingredient, "high", health_claim))
             
             # Add moderate-risk ingredients (max 2 more)
             remaining_slots = 6 - len(ingredients_to_research)
             for ingredient in filtered_moderate_risk[:remaining_slots]:
-                ingredients_to_research.append((ingredient, "moderate", "safety assessment"))
+                health_claim = self._get_ingredient_specific_search_terms(ingredient, "moderate")
+                ingredients_to_research.append((ingredient, "moderate", health_claim))
             
             logger.info(f"[Real Citations] Researching {len(ingredients_to_research)} concerning ingredients (filtered from {len(high_risk_ingredients + moderate_risk_ingredients)} total)")
             
