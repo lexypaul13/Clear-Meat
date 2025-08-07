@@ -175,8 +175,6 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
                 "name": truncate_text(ingredient_name, 50),
                 "risk": ingredient.get("micro_report", ""),
                 "overview": insights["overview"],
-                "health_risks": insights["health_risks"],
-                "common_uses": insights["common_uses"],
                 "citations": ingredient_citations
             })
         
@@ -201,8 +199,6 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
                 "name": truncate_text(ingredient_name, 50),
                 "risk": ingredient.get("micro_report", ""),
                 "overview": insights["overview"],
-                "health_risks": insights["health_risks"],
-                "common_uses": insights["common_uses"],
                 "citations": ingredient_citations
             })
         
