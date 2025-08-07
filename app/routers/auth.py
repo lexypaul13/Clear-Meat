@@ -207,7 +207,7 @@ def register_user(
     
     # Validate password strength before proceeding
     validate_password_strength(user_in.password)
-    logger.debug("Password validation passed")
+    # Password validation passed
     
     # Check if we're in testing mode
     is_testing = os.getenv("TESTING", "false").lower() == "true"
@@ -217,8 +217,7 @@ def register_user(
         # Use the admin API to create a user directly
         if not admin_supabase:
             logger.error("Admin Supabase client not available for user creation")
-            logger.debug(f"admin_supabase object: {type(admin_supabase)}")
-            logger.debug(f"SUPABASE_SERVICE_KEY set: {'Yes' if settings.SUPABASE_SERVICE_KEY else 'No'}")
+            # Admin client configuration issue
             
             # In testing mode, return error immediately instead of trying alternatives
             if is_testing:

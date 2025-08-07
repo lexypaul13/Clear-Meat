@@ -1,10 +1,12 @@
 """User routes for the MeatWise API."""
 
+import logging
 from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from app.db.supabase import get_supabase
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 class UserPreferences(BaseModel):
@@ -215,7 +217,7 @@ async def get_ai_recommendations():
             max_salt = 100
             
             # Log that we're using fallback values
-            print("Warning: Using fallback normalization values. Please run the DB migration.")
+            logger.warning("Using fallback normalization values. Please run the DB migration.")
         
         # Initialize default weights
         weights = {
@@ -301,7 +303,7 @@ async def get_ai_recommendations():
                 raise Exception("No data returned from SQL execution")
         except:
             # Fallback to basic query approach if the RPC is not available
-            print("Warning: Using fallback query method. Please run the DB migration.")
+            logger.warning("Using fallback query method. Please run the DB migration.")
             
             # Get all products
             result = supabase.table('products').select('*').execute()

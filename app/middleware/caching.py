@@ -3,11 +3,14 @@
 import json
 import hashlib
 import time
+import logging
 from fastapi import FastAPI, Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from typing import Callable, Dict, List, Optional, Set
 from starlette.types import ASGIApp
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 # Redis imports - will be conditionally used
 try:
@@ -51,9 +54,9 @@ class CachingMiddleware(BaseHTTPMiddleware):
                 self.redis_client = redis.from_url(redis_url)
                 # Test connection
                 self.redis_client.ping()
-                print("Connected to Redis for response caching")
+                logger.info("Connected to Redis for response caching")
             except Exception as e:
-                print(f"Failed to connect to Redis for caching: {str(e)}")
+                logger.warning(f"Failed to connect to Redis for caching: {str(e)}")
                 self.redis_client = None
     
     def _generate_cache_key(self, request: Request) -> str:
@@ -157,7 +160,7 @@ class CachingMiddleware(BaseHTTPMiddleware):
                         json.dumps(response_data)
                     )
                 except Exception as e:
-                    print(f"Failed to cache response in Redis: {str(e)}")
+                    logger.error(f"Failed to cache response in Redis: {str(e)}")
             # Store in local cache otherwise
             else:
                 self.local_cache[cache_key] = {

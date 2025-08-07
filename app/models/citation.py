@@ -145,25 +145,4 @@ class CitationResult(BaseModel):
         return formatted
 
 
-# Test the models
-if __name__ == "__main__":
-    # Create test citation
-    test_citation = Citation(
-        citation_id="test123",
-        title="Effects of BHA on Human Health: A Comprehensive Review",
-        authors=[
-            Author(first_name="John", last_name="Smith"),
-            Author(first_name="Jane", last_name="Doe")
-        ],
-        journal="Food Chemistry",
-        publication_date=datetime(2023, 5, 15),
-        volume="45",
-        issue="3",
-        pages="123-145",
-        doi="10.1234/foodchem.2023.123",
-        source_type="pubmed"
-    )
-    
-    print("Test Citation:")
-    print(f"ID: {test_citation.citation_id}")
-    print(f"APA Format: {test_citation.to_apa_format()}") 
+ 

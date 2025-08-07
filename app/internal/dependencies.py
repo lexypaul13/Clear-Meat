@@ -72,12 +72,10 @@ def get_current_user(
     # If no token provided
     if token is None:
         logger.warning("No authentication token provided")
-        logger.info("=== AUTHENTICATION DEBUG END (NO TOKEN) ===")
         raise credentials_exception
         
     try:
-        # Log token format for debugging (only first few chars for security)
-        logger.debug(f"Verifying token (length: {len(token)})")
+        # Token verification without logging sensitive data
         
         # Manual JWT verification method - updated to work with Supabase tokens
         def verify_manually():
@@ -95,11 +93,11 @@ def get_current_user(
                     unverified_payload.get("iss") and "supabase" in unverified_payload.get("iss", "").lower()
                 ) or unverified_payload.get("role") in ["anon", "authenticated"]
                 
-                logger.debug(f"Is Supabase token: {is_supabase_token}")
+                # Token type determined
                 
                 if is_supabase_token:
                     # For Supabase tokens, disable signature verification since we don't have the correct secret
-                    logger.info("Detected Supabase token - using without signature verification")
+                    # Supabase token detected
                     payload = jwt.decode(
                         token, 
                         "dummy_key",  # Key required even when verification is disabled
@@ -117,7 +115,7 @@ def get_current_user(
                     )
                 else:
                     # For custom tokens, use full verification
-                    logger.info("Detected custom token - using full verification")
+                    # Custom token detected
                     jwt_secret = settings.SUPABASE_JWT_SECRET if settings.SUPABASE_JWT_SECRET else settings.SECRET_KEY
                     payload = jwt.decode(
                         token, 
@@ -142,7 +140,7 @@ def get_current_user(
                 # Flexible validation for Supabase tokens
                 # Check if it's a Supabase token (has 'role' claim)
                 if payload.get("role") in ["anon", "authenticated"]:
-                    logger.debug("Validating Supabase token payload")
+                    # Validating token payload
                     
                     # For authenticated tokens, require sub (user ID)
                     if payload.get("role") == "authenticated":
@@ -244,7 +242,7 @@ def get_current_user(
                         
                     elif payload.get("role") == "anon":
                         # For anon tokens, create a temporary anonymous user
-                        logger.debug("Creating anonymous user for anon token")
+                        # Creating anonymous user
                         anon_user = type('AnonUser', (object,), {
                             'id': 'anonymous',
                             'email': 'anonymous@example.com',
@@ -257,7 +255,7 @@ def get_current_user(
                         
                 else:
                     # Legacy validation for custom tokens
-                    logger.debug("Validating custom token payload")
+                    # Validating custom token
                     if not payload.get("sub") or not isinstance(payload.get("sub"), str):
                         logger.warning("Invalid subject claim in token")
                         raise credentials_exception
@@ -275,7 +273,7 @@ def get_current_user(
                         raise credentials_exception
                 
                     # Legacy token handling
-                    logger.debug(f"Legacy token - looking up user: {payload['sub']}")
+                    # Legacy token - looking up user
                     client = supabase_service.get_client()
                     result = client.table('profiles').select('*').eq('id', payload['sub']).execute()
                     if result.data:
@@ -304,7 +302,7 @@ def get_current_user(
 
         # Skip Supabase client verification due to configuration issues
         # Go directly to manual verification which handles Supabase tokens correctly
-        logger.info("Using manual JWT verification for all tokens")
+        # Using manual JWT verification
         return verify_manually()
         
         # Original Supabase verification commented out until JWT secret is configured

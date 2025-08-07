@@ -45,12 +45,10 @@ admin_supabase = None
 try:
     # Print debug information
     logger.info(f"Attempting to connect to Supabase with URL: {settings.SUPABASE_URL}")
-    logger.debug(f"SUPABASE_URL length: {len(settings.SUPABASE_URL)}")
-    logger.debug(f"SUPABASE_KEY set: {'Yes' if settings.SUPABASE_KEY else 'No'}")
-    logger.debug(f"SUPABASE_SERVICE_KEY set: {'Yes' if settings.SUPABASE_SERVICE_KEY else 'No'}")
+    # Configuration validation removed for security
     
     # Initialize public client
-    logger.info("Initializing public client with anon key...")
+    # Initializing public client
     supabase, error = init_supabase_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
     if error:
         logger.error(f"Public client initialization failed: {error}")
@@ -59,7 +57,7 @@ try:
     
     # Initialize admin client if service role key is available
     if hasattr(settings, 'SUPABASE_SERVICE_KEY') and settings.SUPABASE_SERVICE_KEY:
-        logger.info("Initializing admin client with service role key...")
+        # Initializing admin client
         admin_supabase, error = init_supabase_client(
             settings.SUPABASE_URL,
             settings.SUPABASE_SERVICE_KEY,
