@@ -194,8 +194,7 @@ class IngredientAnalysisService:
                     health_claim=" ".join(search_terms),
                     max_results=2,
                     search_pubmed=True,
-                    search_crossref=True,
-                    search_semantic_scholar=False  # Disable to reduce noise
+                    search_crossref=True
                 )
                 
                 # Search health authority sources

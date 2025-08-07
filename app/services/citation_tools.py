@@ -83,16 +83,6 @@ class CitationSearchService:
                 logger.error(error_msg)
                 errors.append(error_msg)
         
-        # Search Semantic Scholar
-        if search_params.search_semantic_scholar:
-            try:
-                semantic_scholar_citations = self._search_semantic_scholar(query, search_params.max_results)
-                all_citations.extend(semantic_scholar_citations)
-            except Exception as e:
-                error_msg = f"Semantic Scholar search error: {str(e)}"
-                logger.error(error_msg)
-                errors.append(error_msg)
-        
         # Search FDA
         if search_params.search_fda:
             try:
@@ -184,15 +174,6 @@ class CitationSearchService:
                 errors.append(error_msg)
         
         # Search Semantic Scholar
-        if search_params.search_semantic_scholar:
-            try:
-                semantic_citations = self._search_semantic_scholar(query, search_params.max_results)
-                all_citations.extend(semantic_citations)
-            except Exception as e:
-                error_msg = f"Semantic Scholar search error: {str(e)}"
-                logger.error(error_msg)
-                errors.append(error_msg)
-        
         # Search Europe PMC
         if search_params.search_europe_pmc:
             try:
@@ -373,75 +354,6 @@ class CitationSearchService:
         except Exception as e:
             logger.error(f"CrossRef search error: {e}")
             raise
-        
-        return citations
-    
-    def _search_semantic_scholar(self, query: str, max_results: int) -> List[Citation]:
-        """Search Semantic Scholar for relevant citations."""
-        citations = []
-        
-        try:
-            
-            # Semantic Scholar API endpoint
-            url = "https://api.semanticscholar.org/graph/v1/paper/search"
-            params = {
-                'query': query,
-                'limit': max_results * 2,
-                'fields': 'title,authors,venue,year,doi,url,abstract,citationCount'
-            }
-            
-            response = requests.get(url, params=params, timeout=10, verify=True)
-            response.raise_for_status()
-            
-            data = response.json()
-            papers = data.get('data', [])
-            
-            for paper in papers:
-                try:
-                    # Parse authors
-                    authors = []
-                    for author in paper.get('authors', [])[:10]:
-                        # Split name into first and last
-                        name_parts = author.get('name', '').split()
-                        if name_parts:
-                            last_name = name_parts[-1]
-                            first_name = ' '.join(name_parts[:-1]) if len(name_parts) > 1 else ''
-                            authors.append(Author(
-                                first_name=first_name,
-                                last_name=last_name
-                            ))
-                    
-                    # Parse publication date
-                    pub_date = None
-                    if paper.get('year'):
-                        pub_date = datetime(paper['year'], 1, 1)
-                    
-                    # Calculate relevance based on citation count
-                    citation_count = paper.get('citationCount', 0)
-                    relevance = min(0.9, 0.5 + (citation_count / 1000))
-                    
-                    # Create citation
-                    citation = Citation(
-                        title=paper.get('title', 'Unknown Title'),
-                        authors=authors or [Author(last_name="Unknown")],
-                        journal=paper.get('venue'),
-                        publication_date=pub_date,
-                        doi=paper.get('doi'),
-                        url=paper.get('url'),
-                        abstract=paper.get('abstract'),
-                        source_type="semantic_scholar",
-                        relevance_score=relevance
-                    )
-                    
-                    citations.append(citation)
-                    
-                except Exception as e:
-                    logger.warning(f"Error parsing Semantic Scholar paper: {e}")
-                    continue
-                    
-        except Exception as e:
-            logger.error(f"Semantic Scholar search error: {e}")
-            # Don't raise, just return empty list
         
         return citations
     
@@ -1440,75 +1352,6 @@ class CitationSearchService:
                         
         except Exception as e:
             logger.error(f"bioRxiv search error: {e}")
-        
-        return citations
-    
-    def _search_semantic_scholar(self, query: str, max_results: int) -> List[Citation]:
-        """Search Semantic Scholar for academic papers with citation metrics."""
-        citations = []
-        
-        try:
-            
-            # Semantic Scholar API
-            api_url = "https://api.semanticscholar.org/graph/v1/paper/search"
-            
-            params = {
-                'query': query,
-                'limit': max_results,
-                'fields': 'title,authors,year,journal,citationCount,url,abstract,openAccessPdf'
-            }
-            
-            response = requests.get(api_url, params=params, timeout=10, verify=True)
-            response.raise_for_status()
-            
-            data = response.json()
-            
-            if 'data' in data:
-                for paper in data['data']:
-                    try:
-                        # Parse authors
-                        authors = []
-                        if 'authors' in paper and paper['authors']:
-                            for author_data in paper['authors'][:3]:  # Limit to first 3
-                                name = author_data.get('name', '')
-                                if name:
-                                    name_parts = name.split()
-                                    if len(name_parts) >= 2:
-                                        authors.append(Author(last_name=name_parts[-1], first_name=" ".join(name_parts[:-1])))
-                                    else:
-                                        authors.append(Author(last_name=name, first_name=""))
-                        
-                        # Get publication year
-                        year = paper.get('year', 2024)
-                        if not year:
-                            year = 2024
-                        
-                        # Calculate relevance score based on citation count and recency
-                        citation_count = paper.get('citationCount', 0)
-                        relevance = min(0.5 + (citation_count / 100), 1.0)  # Base 0.5, up to 1.0 based on citations
-                        
-                        # Get URL (prefer open access PDF if available)
-                        url = paper.get('url', '')
-                        if 'openAccessPdf' in paper and paper['openAccessPdf'] and paper['openAccessPdf'].get('url'):
-                            url = paper['openAccessPdf']['url']
-                        
-                        citation = Citation(
-                            title=paper.get('title', 'Unknown Title'),
-                            authors=authors,
-                            journal=paper.get('journal', {}).get('name', 'Unknown Journal') if paper.get('journal') else 'Unknown Journal',
-                            publication_date=datetime(year, 1, 1),
-                            url=url,
-                            source_type="semantic_scholar",
-                            relevance_score=relevance
-                        )
-                        citations.append(citation)
-                        
-                    except Exception as e:
-                        logger.warning(f"Error parsing Semantic Scholar entry: {e}")
-                        continue
-                        
-        except Exception as e:
-            logger.error(f"Semantic Scholar search error: {e}")
         
         return citations
     

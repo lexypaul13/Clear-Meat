@@ -109,7 +109,6 @@ class CitationSearch(BaseModel):
     # Academic sources
     search_pubmed: bool = True
     search_crossref: bool = True
-    search_semantic_scholar: bool = True
     
     # Official sources
     search_fda: bool = True
@@ -123,7 +122,6 @@ class CitationSearch(BaseModel):
     search_doaj: bool = True  # Directory of Open Access Journals
     search_arxiv: bool = True  # arXiv preprint server
     search_biorxiv: bool = True  # Biology preprint server
-    search_semantic_scholar: bool = True  # AI-powered academic search
     search_europe_pmc: bool = True  # European biomedical literature
     
     search_web: bool = False  # Keep general web search disabled for now

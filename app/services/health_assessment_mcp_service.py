@@ -1083,8 +1083,7 @@ class HealthAssessmentMCPService:
                             max_results=2,
                             # Disable failing sources
                             search_fda=False,  # SSL handshake failures
-                            search_who=False,  # 404 errors
-                            search_semantic_scholar=False  # Rate limiting
+                            search_who=False  # 404 errors
                         )
                         citation_result = await asyncio.wait_for(
                             self._search_citations_async(search_params, "high"),
@@ -1106,8 +1105,7 @@ class HealthAssessmentMCPService:
                             max_results=1,
                             # Disable failing sources
                             search_fda=False,  # SSL handshake failures
-                            search_who=False,  # 404 errors
-                            search_semantic_scholar=False  # Rate limiting
+                            search_who=False  # 404 errors
                         )
                         citation_result = await asyncio.wait_for(
                             self._search_citations_async(search_params, "moderate"),
@@ -2235,9 +2233,8 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
                     # Disable academic sources that cause rate limiting
                     search_pubmed=False,
                     search_crossref=False,
-                    search_semantic_scholar=False,  # Already disabled due to rate limiting
                     # Focus on reliable web authority sources
-                    search_fda=False,  # Disabled due to SSL handshake failures
+                    search_fda=False  # Disabled due to SSL handshake failures
                     search_cdc=True,
                     search_mayo_clinic=True,
                     search_nih=True,

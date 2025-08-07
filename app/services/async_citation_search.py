@@ -134,8 +134,7 @@ class AsyncCitationSearchService:
             # Search multiple sources in parallel
             search_tasks = [
                 self._search_pubmed(ingredient, health_claim),
-                self._search_crossref(ingredient, health_claim),
-                self._search_semantic_scholar(ingredient, health_claim)
+                self._search_crossref(ingredient, health_claim)
             ]
             
             source_results = await asyncio.gather(*search_tasks, return_exceptions=True)
@@ -272,49 +271,6 @@ class AsyncCitationSearchService:
             logger.error(f"CrossRef search error: {e}")
             return []
     
-    async def _search_semantic_scholar(
-        self, 
-        ingredient: str, 
-        health_claim: str
-    ) -> List[Dict[str, str]]:
-        """Search Semantic Scholar API."""
-        
-        await self._rate_limit("semantic_scholar")
-        
-        try:
-            url = "https://api.semanticscholar.org/graph/v1/paper/search"
-            params = {
-                'query': f'"{ingredient}" food safety health {health_claim}',
-                'limit': 3,
-                'fields': 'title,authors,year,journal,url,citationCount'
-            }
-            
-            async with self.session.get(url, params=params) as response:
-                if response.status != 200:
-                    return []
-                    
-                data = await response.json()
-                papers = data.get('data', [])
-                
-                citations = []
-                for paper in papers:
-                    authors = [author.get('name', '') for author in paper.get('authors', [])]
-                    
-                    citations.append({
-                        'title': paper.get('title', ''),
-                        'authors': ', '.join(authors[:3]),  # First 3 authors
-                        'journal': paper.get('journal', {}).get('name', '') if paper.get('journal') else '',
-                        'year': str(paper.get('year', '')),
-                        'url': paper.get('url', ''),
-                        'citation_count': paper.get('citationCount', 0),
-                        'source': 'Semantic Scholar'
-                    })
-                
-                return citations
-        
-        except Exception as e:
-            logger.error(f"Semantic Scholar search error: {e}")
-            return []
     
     async def _rate_limit(self, source: str):
         """Simple rate limiting."""
