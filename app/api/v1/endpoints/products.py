@@ -133,16 +133,23 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
             }
             return fallback_templates.get(risk_level, fallback_templates["moderate"])
         
+        # Build product_info, only including image_url if it has a value
+        product_info = {
+            "name": assessment.get("metadata", {}).get("product_name", ""),
+            "brand": assessment.get("metadata", {}).get("product_brand", ""),
+            "code": assessment.get("metadata", {}).get("product_code", "")
+        }
+        
+        # Only add image_url if it has a value
+        image_url = assessment.get("metadata", {}).get("product_image_url", "")
+        if image_url and image_url.strip():
+            product_info["image_url"] = image_url
+        
         optimized = {
             "summary": truncate_text(assessment.get("summary", ""), 200),
             "grade": assessment.get("risk_summary", {}).get("grade", ""),
             "color": assessment.get("risk_summary", {}).get("color", ""),
-            "product_info": {
-                "name": assessment.get("metadata", {}).get("product_name", ""),
-                "brand": assessment.get("metadata", {}).get("product_brand", ""),
-                "image_url": assessment.get("metadata", {}).get("product_image_url", ""),
-                "code": assessment.get("metadata", {}).get("product_code", "")
-            },
+            "product_info": product_info,
             "high_risk": [],
             "moderate_risk": [],
             "low_risk": [],
@@ -174,7 +181,7 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
             optimized["high_risk"].append({
                 "name": truncate_text(ingredient_name, 50),
                 "risk": ingredient.get("micro_report", ""),
-                "overview": insights["overview"],
+                "overview": truncate_text(insights["overview"], 80),
                 "citations": ingredient_citations
             })
         
@@ -198,7 +205,7 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
             optimized["moderate_risk"].append({
                 "name": truncate_text(ingredient_name, 50),
                 "risk": ingredient.get("micro_report", ""),
-                "overview": insights["overview"],
+                "overview": truncate_text(insights["overview"], 80),
                 "citations": ingredient_citations
             })
         
@@ -239,10 +246,7 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
                     "id": citation.get("id", len(valid_citations) + 1),
                     "title": truncate_text(title, 100),
                     "year": citation.get("year", 2024),
-                    "url": url,
-                    "source_type": citation.get("source_type", "research"),
-                    "journal": citation.get("source", ""),
-                    "format": "APA"
+                    "url": url
                 })
         
         # Use filtered citations with URLs
