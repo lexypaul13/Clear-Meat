@@ -186,7 +186,7 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
             optimized["high_risk"].append({
                 "name": truncate_text(ingredient_name, 50),
                 "risk": ingredient.get("micro_report", ""),
-                "overview": insights.get("overview", ""),
+                "overview": ingredient.get("micro_report", insights.get("overview", "")),  # Use AI-generated micro_report as overview
                 "citations": ingredient_citations
             })
         
@@ -210,7 +210,7 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
             optimized["moderate_risk"].append({
                 "name": truncate_text(ingredient_name, 50),
                 "risk": ingredient.get("micro_report", ""),
-                "overview": insights.get("overview", ""),
+                "overview": ingredient.get("micro_report", insights.get("overview", "")),  # Use AI-generated micro_report as overview
                 "citations": ingredient_citations
             })
         
@@ -218,7 +218,8 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
         for ingredient in ingredients.get("low_risk", []):
             optimized["low_risk"].append({
                 "name": truncate_text(ingredient.get("name", ""), 50),
-                "risk": truncate_text(ingredient.get("micro_report", ""), 150)
+                "risk": truncate_text(ingredient.get("micro_report", ""), 150),
+                "overview": ingredient.get("micro_report", "")  # Include overview for consistency
             })
         
         # Optimize nutrition insights - keep only the most important nutrients
