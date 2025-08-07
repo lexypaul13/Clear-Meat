@@ -1199,33 +1199,31 @@ class HealthAssessmentMCPService:
                 product, high_risk_ingredients, moderate_risk_ingredients
             )
             
-            # Use LangChain with citation tools for parallel assessment
-            logger.info(f"[LangChain Assessment] Starting assessment with citation tools")
+            # Use direct Gemini with Google Search grounding (no LangChain agent)
+            logger.info(f"[Google Search Grounding] Starting fallback assessment with web search")
             
-            # Create LangChain agent with citation tools
-            agent_prompt = ChatPromptTemplate.from_messages([
-                ("system", "You are a food health assessment expert. Use the available citation tools to find real scientific evidence."),
-                ("human", "{input}")
-            ])
-            
-            agent = create_tool_calling_agent(self.llm, self.citation_tools, agent_prompt)
-            agent_executor = AgentExecutor(agent=agent, tools=self.citation_tools, verbose=True)
-            
-            # Execute the health assessment with tool access
+            # Execute assessment with Google Search grounding
             response = await asyncio.wait_for(
                 asyncio.get_event_loop().run_in_executor(
                     None,
-                    lambda: agent_executor.invoke({"input": prompt})
+                    lambda: genai.GenerativeModel(self.model).generate_content(
+                        prompt,
+                        generation_config=genai.GenerationConfig(
+                            temperature=0,
+                            max_output_tokens=4000
+                        ),
+                        tools=['google_search_retrieval']  # Enable Google Search grounding
+                    )
                 ),
-                timeout=45.0  # Increase timeout for real research
+                timeout=20.0  # Timeout for grounded search
             )
             
             # Set product context for parser
             self._current_product = product
             
-            # Parse the LangChain response - extract output text
-            response_text = response.get('output', '') if isinstance(response, dict) else str(response)
-            logger.info(f"[LangChain Assessment] Response received: {len(response_text)} characters")
+            # Parse the Gemini response - extract text
+            response_text = response.text if hasattr(response, 'text') else str(response)
+            logger.info(f"[Google Search Grounding] Response received: {len(response_text)} characters")
             
             # Parse the structured response
             assessment_data = await self._parse_assessment_response(
