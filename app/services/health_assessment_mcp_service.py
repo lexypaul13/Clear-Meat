@@ -780,7 +780,9 @@ class HealthAssessmentMCPService:
                 "product_name": product.product.name,
                 "product_brand": product.product.brand or "",
                 "ingredients": product.product.ingredients_text or "",
-                "assessment_type": "Direct Assessment from AI Categorization"
+                "assessment_type": "Direct Assessment from AI Categorization",
+                "citations_available": len(citations) > 0,
+                "note": "Citations search skipped due to categorization fallback" if len(citations) == 0 else None
             }
         }
         
@@ -1066,22 +1068,55 @@ class HealthAssessmentMCPService:
             # Set product context for parser
             self._current_product = product
             
-            # First, search for citations for each high/moderate risk ingredient
+            # Try to search for citations for each high/moderate risk ingredient
             all_citations = []
+            citations_available = True
             
-            # Search citations for high-risk ingredients
-            for ingredient in high_risk_ingredients[:3]:  # Limit to top 3
-                logger.info(f"[LangChain] Searching citations for high-risk ingredient: {ingredient}")
-                citations = await self._search_ingredient_citations(ingredient, "toxicity health effects", 2)
-                all_citations.extend(citations)
-            
-            # Search citations for moderate-risk ingredients
-            for ingredient in moderate_risk_ingredients[:2]:  # Limit to top 2
-                logger.info(f"[LangChain] Searching citations for moderate-risk ingredient: {ingredient}")
-                citations = await self._search_ingredient_citations(ingredient, "safety assessment", 1)
-                all_citations.extend(citations)
-            
-            logger.info(f"[LangChain] Found {len(all_citations)} total citations")
+            try:
+                # Search citations for high-risk ingredients
+                for ingredient in high_risk_ingredients[:3]:  # Limit to top 3
+                    try:
+                        logger.info(f"[LangChain] Searching citations for high-risk ingredient: {ingredient}")
+                        search_params = CitationSearch(
+                            ingredient_name=ingredient,
+                            search_query=f"{ingredient} toxicity health effects",
+                            max_results=2
+                        )
+                        citation_result = await asyncio.wait_for(
+                            self._search_citations_async(search_params, "high"),
+                            timeout=10.0  # 10 second timeout per ingredient
+                        )
+                        if citation_result and citation_result.get("citations"):
+                            all_citations.extend(citation_result["citations"])
+                    except Exception as e:
+                        logger.warning(f"[Citation Search] Failed to get citations for {ingredient}: {e}")
+                        continue
+                
+                # Search citations for moderate-risk ingredients
+                for ingredient in moderate_risk_ingredients[:2]:  # Limit to top 2
+                    try:
+                        logger.info(f"[LangChain] Searching citations for moderate-risk ingredient: {ingredient}")
+                        search_params = CitationSearch(
+                            ingredient_name=ingredient,
+                            search_query=f"{ingredient} safety assessment",
+                            max_results=1
+                        )
+                        citation_result = await asyncio.wait_for(
+                            self._search_citations_async(search_params, "moderate"),
+                            timeout=10.0  # 10 second timeout per ingredient
+                        )
+                        if citation_result and citation_result.get("citations"):
+                            all_citations.extend(citation_result["citations"])
+                    except Exception as e:
+                        logger.warning(f"[Citation Search] Failed to get citations for {ingredient}: {e}")
+                        continue
+                
+                logger.info(f"[LangChain] Found {len(all_citations)} total citations")
+                
+            except Exception as e:
+                logger.warning(f"[Citation Search] Citation search failed due to network issues: {e}")
+                citations_available = False
+                all_citations = []
             
             # Build the assessment prompt with citations included
             prompt = self._build_evidence_assessment_prompt(
@@ -1109,10 +1144,17 @@ class HealthAssessmentMCPService:
                 low_risk_ingredients, ingredient_analyses
             )
             
-            # Add the real citations we found
+            # Add the real citations we found and metadata
             if assessment_data:
                 assessment_data["citations"] = all_citations
-                logger.info(f"[LangChain Assessment] Successfully generated assessment with {len(all_citations)} real citations")
+                # Add citations availability to metadata
+                if "metadata" not in assessment_data:
+                    assessment_data["metadata"] = {}
+                assessment_data["metadata"]["citations_available"] = citations_available
+                if not citations_available:
+                    assessment_data["metadata"]["note"] = "Citations temporarily unavailable due to network issues"
+                
+                logger.info(f"[LangChain Assessment] Successfully generated assessment with {len(all_citations)} real citations (available: {citations_available})")
                 return assessment_data
             else:
                 return None
@@ -2255,8 +2297,8 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
     
     async def _search_citations_async(self, search_params: CitationSearch, risk_level: str) -> Optional[Dict[str, Any]]:
         """Search citations asynchronously with retry logic for rate limiting."""
-        max_retries = 2
-        base_delay = 1
+        max_retries = 1  # Reduced for faster failure with unreliable internet
+        base_delay = 0.5
         
         for attempt in range(max_retries + 1):
             try:
