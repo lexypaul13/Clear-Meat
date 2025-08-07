@@ -590,8 +590,8 @@ class HealthAssessmentMCPService:
                         ingredient=clean_ingredient,
                         health_claim="health effects safety toxicity",
                         max_results=2,
-                        search_fda=True,
-                        search_who=True,
+                        search_fda=False,  # Disabled due to SSL handshake failures
+                        search_who=False,  # Disabled due to 404 errors
                         search_cdc=True
                     )
                     
@@ -669,8 +669,8 @@ class HealthAssessmentMCPService:
                         ingredient=clean_ingredient,
                         health_claim="health effects dietary intake safety",
                         max_results=1,
-                        search_fda=True,
-                        search_who=True,
+                        search_fda=False,  # Disabled due to SSL handshake failures
+                        search_who=False,  # Disabled due to 404 errors
                         search_cdc=True
                     )
                     
@@ -1080,7 +1080,11 @@ class HealthAssessmentMCPService:
                         search_params = CitationSearch(
                             ingredient_name=ingredient,
                             search_query=f"{ingredient} toxicity health effects",
-                            max_results=2
+                            max_results=2,
+                            # Disable failing sources
+                            search_fda=False,  # SSL handshake failures
+                            search_who=False,  # 404 errors
+                            search_semantic_scholar=False  # Rate limiting
                         )
                         citation_result = await asyncio.wait_for(
                             self._search_citations_async(search_params, "high"),
@@ -1099,7 +1103,11 @@ class HealthAssessmentMCPService:
                         search_params = CitationSearch(
                             ingredient_name=ingredient,
                             search_query=f"{ingredient} safety assessment",
-                            max_results=1
+                            max_results=1,
+                            # Disable failing sources
+                            search_fda=False,  # SSL handshake failures
+                            search_who=False,  # 404 errors
+                            search_semantic_scholar=False  # Rate limiting
                         )
                         citation_result = await asyncio.wait_for(
                             self._search_citations_async(search_params, "moderate"),
@@ -2227,13 +2235,13 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
                     # Disable academic sources that cause rate limiting
                     search_pubmed=False,
                     search_crossref=False,
-                    search_semantic_scholar=False,
+                    search_semantic_scholar=False,  # Already disabled due to rate limiting
                     # Focus on reliable web authority sources
-                    search_fda=True,
+                    search_fda=False,  # Disabled due to SSL handshake failures
                     search_cdc=True,
                     search_mayo_clinic=True,
                     search_nih=True,
-                    search_who=True,
+                    search_who=False,  # Disabled due to 404 errors
                     search_harvard_health=True,
                     # Disable preprint sources for reliability
                     search_arxiv=False,
