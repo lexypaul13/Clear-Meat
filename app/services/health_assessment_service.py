@@ -143,9 +143,12 @@ def generate_health_assessment(product: ProductStructured, db: Optional[Session]
     
     for attempt in range(max_retries):
         try:
-            # Call Gemini API
+            # Call Gemini API with Google Search grounding
             model = genai.GenerativeModel(settings.GEMINI_MODEL)
-            response = model.generate_content(prompt)
+            response = model.generate_content(
+                prompt,
+                tools=['google_search_retrieval']  # Enable Google Search grounding
+            )
             
             # Parse and validate response
             assessment = _parse_gemini_response(response.text)

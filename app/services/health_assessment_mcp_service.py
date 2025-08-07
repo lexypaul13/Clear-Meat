@@ -40,7 +40,8 @@ from app.core.config import settings
 from app.core.cache import cache
 from app.models.product import HealthAssessment, ProductStructured
 from app.models.citation import CitationSearch, CitationResult, Citation
-from app.services.langchain_citation_tools import citation_tools
+from app.services.grounded_cache_service import grounded_cache
+# from app.services.langchain_citation_tools import citation_tools  # Disabled - using Gemini Google Search instead
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,8 @@ class HealthAssessmentMCPService:
             google_api_key=settings.GEMINI_API_KEY,
             temperature=0
         )
-        self.citation_tools = citation_tools
+        # self.citation_tools = citation_tools  # Disabled - using Google Search grounding
+        self.citation_tools = []  # Empty list for compatibility
         
     async def generate_health_assessment_with_real_evidence(
         self, 
@@ -272,7 +274,8 @@ class HealthAssessmentMCPService:
                     None,
                     lambda: genai.GenerativeModel(self.model).generate_content(
                         prompt,
-                        generation_config=genai.GenerationConfig(temperature=0)
+                        generation_config=genai.GenerationConfig(temperature=0),
+                        tools=['google_search_retrieval']  # Enable Google Search for ingredient research
                     )
                 ),
                 timeout=30.0  # Increased timeout from 10s to 30s
@@ -582,7 +585,8 @@ class HealthAssessmentMCPService:
             else:
                 # Try automated citation search for other ingredients
                 try:
-                    from app.services.citation_tools import CitationSearchService
+                    # Citation tools disabled - using Google Search grounding
+            # from app.services.citation_tools import CitationSearchService
                     search_service = CitationSearchService()
                     from app.models.citation import CitationSearch
                     
@@ -661,7 +665,8 @@ class HealthAssessmentMCPService:
             else:
                 # Try automated citation search for other moderate-risk ingredients
                 try:
-                    from app.services.citation_tools import CitationSearchService
+                    # Citation tools disabled - using Google Search grounding
+            # from app.services.citation_tools import CitationSearchService
                     search_service = CitationSearchService()
                     from app.models.citation import CitationSearch
                     
@@ -1061,75 +1066,40 @@ class HealthAssessmentMCPService:
         low_risk_ingredients: List[str] = None,
         ingredient_analyses: Dict[str, Dict[str, str]] = None
     ) -> Optional[HealthAssessment]:
-        """Generate evidence-based assessment using LangChain tools."""
+        """Generate evidence-based assessment using Gemini with Google Search grounding."""
         try:
-            logger.info(f"[LangChain Assessment] Starting health analysis with citation tools")
+            logger.info(f"[Google Search Grounding] Starting health analysis with real-time web search")
+            
+            # Check cache first
+            cached_assessment = grounded_cache.get_grounded_assessment(product.product.code)
+            if cached_assessment:
+                logger.info(f"[Grounded Cache] Returning cached assessment for {product.product.code}")
+                return cached_assessment.get("assessment")
+            
+            # Try to build from cached ingredients
+            all_ingredients = {}
+            for ing in high_risk_ingredients:
+                all_ingredients[ing] = "high"
+            for ing in moderate_risk_ingredients:
+                all_ingredients[ing] = "moderate"
+            
+            cached_partial = grounded_cache.build_assessment_from_cached_ingredients(all_ingredients)
+            if cached_partial and cached_partial.get("cache_coverage", 0) >= 0.8:
+                logger.info(f"[Grounded Cache] Using {cached_partial['cache_coverage']*100:.0f}% cached ingredient data")
+                # TODO: Build full assessment from cached ingredients
             
             # Set product context for parser
             self._current_product = product
             
-            # Try to search for citations for each high/moderate risk ingredient
-            all_citations = []
-            citations_available = True
-            
-            try:
-                # Search citations for high-risk ingredients
-                for ingredient in high_risk_ingredients[:3]:  # Limit to top 3
-                    try:
-                        logger.info(f"[LangChain] Searching citations for high-risk ingredient: {ingredient}")
-                        search_params = CitationSearch(
-                            ingredient_name=ingredient,
-                            search_query=f"{ingredient} toxicity health effects",
-                            max_results=2,
-                            # Disable failing sources
-                            search_fda=False,  # SSL handshake failures
-                            search_who=False  # 404 errors
-                        )
-                        citation_result = await asyncio.wait_for(
-                            self._search_citations_async(search_params, "high"),
-                            timeout=10.0  # 10 second timeout per ingredient
-                        )
-                        if citation_result and citation_result.get("citations"):
-                            all_citations.extend(citation_result["citations"])
-                    except Exception as e:
-                        logger.warning(f"[Citation Search] Failed to get citations for {ingredient}: {e}")
-                        continue
-                
-                # Search citations for moderate-risk ingredients
-                for ingredient in moderate_risk_ingredients[:2]:  # Limit to top 2
-                    try:
-                        logger.info(f"[LangChain] Searching citations for moderate-risk ingredient: {ingredient}")
-                        search_params = CitationSearch(
-                            ingredient_name=ingredient,
-                            search_query=f"{ingredient} safety assessment",
-                            max_results=1,
-                            # Disable failing sources
-                            search_fda=False,  # SSL handshake failures
-                            search_who=False  # 404 errors
-                        )
-                        citation_result = await asyncio.wait_for(
-                            self._search_citations_async(search_params, "moderate"),
-                            timeout=10.0  # 10 second timeout per ingredient
-                        )
-                        if citation_result and citation_result.get("citations"):
-                            all_citations.extend(citation_result["citations"])
-                    except Exception as e:
-                        logger.warning(f"[Citation Search] Failed to get citations for {ingredient}: {e}")
-                        continue
-                
-                logger.info(f"[LangChain] Found {len(all_citations)} total citations")
-                
-            except Exception as e:
-                logger.warning(f"[Citation Search] Citation search failed due to network issues: {e}")
-                citations_available = False
-                all_citations = []
-            
-            # Build the assessment prompt with citations included
-            prompt = self._build_evidence_assessment_prompt(
+            # Build the assessment prompt requesting evidence-based information
+            prompt = self._build_grounded_assessment_prompt(
                 product, high_risk_ingredients, moderate_risk_ingredients
             )
             
-            # Generate assessment using regular Gemini (citations already found)
+            # Generate assessment using Gemini with Google Search grounding enabled
+            logger.info(f"[Google Search Grounding] Sending grounded request to Gemini API")
+            start_time = time.time()
+            
             response = await asyncio.wait_for(
                 asyncio.get_event_loop().run_in_executor(
                     None,
@@ -1138,11 +1108,15 @@ class HealthAssessmentMCPService:
                         generation_config=genai.GenerationConfig(
                             temperature=0,
                             max_output_tokens=4000
-                        )
+                        ),
+                        tools=['google_search_retrieval']  # Enable Google Search grounding
                     )
                 ),
-                timeout=15.0
+                timeout=20.0  # Slightly longer timeout for grounded searches
             )
+            
+            elapsed_time = time.time() - start_time
+            logger.info(f"[Google Search Grounding] Response received in {elapsed_time:.2f}s")
             
             # Parse the structured response into HealthAssessment
             assessment_data = await self._parse_assessment_response(
@@ -1150,20 +1124,52 @@ class HealthAssessmentMCPService:
                 low_risk_ingredients, ingredient_analyses
             )
             
-            # Add the real citations we found and metadata
-            if assessment_data:
-                assessment_data["citations"] = all_citations
-                # Add citations availability to metadata
-                if "metadata" not in assessment_data:
-                    assessment_data["metadata"] = {}
-                assessment_data["metadata"]["citations_available"] = citations_available
-                if not citations_available:
-                    assessment_data["metadata"]["note"] = "Citations temporarily unavailable due to network issues"
+            # Extract grounding metadata if available
+            if assessment_data and hasattr(response, 'grounding_metadata'):
+                try:
+                    # Extract citations from grounding metadata
+                    grounding_citations = []
+                    if response.grounding_metadata and hasattr(response.grounding_metadata, 'grounding_chunks'):
+                        for chunk in response.grounding_metadata.grounding_chunks:
+                            if hasattr(chunk, 'web') and chunk.web:
+                                grounding_citations.append({
+                                    'title': chunk.web.title if hasattr(chunk.web, 'title') else '',
+                                    'url': chunk.web.uri if hasattr(chunk.web, 'uri') else '',
+                                    'source': 'Google Search'
+                                })
+                    
+                    if grounding_citations:
+                        assessment_data["grounding_citations"] = grounding_citations
+                        logger.info(f"[Google Search Grounding] Found {len(grounding_citations)} web sources")
+                    
+                    # Add metadata about grounding
+                    if "metadata" not in assessment_data:
+                        assessment_data["metadata"] = {}
+                    assessment_data["metadata"]["grounding_enabled"] = True
+                    assessment_data["metadata"]["grounding_source"] = "Google Search"
+                except Exception as e:
+                    logger.warning(f"Could not extract grounding metadata: {e}")
                 
-                logger.info(f"[LangChain Assessment] Successfully generated assessment with {len(all_citations)} real citations (available: {citations_available})")
+                logger.info(f"[Google Search Grounding] Successfully generated grounded assessment")
+                
+                # Cache the grounded assessment
+                if assessment_data:
+                    grounded_cache.cache_grounded_assessment(
+                        product.product.code,
+                        assessment_data,
+                        high_risk_ingredients + moderate_risk_ingredients
+                    )
+                
                 return assessment_data
             else:
-                return None
+                # Cache even without grounding metadata
+                if assessment_data:
+                    grounded_cache.cache_grounded_assessment(
+                        product.product.code,
+                        assessment_data,
+                        high_risk_ingredients + moderate_risk_ingredients
+                    )
+                return assessment_data
                 
         except asyncio.TimeoutError:
             logger.warning(f"LangChain health assessment generation timed out for product {product.product.code}")
@@ -1342,6 +1348,48 @@ LOW RISK INGREDIENTS:
 
 Categorize all {len(all_ingredients)} ingredients above."""
     
+    def _build_grounded_assessment_prompt(
+        self, 
+        product: ProductStructured,
+        high_risk_ingredients: List[str],
+        moderate_risk_ingredients: List[str]
+    ) -> str:
+        """Build prompt for Google Search grounded assessment."""
+        
+        ingredients_list = []
+        if high_risk_ingredients:
+            ingredients_list.extend([f"{ing} (high-risk)" for ing in high_risk_ingredients[:3]])
+        if moderate_risk_ingredients:
+            ingredients_list.extend([f"{ing} (moderate-risk)" for ing in moderate_risk_ingredients[:2]])
+        
+        return f"""Analyze the health effects of these meat product ingredients using current scientific evidence and trusted health sources.
+
+PRODUCT: {product.product.name}
+INGREDIENTS TO RESEARCH: {', '.join(ingredients_list)}
+
+Search for and cite information from:
+- Government health agencies (FDA, CDC, NIH, WHO, USDA)
+- Major medical institutions (Mayo Clinic, Cleveland Clinic, Johns Hopkins)
+- Peer-reviewed research and PubMed studies
+- Reputable health websites (Healthline, WebMD, Harvard Health)
+- Evidence-based nutrition sites (Examine.com, NutritionFacts.org)
+- Consumer safety organizations (EWG, Consumer Reports)
+
+For each ingredient, provide:
+1. Specific health risks and benefits based on current research
+2. Safe consumption levels and regulatory limits
+3. Recent studies or regulatory updates (2020-2024)
+4. Practical dietary recommendations
+
+Format your response as a structured health assessment with:
+- Summary (100-150 characters)
+- Grade (A-F based on overall safety)
+- Detailed ingredient analysis with specific citations
+- Nutrition insights
+- Clear recommendations
+
+IMPORTANT: Cite specific sources with organization names and key findings. Focus on evidence-based information from trusted authorities."""
+
     def _build_evidence_assessment_prompt(
         self, 
         product: ProductStructured,
@@ -2190,7 +2238,8 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
             logger.info(f"[Real Citations] Starting citation generation for {len(high_risk_ingredients)} high-risk, {len(moderate_risk_ingredients)} moderate-risk ingredients")
             
             # ENHANCED CITATION LOGIC - Real scientific research
-            from app.services.citation_tools import CitationSearchService
+            # Citation tools disabled - using Google Search grounding
+            # from app.services.citation_tools import CitationSearchService
             from app.models.citation import CitationSearch
             
             citations = []
@@ -2234,7 +2283,7 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
                     search_pubmed=False,
                     search_crossref=False,
                     # Focus on reliable web authority sources
-                    search_fda=False  # Disabled due to SSL handshake failures
+                    search_fda=False,  # Disabled due to SSL handshake failures
                     search_cdc=True,
                     search_mayo_clinic=True,
                     search_nih=True,
@@ -2377,7 +2426,8 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
     
     def _search_citations_sync(self, search_params: CitationSearch):
         """Synchronous citation search wrapper for executor."""
-        from app.services.citation_tools import CitationSearchService
+        # Citation tools disabled - using Google Search grounding
+        # from app.services.citation_tools import CitationSearchService
         citation_service = CitationSearchService()
         return citation_service.search_citations(search_params)
     

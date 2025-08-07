@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field
 
 from app.services.gemini_service import GeminiService
-from app.services.citation_tools import CitationSearchService
+# from app.services.citation_tools import CitationSearchService  # Disabled - using Google Search grounding
 from app.models.citation import CitationSearch
 
 logger = logging.getLogger(__name__)

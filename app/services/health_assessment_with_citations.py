@@ -9,8 +9,9 @@ from pydantic import ValidationError
 from app.core.config import settings
 from app.core.cache import cache, CacheService
 from app.models.product import HealthAssessment, ProductStructured
-from app.services.citation_tools import CitationSearchService
-from app.services.async_citation_search import search_citations_for_health_assessment
+# Citation services disabled - using Gemini Google Search grounding
+# from app.services.citation_tools import CitationSearchService
+# from app.services.async_citation_search import search_citations_for_health_assessment
 from app.models.citation import CitationSearch
 
 logger = logging.getLogger(__name__)
@@ -25,7 +26,7 @@ class HealthAssessmentWithCitations:
         
         # Configure Gemini API key
         genai.configure(api_key=settings.GEMINI_API_KEY)
-        self.citation_service = CitationSearchService()
+        # self.citation_service = CitationSearchService()  # Disabled - using Google Search grounding
     
     def generate_health_assessment_with_real_citations(
         self, 
@@ -242,7 +243,6 @@ class HealthAssessmentWithCitations:
                     max_results=2,
                     search_pubmed=True,
                     search_crossref=True,
-                    search_semantic_scholar=True,
                     search_fda=True,
                     search_who=True,
                     search_harvard_health=True,

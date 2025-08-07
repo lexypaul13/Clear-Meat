@@ -36,10 +36,10 @@ backoff==2.2.1
 tqdm==4.66.1
 pillow>=10.0.0
 
-# Citation and research tools
-crossref-commons==0.0.7
-pymed==0.8.9
-lxml>=4.9.0
+# Citation and research tools - DISABLED (replaced with Gemini Google Search)
+# crossref-commons==0.0.7  # Removed - was causing timeout errors
+# pymed==0.8.9  # Removed - was causing timeout errors
+lxml>=4.9.0  # Still needed for other parsing tasks
 
 # LangChain for Google Gemini tool integration
 langchain==0.3.26

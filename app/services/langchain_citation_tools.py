@@ -4,11 +4,12 @@ from typing import List, Dict, Any
 from langchain.tools import tool
 from pydantic import BaseModel, Field
 
-from app.services.citation_tools import CitationSearchService
+# from app.services.citation_tools import CitationSearchService  # Disabled - using Google Search grounding
 from app.models.citation import CitationSearch
 
-# Initialize citation service
-citation_service = CitationSearchService()
+# Initialize citation service - DISABLED
+# citation_service = CitationSearchService()
+citation_service = None  # Disabled - using Google Search grounding
 
 
 def _format_citations_response(citations, source_name):
