@@ -145,8 +145,13 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
         if image_url and image_url.strip():
             product_info["image_url"] = image_url
         
+        # Shorten summary by removing redundant "This product" prefix
+        raw_summary = assessment.get("summary", "")
+        if raw_summary.startswith("This product "):
+            raw_summary = raw_summary[13:]  # Remove "This product "
+        
         optimized = {
-            "summary": truncate_text(assessment.get("summary", ""), 200),
+            "summary": truncate_text(raw_summary, 200),
             "grade": assessment.get("risk_summary", {}).get("grade", ""),
             "color": assessment.get("risk_summary", {}).get("color", ""),
             "product_info": product_info,
@@ -181,7 +186,6 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
             optimized["high_risk"].append({
                 "name": truncate_text(ingredient_name, 50),
                 "risk": ingredient.get("micro_report", ""),
-                "overview": truncate_text(insights["overview"], 80),
                 "citations": ingredient_citations
             })
         
@@ -205,7 +209,6 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
             optimized["moderate_risk"].append({
                 "name": truncate_text(ingredient_name, 50),
                 "risk": ingredient.get("micro_report", ""),
-                "overview": truncate_text(insights["overview"], 80),
                 "citations": ingredient_citations
             })
         
@@ -227,7 +230,7 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
                         "nutrient": insight.get("nutrient", ""),
                         "amount": insight.get("amount_per_serving", ""),
                         "eval": insight.get("evaluation", ""),
-                        "comment": insight.get("ai_commentary", "")  # Don't truncate - should be complete from backend
+                        "comment": truncate_text(insight.get("ai_commentary", ""), 80)  # Light truncation for mobile
                     })
                     break
         
@@ -244,19 +247,13 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
             if url and url.strip():
                 valid_citations.append({
                     "id": citation.get("id", len(valid_citations) + 1),
-                    "title": truncate_text(title, 100),
+                    "title": truncate_text(title, 50),
                     "year": citation.get("year", 2024),
                     "url": url
                 })
         
         # Use filtered citations with URLs
         optimized["citations"] = valid_citations
-        
-        # Keep essential metadata but minimize it
-        optimized["meta"] = {
-            "product": assessment.get("metadata", {}).get("product_name", ""),
-            "generated": assessment.get("metadata", {}).get("generated_at", "")[:10]  # Just date, not full timestamp
-        }
         
         return optimized
         
