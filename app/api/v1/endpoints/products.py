@@ -337,22 +337,20 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
         # Use real scientific citations from the advanced search system
         original_citations = assessment.get("citations", [])
         
-        # Filter and use only valid citations with URLs
+        # Include citations even if URL is missing so the UI can show non-clickable cards
         valid_citations = []
         for citation in original_citations:
-            title = citation.get("title", "")
-            url = citation.get("url", "")
-            
-            # Only include citations that have URLs (fixed fallback citations now have URLs)
-            if url and url.strip():
-                valid_citations.append({
-                    "id": citation.get("id", len(valid_citations) + 1),
-                    "title": truncate_text(title, 50),
-                    "year": citation.get("year", 2024),
-                    "url": url
-                })
+            title = citation.get("title", "").strip()
+            if not title:
+                continue  # skip malformed items with no title
+            valid_citations.append({
+                "id": citation.get("id", len(valid_citations) + 1),
+                "title": truncate_text(title, 80),
+                "year": citation.get("year", 2024),
+                "url": citation.get("url", "")
+            })
         
-        # Use filtered citations with URLs
+        # Use filtered citations (clickable when URL is present; otherwise informational)
         optimized["citations"] = valid_citations
         
         return optimized
