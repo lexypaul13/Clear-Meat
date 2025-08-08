@@ -335,7 +335,8 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
                     break
         
         # Use real scientific citations from the advanced search system
-        original_citations = assessment.get("citations", [])
+        original_citations = assessment.get("citations", []) or []
+        grounding_citations = assessment.get("grounding_citations", []) or []
         
         # Include citations even if URL is missing so the UI can show non-clickable cards
         valid_citations = []
@@ -350,7 +351,20 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
                 "url": citation.get("url", "")
             })
         
-        # Use filtered citations (clickable when URL is present; otherwise informational)
+        # Merge in grounding citations (assign new IDs after originals)
+        for gc in grounding_citations:
+            title = gc.get("title", "").strip()
+            url = gc.get("url", "")
+            if not title:
+                continue
+            valid_citations.append({
+                "id": len(valid_citations) + 1,
+                "title": truncate_text(title, 80),
+                "year": 2024,
+                "url": url
+            })
+        
+        # Use combined citations (clickable when URL is present; otherwise informational)
         optimized["citations"] = valid_citations
         
         return optimized
