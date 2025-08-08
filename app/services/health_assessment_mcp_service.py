@@ -1332,17 +1332,17 @@ HIGH RISK: Known health risks (carcinogens, toxic additives)
 MODERATE RISK: Health concerns requiring moderation (high sodium, preservatives, allergens)  
 LOW RISK: Generally safe ingredients
 
-IMPORTANT: Only provide health analysis for HIGH and MODERATE risk ingredients (max 80 characters each). Low risk ingredients need NO analysis.
+IMPORTANT: Provide detailed health analysis for HIGH and MODERATE risk ingredients with scientific evidence. Low risk ingredients need only a brief note.
 
 FORMAT:
 HIGH RISK INGREDIENTS:
-- [Name]: [Brief health concern, max 80 chars]
+- [Name]: [Detailed health concern with specific effects, 150-200 chars. Include mechanism of action and cite sources]
 
 MODERATE RISK INGREDIENTS:  
-- [Name]: [Brief health concern, max 80 chars]
+- [Name]: [Health considerations with context, 100-150 chars. Include safe consumption levels if known]
 
 LOW RISK INGREDIENTS:
-- [Name only, no analysis needed]
+- [Name]: [Brief positive or neutral note, ~50 chars]
 
 Categorize all {len(all_ingredients)} ingredients above."""
     
@@ -1352,7 +1352,7 @@ Categorize all {len(all_ingredients)} ingredients above."""
         high_risk_ingredients: List[str],
         moderate_risk_ingredients: List[str]
     ) -> str:
-        """Build prompt for Google Search grounded assessment."""
+        """Build prompt for Google Search grounded assessment with detailed citations."""
         
         ingredients_list = []
         if high_risk_ingredients:
@@ -1360,33 +1360,33 @@ Categorize all {len(all_ingredients)} ingredients above."""
         if moderate_risk_ingredients:
             ingredients_list.extend([f"{ing} (moderate-risk)" for ing in moderate_risk_ingredients[:2]])
         
-        return f"""Analyze the health effects of these meat product ingredients using current scientific evidence and trusted health sources.
+        return f"""Analyze these meat product ingredients using current scientific evidence.
 
 PRODUCT: {product.product.name}
 INGREDIENTS TO RESEARCH: {', '.join(ingredients_list)}
 
-Search for and cite information from:
-- Government health agencies (FDA, CDC, NIH, WHO, USDA)
-- Major medical institutions (Mayo Clinic, Cleveland Clinic, Johns Hopkins)
-- Peer-reviewed research and PubMed studies
-- Reputable health websites (Healthline, WebMD, Harvard Health)
-- Evidence-based nutrition sites (Examine.com, NutritionFacts.org)
-- Consumer safety organizations (EWG, Consumer Reports)
-
 For each ingredient, provide:
-1. Specific health risks and benefits based on current research
-2. Safe consumption levels and regulatory limits
-3. Recent studies or regulatory updates (2020-2024)
-4. Practical dietary recommendations
+1. Detailed health effects (2-3 sentences) with specific studies cited
+2. Mechanism of action in the body  
+3. Safe consumption levels per FDA/WHO guidelines
+4. Special population concerns (pregnant women, children, etc.)
+5. Any recent regulatory updates or safety assessments (2020-2024)
 
-Format your response as a structured health assessment with:
-- Summary (100-150 characters)
-- Grade (A-F based on overall safety)
-- Detailed ingredient analysis with specific citations
-- Nutrition insights
-- Clear recommendations
+Format your response with:
+- Clear health implications backed by evidence
+- Inline citations as [1], [2] etc.
+- Practical consumer guidance
 
-IMPORTANT: Cite specific sources with organization names and key findings. Focus on evidence-based information from trusted authorities."""
+Search these trusted sources:
+- FDA, USDA, CDC, NIH databases
+- Mayo Clinic, Cleveland Clinic, Johns Hopkins
+- PubMed studies (prioritize 2020-2024)
+- WHO food safety guidelines
+- Consumer Reports, EWG assessments
+
+At the end, list all sources:
+[1] Source Name (Year): "Key finding or quote" - URL
+[2] Source Name (Year): "Key finding or quote" - URL"""
 
     def _build_evidence_assessment_prompt(
         self, 

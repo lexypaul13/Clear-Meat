@@ -95,6 +95,79 @@ _INGREDIENT_INSIGHTS_CACHE = {
 def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
     """Optimize health assessment response for mobile consumption with performance-optimized ingredient insights."""
     try:
+        # --- Helper extractors for enhanced ingredient details ---
+        import re
+
+        def extract_mechanism_from_text(text: str) -> str:
+            """Extract a short mechanism-of-action sentence from the analysis text."""
+            if not text:
+                return ""
+            patterns = [
+                r"mechanism[s]?\s*[:]\s*([^.]+\.)",
+                r"affect[s]?\s+(?:the\s+)?body\s+by\s+([^.]+\.)",
+                r"work[s]?\s+by\s+([^.]+\.)",
+                r"cause[s]?\s+([^.]+\.)",
+            ]
+            for pat in patterns:
+                m = re.search(pat, text, flags=re.IGNORECASE)
+                if m:
+                    return m.group(1).strip()
+            return ""
+
+        def extract_safe_levels_from_text(text: str) -> str:
+            """Extract safe consumption level guidance if mentioned."""
+            if not text:
+                return ""
+            patterns = [
+                r"FDA\s+limit[s]?\s*[:]?\s*([^.]+\.)",
+                r"WHO\s+guideline[s]?\s*[:]?\s*([^.]+\.)",
+                r"(ADI|acceptable\s+daily\s+intake)\s*[:]?\s*([^.]+\.)",
+                r"safe\s+level[s]?\s*[:]?\s*([^.]+\.)",
+                r"daily\s+intake\s*[:]?\s*([^.]+\.)",
+            ]
+            for pat in patterns:
+                m = re.search(pat, text, flags=re.IGNORECASE)
+                if m:
+                    # Return the last non-empty group
+                    for group in reversed(m.groups() or ()):  # type: ignore
+                        if group and isinstance(group, str):
+                            return group.strip()
+            return ""
+
+        def extract_populations_from_text(text: str) -> list:
+            """Extract populations at risk as a list of strings."""
+            if not text:
+                return []
+            lowered = text.lower()
+            populations = []
+            if "pregnant" in lowered:
+                populations.append("pregnant women")
+            if "child" in lowered or "children" in lowered:
+                populations.append("children")
+            if "elderly" in lowered or "older adult" in lowered or "seniors" in lowered:
+                populations.append("older adults")
+            if "hypertension" in lowered or "high blood pressure" in lowered:
+                populations.append("people with hypertension")
+            if "kidney" in lowered:
+                populations.append("people with kidney disease")
+            return populations
+
+        def extract_regulatory_info(text: str) -> str:
+            """Extract regulatory status snippets if present."""
+            if not text:
+                return ""
+            patterns = [
+                r"(FDA\s+(monitor|set|require)[^\.]+\.)",
+                r"(WHO\s+(recommend|advise)[^\.]+\.)",
+                r"(EU\s+regulation[^\.]+\.)",
+                r"(Prop\s*65[^\.]+\.)",
+            ]
+            for pat in patterns:
+                m = re.search(pat, text, flags=re.IGNORECASE)
+                if m:
+                    return m.group(1).strip()
+            return ""
+
         # Helper function to truncate text properly - but don't truncate nutrition comments
         def truncate_text(text: str, max_length: int, preserve_complete: bool = False) -> str:
             if len(text) <= max_length:
@@ -173,9 +246,13 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
             ingredient_name = ingredient.get("name", "")
             insights = get_ingredient_insights(ingredient_name, "high")
             
-            # Pre-calculate citation IDs (2 per high-risk ingredient)
-            ingredient_citations = [citation_counter, citation_counter + 1]
-            citation_counter += 2
+            # Prefer citations provided by backend; otherwise generate placeholders
+            provided_citations = ingredient.get("citations", []) or []
+            if provided_citations:
+                ingredient_citations = provided_citations
+            else:
+                ingredient_citations = [citation_counter, citation_counter + 1]
+                citation_counter += 2
             
             # Batch citation data for later processing
             citations_data.extend([
@@ -183,11 +260,19 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
                 {"id": ingredient_citations[1], "ingredient": ingredient_name, "priority": "high"}
             ])
             
+            micro_report = ingredient.get("micro_report", "")
             optimized["high_risk"].append({
                 "name": truncate_text(ingredient_name, 50),
-                "risk": ingredient.get("micro_report", ""),
-                "overview": ingredient.get("micro_report", insights.get("overview", "")),  # Use AI-generated micro_report as overview
-                "citations": ingredient_citations
+                "risk": micro_report,
+                "overview": micro_report,  # Preserve full content for overview
+                "details": {
+                    "mechanism": extract_mechanism_from_text(micro_report),
+                    "safe_levels": extract_safe_levels_from_text(micro_report),
+                    "populations_at_risk": extract_populations_from_text(micro_report),
+                    "regulatory_status": extract_regulatory_info(micro_report),
+                },
+                "citations": ingredient_citations,
+                "risk_level": "high",
             })
         
         # Process moderate-risk ingredients with optimized insights lookup
@@ -196,9 +281,13 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
             ingredient_name = ingredient.get("name", "")
             insights = get_ingredient_insights(ingredient_name, "moderate")
             
-            # Pre-calculate citation ID (1 per moderate-risk ingredient)
-            ingredient_citations = [citation_counter]
-            citation_counter += 1
+            # Prefer citations provided by backend; otherwise generate placeholders
+            provided_citations = ingredient.get("citations", []) or []
+            if provided_citations:
+                ingredient_citations = provided_citations
+            else:
+                ingredient_citations = [citation_counter]
+                citation_counter += 1
             
             # Batch citation data for later processing
             citations_data.append({
@@ -207,11 +296,19 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
                 "priority": "moderate"
             })
             
+            micro_report = ingredient.get("micro_report", "")
             optimized["moderate_risk"].append({
                 "name": truncate_text(ingredient_name, 50),
-                "risk": ingredient.get("micro_report", ""),
-                "overview": ingredient.get("micro_report", insights.get("overview", "")),  # Use AI-generated micro_report as overview
-                "citations": ingredient_citations
+                "risk": micro_report,
+                "overview": micro_report,  # Preserve full content
+                "details": {
+                    "mechanism": extract_mechanism_from_text(micro_report),
+                    "safe_levels": extract_safe_levels_from_text(micro_report),
+                    "populations_at_risk": extract_populations_from_text(micro_report),
+                    "regulatory_status": extract_regulatory_info(micro_report),
+                },
+                "citations": ingredient_citations,
+                "risk_level": "moderate",
             })
         
         # Low risk ingredients - simple format, no citations (performance optimization)
