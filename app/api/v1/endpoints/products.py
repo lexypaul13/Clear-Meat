@@ -246,10 +246,33 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
             raw_summary = raw_summary[13:]  # Remove "This product "
         raw_summary = clean_text(raw_summary)
         
+        # Get grade and color with fallbacks
+        risk_summary = assessment.get("risk_summary", {})
+        grade = risk_summary.get("grade", "")
+        color = risk_summary.get("color", "")
+        
+        # If grade/color are missing, try to infer from ingredients
+        if not grade or not color:
+            high_risk_count = len(assessment.get("ingredients_assessment", {}).get("high_risk", []))
+            moderate_risk_count = len(assessment.get("ingredients_assessment", {}).get("moderate_risk", []))
+            
+            if high_risk_count > 0:
+                grade = grade or "D"
+                color = color or "red"
+            elif moderate_risk_count > 2:
+                grade = grade or "C"
+                color = color or "yellow"
+            elif moderate_risk_count > 0:
+                grade = grade or "B"
+                color = color or "yellow"
+            else:
+                grade = grade or "A"
+                color = color or "green"
+        
         optimized = {
             "summary": truncate_text(raw_summary, 200),
-            "grade": assessment.get("risk_summary", {}).get("grade", ""),
-            "color": assessment.get("risk_summary", {}).get("color", ""),
+            "grade": grade,
+            "color": color,
             "product_info": product_info,
             "high_risk": [],
             "moderate_risk": [],
@@ -324,6 +347,12 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
                     break
         
         # Citations removed - using AI-generated responses only
+        
+        # Add meta field for mobile apps
+        optimized["meta"] = {
+            "product": assessment.get("metadata", {}).get("product_name", ""),
+            "generated": assessment.get("metadata", {}).get("generated_at", "")[:19] if assessment.get("metadata", {}).get("generated_at") else ""
+        }
         
         return optimized
         
