@@ -93,10 +93,32 @@ _INGREDIENT_INSIGHTS_CACHE = {
 }
 
 def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
-    """Optimize health assessment response for mobile consumption with performance-optimized ingredient insights."""
+    """Optimize health assessment response for mobile consumption with performance-optimized ingredient insights.
+
+    Also sanitizes text to remove markdown symbols, bracketed citation markers, and excessive whitespace.
+    """
     try:
         # --- Helper extractors for enhanced ingredient details ---
         import re
+
+        def clean_text(text: str) -> str:
+            """Remove markdown symbols, bracketed citation markers, and normalize whitespace."""
+            if not isinstance(text, str):
+                return text
+            # Unescape HTML entities
+            try:
+                unescaped = html.unescape(text)
+            except Exception:
+                unescaped = text
+            cleaned = unescaped
+            # Remove bold/markdown markers and leading list bullets
+            cleaned = cleaned.replace("**", "").replace("__", "")
+            cleaned = re.sub(r"^[\\-*•\s]+", "", cleaned.strip())
+            # Remove bracketed numeric citation markers like [1][2]
+            cleaned = re.sub(r"\s*\[\d+\]\s*", " ", cleaned)
+            # Collapse internal whitespace and trim
+            cleaned = re.sub(r"\s+", " ", cleaned).strip()
+            return cleaned
 
         def extract_mechanism_from_text(text: str) -> str:
             """Extract a short mechanism-of-action sentence from the analysis text."""
@@ -218,10 +240,11 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
         if image_url and image_url.strip():
             product_info["image_url"] = image_url
         
-        # Shorten summary by removing redundant "This product" prefix
+        # Shorten and sanitize summary
         raw_summary = assessment.get("summary", "")
         if raw_summary.startswith("This product "):
             raw_summary = raw_summary[13:]  # Remove "This product "
+        raw_summary = clean_text(raw_summary)
         
         optimized = {
             "summary": truncate_text(raw_summary, 200),
@@ -240,19 +263,19 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
         # Process high-risk ingredients without citations
         high_risk_ingredients = ingredients.get("high_risk", [])
         for ingredient in high_risk_ingredients:
-            ingredient_name = ingredient.get("name", "")
+            ingredient_name = clean_text(ingredient.get("name", ""))
             insights = get_ingredient_insights(ingredient_name, "high")
             
-            micro_report = ingredient.get("micro_report", "")
+            micro_report = clean_text(ingredient.get("micro_report", ""))
             optimized["high_risk"].append({
                 "name": truncate_text(ingredient_name, 50),
                 "risk": micro_report,
                 "overview": micro_report,  # Preserve full content for overview
                 "details": {
-                    "mechanism": extract_mechanism_from_text(micro_report),
-                    "safe_levels": extract_safe_levels_from_text(micro_report),
-                    "populations_at_risk": extract_populations_from_text(micro_report),
-                    "regulatory_status": extract_regulatory_info(micro_report),
+                    "mechanism": clean_text(extract_mechanism_from_text(micro_report)),
+                    "safe_levels": clean_text(extract_safe_levels_from_text(micro_report)),
+                    "populations_at_risk": [clean_text(p) for p in extract_populations_from_text(micro_report)],
+                    "regulatory_status": clean_text(extract_regulatory_info(micro_report)),
                 },
                 "risk_level": "high",
             })
@@ -260,19 +283,19 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
         # Process moderate-risk ingredients without citations
         moderate_risk_ingredients = ingredients.get("moderate_risk", [])
         for ingredient in moderate_risk_ingredients:
-            ingredient_name = ingredient.get("name", "")
+            ingredient_name = clean_text(ingredient.get("name", ""))
             insights = get_ingredient_insights(ingredient_name, "moderate")
             
-            micro_report = ingredient.get("micro_report", "")
+            micro_report = clean_text(ingredient.get("micro_report", ""))
             optimized["moderate_risk"].append({
                 "name": truncate_text(ingredient_name, 50),
                 "risk": micro_report,
                 "overview": micro_report,  # Preserve full content
                 "details": {
-                    "mechanism": extract_mechanism_from_text(micro_report),
-                    "safe_levels": extract_safe_levels_from_text(micro_report),
-                    "populations_at_risk": extract_populations_from_text(micro_report),
-                    "regulatory_status": extract_regulatory_info(micro_report),
+                    "mechanism": clean_text(extract_mechanism_from_text(micro_report)),
+                    "safe_levels": clean_text(extract_safe_levels_from_text(micro_report)),
+                    "populations_at_risk": [clean_text(p) for p in extract_populations_from_text(micro_report)],
+                    "regulatory_status": clean_text(extract_regulatory_info(micro_report)),
                 },
                 "risk_level": "moderate",
             })
@@ -280,9 +303,9 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
         # Low risk ingredients - simple format, no citations (performance optimization)
         for ingredient in ingredients.get("low_risk", []):
             optimized["low_risk"].append({
-                "name": truncate_text(ingredient.get("name", ""), 50),
-                "risk": truncate_text(ingredient.get("micro_report", ""), 150),
-                "overview": ingredient.get("micro_report", "")  # Include overview for consistency
+                "name": truncate_text(clean_text(ingredient.get("name", "")), 50),
+                "risk": truncate_text(clean_text(ingredient.get("micro_report", "")), 150),
+                "overview": clean_text(ingredient.get("micro_report", ""))  # Include overview for consistency
             })
         
         # Optimize nutrition insights - keep only the most important nutrients
@@ -293,10 +316,10 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
             for insight in nutrition_insights:
                 if insight.get("nutrient") == nutrient_name:
                     optimized["nutrition"].append({
-                        "nutrient": insight.get("nutrient", ""),
-                        "amount": insight.get("amount_per_serving", ""),
-                        "eval": insight.get("evaluation", ""),
-                        "comment": truncate_text(insight.get("ai_commentary", ""), 80)  # Light truncation for mobile
+                        "nutrient": clean_text(insight.get("nutrient", "")),
+                        "amount": clean_text(insight.get("amount_per_serving", "")),
+                        "eval": clean_text(insight.get("evaluation", "")),
+                        "comment": truncate_text(clean_text(insight.get("ai_commentary", "")), 80)  # Light truncation for mobile
                     })
                     break
         
