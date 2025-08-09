@@ -952,16 +952,6 @@ class HealthAssessmentMCPService:
                 logger.info(f"[Google Search Grounding] Successfully generated grounded assessment")
                 
                 # Cache the grounded assessment
-            if assessment_data:
-                    grounded_cache.cache_grounded_assessment(
-                        product.product.code,
-                        assessment_data,
-                        high_risk_ingredients + moderate_risk_ingredients
-                    )
-                
-                return assessment_data
-            else:
-                # Cache even without grounding metadata
                 if assessment_data:
                     grounded_cache.cache_grounded_assessment(
                         product.product.code,
