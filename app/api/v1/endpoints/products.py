@@ -113,7 +113,7 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
             cleaned = unescaped
             # Remove bold/markdown markers and leading list bullets
             cleaned = cleaned.replace("**", "").replace("__", "")
-            cleaned = re.sub(r"^[\\-*•\s]+", "", cleaned.strip())
+            cleaned = re.sub(r"^[\-*•\s]+", "", cleaned.strip())
             # Remove bracketed numeric citation markers like [1][2]
             cleaned = re.sub(r"\s*\[\d+\]\s*", " ", cleaned)
             # Collapse internal whitespace and trim
