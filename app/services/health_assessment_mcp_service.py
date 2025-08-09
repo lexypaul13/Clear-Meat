@@ -442,7 +442,8 @@ class HealthAssessmentMCPService:
                         for pattern in patterns:
                             match = re.match(pattern, line)
                             if match:
-                                ingredient_name = match.group(1).strip()
+                                # Clean markdown formatting from ingredient name
+                                ingredient_name = match.group(1).strip().replace("**", "").replace("__", "")
                                 analysis = match.group(2).strip()
                                 
                                 # Validate ingredient name
@@ -535,13 +536,19 @@ class HealthAssessmentMCPService:
         for ingredient in high_risk_ingredients:
             analysis = ""
             if ingredient_analyses and 'high' in ingredient_analyses:
-                analysis = ingredient_analyses['high'].get(ingredient, "")
+                # Try to find analysis with cleaned name (without markdown)
+                clean_name = ingredient.replace("**", "").replace("__", "").strip()
+                analysis = ingredient_analyses['high'].get(ingredient, "") or \
+                          ingredient_analyses['high'].get(clean_name, "")
             
             if not analysis:
                 analysis = self._generate_ingredient_specific_fallback(ingredient, "high")
+                logger.debug(f"[DIRECT ASSESSMENT] Using fallback for high-risk: {ingredient}")
             
+            # Clean the ingredient name for display (remove markdown)
+            clean_ingredient_name = ingredient.replace("**", "").replace("__", "").strip()
             ingredients_assessment["high_risk"].append({
-                "name": ingredient,
+                "name": clean_ingredient_name,
                 "risk_level": "high",
                 "micro_report": analysis
 
@@ -552,13 +559,19 @@ class HealthAssessmentMCPService:
         for ingredient in moderate_risk_ingredients:
             analysis = ""
             if ingredient_analyses and 'moderate' in ingredient_analyses:
-                analysis = ingredient_analyses['moderate'].get(ingredient, "")
+                # Try to find analysis with cleaned name (without markdown)
+                clean_name = ingredient.replace("**", "").replace("__", "").strip()
+                analysis = ingredient_analyses['moderate'].get(ingredient, "") or \
+                          ingredient_analyses['moderate'].get(clean_name, "")
             
             if not analysis:
                 analysis = self._generate_ingredient_specific_fallback(ingredient, "moderate")
+                logger.debug(f"[DIRECT ASSESSMENT] Using fallback for moderate-risk: {ingredient}")
             
+            # Clean the ingredient name for display (remove markdown)
+            clean_ingredient_name = ingredient.replace("**", "").replace("__", "").strip()
             ingredients_assessment["moderate_risk"].append({
-                "name": ingredient,
+                "name": clean_ingredient_name,
                 "risk_level": "moderate", 
                 "micro_report": analysis
             })
@@ -573,8 +586,10 @@ class HealthAssessmentMCPService:
             if not analysis:
                 analysis = self._generate_ingredient_specific_fallback(ingredient, "low")
             
+            # Clean the ingredient name for display (remove markdown)
+            clean_ingredient_name = ingredient.replace("**", "").replace("__", "").strip()
             ingredients_assessment["low_risk"].append({
-                "name": ingredient,
+                "name": clean_ingredient_name,
                 "risk_level": "low",
                 "micro_report": analysis,
 
@@ -688,7 +703,7 @@ class HealthAssessmentMCPService:
         return cleaned
     
     def _validate_ingredient_list(self, ingredients: List[str]) -> List[str]:
-        """Validate and clean an ingredient list, removing non-ingredient entries."""
+        """Validate and clean an ingredient list, removing non-ingredient entries and markdown formatting."""
         validated = []
         
         skip_patterns = [
@@ -698,6 +713,9 @@ class HealthAssessmentMCPService:
         ]
         
         for ingredient in ingredients:
+            # Clean markdown formatting
+            ingredient = ingredient.replace("**", "").replace("__", "").strip()
+            
             # Skip empty or very short
             if len(ingredient) < 2:
                 continue
