@@ -102,7 +102,7 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
         import re
 
         def clean_text(text: str) -> str:
-            """Remove markdown symbols, bracketed citation markers, and normalize whitespace."""
+            """Remove markdown symbols, bracketed citation markers, source attributions, and normalize whitespace."""
             if not isinstance(text, str):
                 return text
             # Unescape HTML entities
@@ -116,6 +116,8 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
             cleaned = re.sub(r"^[\-*•\s]+", "", cleaned.strip())
             # Remove bracketed numeric citation markers like [1][2]
             cleaned = re.sub(r"\s*\[\d+\]\s*", " ", cleaned)
+            # Remove source attributions like (Source: General knowledge)
+            cleaned = re.sub(r"\s*\([Ss]ource:.*?\)", "", cleaned)
             # Collapse internal whitespace and trim
             cleaned = re.sub(r"\s+", " ", cleaned).strip()
             return cleaned
