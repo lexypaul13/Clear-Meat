@@ -15,9 +15,9 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.cache import cache, CacheService  # Use unified cache
 from app.models.product import HealthAssessment, ProductStructured
-from app.api.v1.models import EnhancedHealthAssessment, Citation
+from app.api.v1.models import EnhancedHealthAssessment
 from app.db import models as db_models
-from app.services.health_assessment_with_citations import HealthAssessmentWithCitations
+# Citation service removed - using AI-generated responses only
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +98,7 @@ class HealthAssessmentService:
         
         # Configure Gemini API key
         genai.configure(api_key=settings.GEMINI_API_KEY)
-        self.citation_service = HealthAssessmentWithCitations()  # Add citation service
+        # Citation service removed - using AI-generated responses only
 
 def generate_health_assessment(product: ProductStructured, db: Optional[Session] = None) -> Optional[HealthAssessment]:
     """

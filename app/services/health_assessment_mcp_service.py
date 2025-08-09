@@ -39,7 +39,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from app.core.config import settings
 from app.core.cache import cache
 from app.models.product import HealthAssessment, ProductStructured
-from app.models.citation import CitationSearch, CitationResult, Citation
+
 from app.services.grounded_cache_service import grounded_cache
 # from app.services.langchain_citation_tools import citation_tools  # Disabled - using Gemini Google Search instead
 
@@ -99,7 +99,7 @@ class HealthAssessmentMCPService:
             # Generate cache key with version to force refresh with enhanced citation system
             # Add timestamp to force fresh generation for debugging
             import time
-            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v27_working_citations")
+            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v28_no_citations")
             
             # Check cache first with fixed citation URLs
             cached_result = cache.get(cache_key)
@@ -531,190 +531,7 @@ class HealthAssessmentMCPService:
         else:
             summary = "This product appears to have minimal concerning additives based on current analysis."
         
-        # Search for real citations for both high-risk and moderate-risk ingredients
-        citations = []
-        citation_id = 1
-        
-        # Track citation IDs for each ingredient
-        ingredient_citations = {}
-        
-        # Search for real citations for high-risk ingredients (up to 8)
-        for ingredient in high_risk_ingredients[:8]:
-            clean_ingredient = ingredient.replace("**", "").strip().lower()
-            
-            # Add real citations for known dangerous ingredients based on actual research
-            if "sodium nitrite" in clean_ingredient or "e250" in clean_ingredient:
-                citations.append({
-                    "id": citation_id,
-                    "title": "WHO report: Carcinogenicity of consumption of red meat and processed meat",
-                    "source": "World Health Organization",
-                    "year": 2015,
-                    "url": "https://www.who.int/news-room/q-a-detail/cancer-carcinogenicity-of-the-consumption-of-red-meat-and-processed-meat",
-                    "source_type": "who_research"
-                })
-                citation_id += 1
-                citations.append({
-                    "id": citation_id,
-                    "title": "FDA: Sodium Reduction Initiative",
-                    "source": "U.S. Food and Drug Administration",
-                    "year": 2024,
-                    "url": "https://www.fda.gov/food/food-additives-petitions/sodium-reduction",
-                    "source_type": "fda_research"
-                })
-                citation_id += 1
-            elif "bha" in clean_ingredient or "bht" in clean_ingredient:
-                citations.append({
-                    "id": citation_id,
-                    "title": "National Toxicology Program: BHA and BHT Carcinogenicity Studies",
-                    "source": "National Institute of Environmental Health Sciences",
-                    "year": 2023,
-                    "url": "https://www.niehs.nih.gov/health/topics/agents/pfc/", 
-                    "source_type": "niehs_research"
-                })
-                citation_id += 1
-            elif "msg" in clean_ingredient or "monosodium glutamate" in clean_ingredient:
-                citations.append({
-                    "id": citation_id,
-                    "title": "FDA: Questions and Answers on Monosodium glutamate (MSG)",
-                    "source": "U.S. Food and Drug Administration", 
-                    "year": 2024,
-                    "url": "https://www.fda.gov/food/food-additives-petitions/questions-and-answers-monosodium-glutamate-msg",
-                    "source_type": "fda_research"
-                })
-                citation_id += 1
-            else:
-                # Try automated citation search for other ingredients
-                try:
-                    # Citation tools disabled - using Google Search grounding
-            # from app.services.citation_tools import CitationSearchService
-                    search_service = CitationSearchService()
-                    from app.models.citation import CitationSearch
-                    
-                    search_params = CitationSearch(
-                        ingredient=clean_ingredient,
-                        health_claim="health effects safety toxicity",
-                        max_results=2,
-                        search_fda=False,  # Disabled due to SSL handshake failures
-                        search_who=False,  # Disabled due to 404 errors
-                        search_cdc=True
-                    )
-                    
-                    result = search_service.search_citations(search_params)
-                    if result.citations:
-                        for citation in result.citations[:2]:
-                            citations.append({
-                                "id": citation_id,
-                                "title": citation.title,
-                                "source": citation.journal or "Research Database",
-                                "year": citation.publication_date.year if citation.publication_date else 2024,
-                                "url": citation.url or "",
-                                "source_type": citation.source_type or "research"
-                            })
-                            citation_id += 1
-                            
-                except Exception as e:
-                    logger.warning(f"Automated citation search failed for {ingredient}: {e}")
-            
-            # Track citation IDs for this ingredient
-            if clean_ingredient not in ingredient_citations:
-                ingredient_citations[clean_ingredient] = []
-            # Record citations generated for this ingredient
-            # Count how many citations were added in this iteration
-            current_citation_count = len(citations)
-            if current_citation_count > 0:
-                # Find citations added for this ingredient (could be 1 or 2)
-                for cit in citations:
-                    if cit['id'] >= citation_id - 2 and cit['id'] < citation_id:
-                        ingredient_citations[clean_ingredient].append(cit['id'])
-        
-        # Search for real citations for moderate-risk ingredients (up to 8)
-        for ingredient in moderate_risk_ingredients[:8]:
-            clean_ingredient = ingredient.replace("**", "").strip().lower()
-            
-            # Check for known moderate-risk ingredients
-            if "msg" in clean_ingredient or "monosodium glutamate" in clean_ingredient:
-                citations.append({
-                    "id": citation_id,
-                    "title": "FDA: Questions and Answers on Monosodium glutamate (MSG)",
-                    "source": "U.S. Food and Drug Administration", 
-                    "year": 2024,
-                    "url": "https://www.fda.gov/food/food-additives-petitions/questions-and-answers-monosodium-glutamate-msg",
-                    "source_type": "fda_research"
-                })
-                citation_id += 1
-            elif "sodium phosphate" in clean_ingredient or "phosphate" in clean_ingredient:
-                citations.append({
-                    "id": citation_id,
-                    "title": "Dietary Phosphorus and Cardiovascular Disease",
-                    "source": "National Institutes of Health",
-                    "year": 2023,
-                    "url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6198708/",
-                    "source_type": "nih_research"
-                })
-                citation_id += 1
-            elif "sugar" in clean_ingredient or "corn syrup" in clean_ingredient:
-                citations.append({
-                    "id": citation_id,
-                    "title": "Added Sugars and Cardiovascular Disease Risk",
-                    "source": "American Heart Association",
-                    "year": 2024,
-                    "url": "https://www.heart.org/en/healthy-living/healthy-eating/eat-smart/sugar/added-sugars",
-                    "source_type": "aha_research"
-                })
-                citation_id += 1
-            else:
-                # Try automated citation search for other moderate-risk ingredients
-                try:
-                    # Citation tools disabled - using Google Search grounding
-            # from app.services.citation_tools import CitationSearchService
-                    search_service = CitationSearchService()
-                    from app.models.citation import CitationSearch
-                    
-                    search_params = CitationSearch(
-                        ingredient=clean_ingredient,
-                        health_claim="health effects dietary intake safety",
-                        max_results=1,
-                        search_fda=False,  # Disabled due to SSL handshake failures
-                        search_who=False,  # Disabled due to 404 errors
-                        search_cdc=True
-                    )
-                    
-                    result = search_service.search_citations(search_params)
-                    if result.citations:
-                        for citation in result.citations[:1]:
-                            citations.append({
-                                "id": citation_id,
-                                "title": citation.title,
-                                "source": citation.journal or "Research Database",
-                                "year": citation.publication_date.year if citation.publication_date else 2024,
-                                "url": citation.url or "",
-                                "source_type": citation.source_type or "research"
-                            })
-                            citation_id += 1
-                            
-                except Exception as e:
-                    logger.warning(f"Automated citation search failed for moderate-risk {ingredient}: {e}")
-            
-            # Track citation IDs for this ingredient
-            if clean_ingredient not in ingredient_citations:
-                ingredient_citations[clean_ingredient] = []
-            # Add citation ID generated for this ingredient
-            if citations and citations[-1]['id'] == citation_id - 1:
-                ingredient_citations[clean_ingredient].append(citation_id - 1)
-        
-        # If no real citations found, add informational message
-        if not citations:
-            citations.append({
-                "id": 1,
-                "title": "Research citations not available",
-                "source": "Clear-Meat Analysis", 
-                "year": datetime.now().year,
-                "url": "",
-                "source_type": "info_message"
-            })
-        
-        # Now populate ingredients assessment with proper citation references
-        # Process high-risk ingredients with analyses
+        # Process ingredients assessment without citations
         for ingredient in high_risk_ingredients:
             analysis = ""
             if ingredient_analyses and 'high' in ingredient_analyses:
@@ -723,16 +540,13 @@ class HealthAssessmentMCPService:
             if not analysis:
                 analysis = self._generate_ingredient_specific_fallback(ingredient, "high")
             
-            clean_ingredient = ingredient.replace("**", "").strip().lower()
-            citation_refs = ingredient_citations.get(clean_ingredient, [])
-            
             ingredients_assessment["high_risk"].append({
                 "name": ingredient,
                 "risk_level": "high",
-                "micro_report": analysis,
-                "citations": citation_refs  # Use actual citation IDs found
+                "micro_report": analysis
+
             })
-            logger.info(f"[DIRECT ASSESSMENT] Added high-risk: {ingredient} with citations {citation_refs}")
+            logger.info(f"[DIRECT ASSESSMENT] Added high-risk: {ingredient}")
         
         # Process moderate-risk ingredients
         for ingredient in moderate_risk_ingredients:
@@ -743,16 +557,12 @@ class HealthAssessmentMCPService:
             if not analysis:
                 analysis = self._generate_ingredient_specific_fallback(ingredient, "moderate")
             
-            clean_ingredient = ingredient.replace("**", "").strip().lower()
-            citation_refs = ingredient_citations.get(clean_ingredient, [])
-            
             ingredients_assessment["moderate_risk"].append({
                 "name": ingredient,
                 "risk_level": "moderate", 
-                "micro_report": analysis,
-                "citations": citation_refs  # Use actual citation IDs found
+                "micro_report": analysis
             })
-            logger.info(f"[DIRECT ASSESSMENT] Added moderate-risk: {ingredient} with citations {citation_refs}")
+            logger.info(f"[DIRECT ASSESSMENT] Added moderate-risk: {ingredient}")
         
         # Process some low-risk ingredients (limit to avoid huge payloads)
         for ingredient in low_risk_ingredients[:5]:
@@ -767,7 +577,7 @@ class HealthAssessmentMCPService:
                 "name": ingredient,
                 "risk_level": "low",
                 "micro_report": analysis,
-                "citations": []  # Low-risk ingredients don't need citations
+
             })
         
         assessment_result = {
@@ -778,20 +588,17 @@ class HealthAssessmentMCPService:
             },
             "ingredients_assessment": ingredients_assessment,
             "nutrition_insights": self._generate_fallback_nutrition_insights(product),
-            "citations": citations,
             "metadata": {
                 "generated_at": datetime.now().isoformat(),
                 "product_code": product.product.code,
                 "product_name": product.product.name,
                 "product_brand": product.product.brand or "",
                 "ingredients": product.product.ingredients_text or "",
-                "assessment_type": "Direct Assessment from AI Categorization",
-                "citations_available": len(citations) > 0,
-                "note": "Citations search skipped due to categorization fallback" if len(citations) == 0 else None
+                "assessment_type": "Direct Assessment from AI Categorization"
             }
         }
         
-        logger.info(f"[DIRECT ASSESSMENT] Created assessment with {len(citations)} citations")
+        logger.info(f"[DIRECT ASSESSMENT] Created assessment")
         logger.info(f"[DIRECT ASSESSMENT] Final grade: {grade}, color: {color}")
         
         return assessment_result
@@ -981,7 +788,7 @@ class HealthAssessmentMCPService:
                 "name": "Sodium Nitrite/Nitrate",
                 "risk_level": "high",
                 "micro_report": "Preservative linked to potential health concerns when consumed regularly.",
-                "citations": []
+
             })
         
         if 'bha' in ingredients_text or 'bht' in ingredients_text:
@@ -989,7 +796,7 @@ class HealthAssessmentMCPService:
                 "name": "BHA/BHT",
                 "risk_level": "high",
                 "micro_report": "Synthetic antioxidant with potential safety concerns.",
-                "citations": []
+
             })
         
         if 'msg' in ingredients_text or 'monosodium glutamate' in ingredients_text:
@@ -997,7 +804,7 @@ class HealthAssessmentMCPService:
                 "name": "MSG (Monosodium Glutamate)",
                 "risk_level": "moderate",
                 "micro_report": "Flavor enhancer that may cause reactions in sensitive individuals.",
-                "citations": []
+
             })
         
         if 'phosphate' in ingredients_text:
@@ -1005,7 +812,7 @@ class HealthAssessmentMCPService:
                 "name": "Phosphates",
                 "risk_level": "moderate",
                 "micro_report": "Preservative that may affect mineral balance when consumed in excess.",
-                "citations": []
+
             })
         
         # Generate summary based on risk level
@@ -1031,20 +838,12 @@ class HealthAssessmentMCPService:
                         "name": "Basic Ingredients",
                         "risk_level": "low",
                         "micro_report": "Standard meat product ingredients.",
-                        "citations": []
+        
                     }
                 ]
             },
             "nutrition_insights": self._generate_fallback_nutrition_insights(product),
-            "citations": [
-                {
-                    "id": 1,
-                    "title": "OpenFoodFacts Product Database",
-                    "source": "OpenFoodFacts",
-                    "year": 2024,
-                    "url": "https://world.openfoodfacts.org/"
-                }
-            ],
+
             "metadata": {
                 "generated_at": datetime.now().isoformat(),
                 "product_code": product.product.code,
@@ -1153,7 +952,7 @@ class HealthAssessmentMCPService:
                 logger.info(f"[Google Search Grounding] Successfully generated grounded assessment")
                 
                 # Cache the grounded assessment
-                if assessment_data:
+            if assessment_data:
                     grounded_cache.cache_grounded_assessment(
                         product.product.code,
                         assessment_data,
@@ -1287,13 +1086,7 @@ class HealthAssessmentMCPService:
             # Update the assessment with real ingredient data
             preliminary_assessment["ingredients_assessment"] = updated_ingredients_assessment
             
-            # Preserve existing citations instead of overwriting them
-            existing_citations = preliminary_assessment.get("citations", [])
-            new_citations = self._update_citations_for_ingredients(
-                high_risk_ingredients, moderate_risk_ingredients
-            )
-            # Keep existing citations and add any new ones (don't lose working citations)
-            preliminary_assessment["citations"] = existing_citations + new_citations
+            # Process existing assessment data without citations
             
             logger.info(f"[Merge] Successfully merged {len(high_risk_ingredients)} high-risk and {len(moderate_risk_ingredients)} moderate-risk ingredients")
             return preliminary_assessment
@@ -1387,7 +1180,7 @@ Search these trusted sources:
 At the end, list all sources:
 [1] Source Name (Year): "Key finding or quote" - URL
 [2] Source Name (Year): "Key finding or quote" - URL"""
-
+    
     def _build_evidence_assessment_prompt(
         self, 
         product: ProductStructured,
@@ -1478,7 +1271,6 @@ YOUR ANALYSIS MUST BE RESEARCH-DRIVEN, DETAILED, AND EVIDENCE-BASED."""
                     "low_risk": []
                 },
                 "nutrition_insights": [],
-                "citations": [],
                 "metadata": {
                     "generated_at": datetime.now().isoformat(),
                     "product_code": "",
@@ -1512,7 +1304,7 @@ YOUR ANALYSIS MUST BE RESEARCH-DRIVEN, DETAILED, AND EVIDENCE-BASED."""
                     "name": ingredient,
                     "risk_level": "high",
                     "micro_report": micro_report,  # Show full analysis
-                    "citations": [1, 2]
+
                 })
             
             # Use AI-generated micro-reports for moderate-risk ingredients
@@ -1532,7 +1324,7 @@ YOUR ANALYSIS MUST BE RESEARCH-DRIVEN, DETAILED, AND EVIDENCE-BASED."""
                     "name": ingredient,
                     "risk_level": "moderate",
                     "micro_report": micro_report,
-                    "citations": [3, 4]
+
                 })
             
             # Extract ALL ingredients from the product
@@ -1569,7 +1361,7 @@ YOUR ANALYSIS MUST BE RESEARCH-DRIVEN, DETAILED, AND EVIDENCE-BASED."""
                     "name": ingredient,
                     "risk_level": "low",
                     "micro_report": micro_report,
-                    "citations": [7]
+
                 })
             
             # Ensure we have at least one ingredient in each category for validation
@@ -1578,7 +1370,7 @@ YOUR ANALYSIS MUST BE RESEARCH-DRIVEN, DETAILED, AND EVIDENCE-BASED."""
                     "name": "Processed Ingredients",
                     "risk_level": "moderate",
                     "micro_report": "Processed ingredients may have health implications with regular consumption. [1]",
-                    "citations": [1]
+
                 })
             
             # Generate nutrition insights using dynamic AI method with error handling
@@ -1588,14 +1380,7 @@ YOUR ANALYSIS MUST BE RESEARCH-DRIVEN, DETAILED, AND EVIDENCE-BASED."""
                 logger.warning(f"AI nutrition generation failed, falling back to static insights: {e}")
                 assessment_data["nutrition_insights"] = self._generate_fallback_nutrition_insights(self._current_product)
             
-            # Citations should now come from the AI's MCP tool usage in the response
-            # Extract citations from the AI's response text instead of generating separately
-            logger.info(f"[MCP Citations] Parsing citations from AI response with MCP tools")
-            
-            # Parse citations from the WORKS CITED section of the response
-            citations_from_response = self._parse_citations_from_response(response_text)
-            logger.info(f"[MCP Citations] Found {len(citations_from_response)} citations from AI MCP tool usage")
-            assessment_data["citations"] = citations_from_response
+            # Process response without citations
             
             # Analyze product quality indicators
             product_name = self._current_product.product.name.lower() if self._current_product else ""
@@ -1747,8 +1532,7 @@ YOUR ANALYSIS MUST BE RESEARCH-DRIVEN, DETAILED, AND EVIDENCE-BASED."""
                 citation_markers = []
                 import re
                 markers = re.findall(r'\[(\d+)\]', citations_text)
-                # Convert to integers for the citation IDs
-                current_ingredient['citations'] = [int(m) for m in markers]
+                # Skip citation processing
         
         # Save final ingredient
         if current_ingredient:
@@ -2235,14 +2019,7 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
         try:
             logger.info(f"[Real Citations] Starting citation generation for {len(high_risk_ingredients)} high-risk, {len(moderate_risk_ingredients)} moderate-risk ingredients")
             
-            # ENHANCED CITATION LOGIC - Real scientific research
-            # Citation tools disabled - using Google Search grounding
-            # from app.services.citation_tools import CitationSearchService
-            from app.models.citation import CitationSearch
-            
-            citations = []
-            citation_id = 1
-            citation_service = CitationSearchService()
+            # Citation generation removed - using AI-generated responses only
             
             # Filter out trivial ingredients to save time
             filtered_high_risk = [ing for ing in high_risk_ingredients if not self._should_skip_citation(ing)]
@@ -2347,7 +2124,7 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
                 "source_type": "database"
             }]
     
-    async def _search_citations_async(self, search_params: CitationSearch, risk_level: str) -> Optional[Dict[str, Any]]:
+    async def _search_citations_async(self, search_params, risk_level: str) -> Optional[Dict[str, Any]]:
         """Search citations asynchronously with retry logic for rate limiting."""
         max_retries = 1  # Reduced for faster failure with unreliable internet
         base_delay = 0.5
@@ -2387,7 +2164,7 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
                             "source_type": getattr(citation, 'source_type', 'research')
                         })
                     
-                    return {"citations": citations_data}
+                    return {"analysis": "processed"}
                 
                 # If no results and we have retries left, continue to next attempt
                 if attempt < max_retries:
@@ -2422,12 +2199,9 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
         
         return None
     
-    def _search_citations_sync(self, search_params: CitationSearch):
-        """Synchronous citation search wrapper for executor."""
-        # Citation tools disabled - using Google Search grounding
-        # from app.services.citation_tools import CitationSearchService
-        citation_service = CitationSearchService()
-        return citation_service.search_citations(search_params)
+    def _search_citations_sync(self, search_params):
+        """Citation search disabled - using AI-generated responses only."""
+        return None
     
     async def _return_cached_result(self, cached_result):
         """Helper to return cached result as an awaitable."""

@@ -231,34 +231,17 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
             "high_risk": [],
             "moderate_risk": [],
             "low_risk": [],
-            "nutrition": [],
-            "citations": []  # Add citations array for mobile
+            "nutrition": []
         }
         
-        # Optimized ingredient processing with pre-computed insights and efficient citation tracking
+        # Optimized ingredient processing without citations
         ingredients = assessment.get("ingredients_assessment", {})
-        citation_counter = 1
-        citations_data = []  # Pre-build citations list for batch processing
         
-        # Process high-risk ingredients with optimized insights lookup
+        # Process high-risk ingredients without citations
         high_risk_ingredients = ingredients.get("high_risk", [])
         for ingredient in high_risk_ingredients:
             ingredient_name = ingredient.get("name", "")
             insights = get_ingredient_insights(ingredient_name, "high")
-            
-            # Prefer citations provided by backend; otherwise generate placeholders
-            provided_citations = ingredient.get("citations", []) or []
-            if provided_citations:
-                ingredient_citations = provided_citations
-            else:
-                ingredient_citations = [citation_counter, citation_counter + 1]
-                citation_counter += 2
-            
-            # Batch citation data for later processing
-            citations_data.extend([
-                {"id": ingredient_citations[0], "ingredient": ingredient_name, "priority": "high"},
-                {"id": ingredient_citations[1], "ingredient": ingredient_name, "priority": "high"}
-            ])
             
             micro_report = ingredient.get("micro_report", "")
             optimized["high_risk"].append({
@@ -271,30 +254,14 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
                     "populations_at_risk": extract_populations_from_text(micro_report),
                     "regulatory_status": extract_regulatory_info(micro_report),
                 },
-                "citations": ingredient_citations,
                 "risk_level": "high",
             })
         
-        # Process moderate-risk ingredients with optimized insights lookup
+        # Process moderate-risk ingredients without citations
         moderate_risk_ingredients = ingredients.get("moderate_risk", [])
         for ingredient in moderate_risk_ingredients:
             ingredient_name = ingredient.get("name", "")
             insights = get_ingredient_insights(ingredient_name, "moderate")
-            
-            # Prefer citations provided by backend; otherwise generate placeholders
-            provided_citations = ingredient.get("citations", []) or []
-            if provided_citations:
-                ingredient_citations = provided_citations
-            else:
-                ingredient_citations = [citation_counter]
-                citation_counter += 1
-            
-            # Batch citation data for later processing
-            citations_data.append({
-                "id": ingredient_citations[0], 
-                "ingredient": ingredient_name, 
-                "priority": "moderate"
-            })
             
             micro_report = ingredient.get("micro_report", "")
             optimized["moderate_risk"].append({
@@ -307,7 +274,6 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
                     "populations_at_risk": extract_populations_from_text(micro_report),
                     "regulatory_status": extract_regulatory_info(micro_report),
                 },
-                "citations": ingredient_citations,
                 "risk_level": "moderate",
             })
         
@@ -334,38 +300,7 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
                     })
                     break
         
-        # Use real scientific citations from the advanced search system
-        original_citations = assessment.get("citations", []) or []
-        grounding_citations = assessment.get("grounding_citations", []) or []
-        
-        # Include citations even if URL is missing so the UI can show non-clickable cards
-        valid_citations = []
-        for citation in original_citations:
-            title = citation.get("title", "").strip()
-            if not title:
-                continue  # skip malformed items with no title
-            valid_citations.append({
-                "id": citation.get("id", len(valid_citations) + 1),
-                "title": truncate_text(title, 80),
-                "year": citation.get("year", 2024),
-                "url": citation.get("url", "")
-            })
-        
-        # Merge in grounding citations (assign new IDs after originals)
-        for gc in grounding_citations:
-            title = gc.get("title", "").strip()
-            url = gc.get("url", "")
-            if not title:
-                continue
-            valid_citations.append({
-                "id": len(valid_citations) + 1,
-                "title": truncate_text(title, 80),
-                "year": 2024,
-                "url": url
-            })
-        
-        # Use combined citations (clickable when URL is present; otherwise informational)
-        optimized["citations"] = valid_citations
+        # Citations removed - using AI-generated responses only
         
         return optimized
         
@@ -1159,7 +1094,7 @@ async def complete_ai_assessment_in_background(
         if assessment:
             # Cache the completed assessment
             try:
-                cache_key = CacheService.generate_key(code, prefix="health_assessment_mcp_v27_working_citations")
+                cache_key = CacheService.generate_key(code, prefix="health_assessment_mcp_v28_no_citations")
                 cache.set(cache_key, assessment, ttl=86400)  # Cache for 24 hours
                 logger.info(f"[Background] ✅ Completed and cached AI assessment for {code}")
             except Exception as cache_error:
@@ -1628,5 +1563,69 @@ async def get_public_recommendations(
             status_code=500,
             detail=f"Failed to generate public recommendations: {str(e)}"
         )
+
+
+@router.delete("/cache/health-assessments", 
+    summary="Clear Health Assessment Cache",
+    description="Clear all cached health assessments to force fresh generation",
+    responses={
+        200: {
+            "description": "Cache cleared successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "Cleared 15 cached health assessments",
+                        "patterns_cleared": [
+                            "health_assessment*",
+                            "*health-assessment-mcp*"
+                        ],
+                        "total_keys_deleted": 15
+                    }
+                }
+            }
+        }
+    },
+    tags=["Cache Management"]
+)
+async def clear_health_assessment_cache() -> Dict[str, Any]:
+    """
+    Clear all cached health assessments to force fresh generation.
+    
+    This endpoint clears cached health assessments that may contain outdated
+    citation fields or other deprecated data structures.
+    
+    Returns:
+        Dict containing the number of cache entries cleared
+    """
+    from app.core.cache import cache
+    
+    patterns = [
+        "health_assessment*",
+        "*health-assessment-mcp*",
+        "*mcp_v27*",  # Old version cache keys
+        "*working_citations*"  # Citation-related cache keys
+    ]
+    
+    total_cleared = 0
+    patterns_cleared = []
+    
+    for pattern in patterns:
+        try:
+            cleared = cache.clear_pattern(pattern)
+            if cleared > 0:
+                patterns_cleared.append(pattern)
+                total_cleared += cleared
+                logger.info(f"Cleared {cleared} keys matching pattern: {pattern}")
+        except Exception as e:
+            logger.warning(f"Failed to clear pattern {pattern}: {e}")
+    
+    logger.info(f"Cache clearing completed: {total_cleared} total keys deleted")
+    
+    return {
+        "message": f"Cleared {total_cleared} cached health assessments",
+        "patterns_cleared": patterns_cleared,
+        "total_keys_deleted": total_cleared,
+        "cache_version_updated": "v28_no_citations"
+    }
 
 
