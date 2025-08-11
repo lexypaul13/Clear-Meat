@@ -626,21 +626,19 @@ async def get_personalized_explore(
         if not supabase_client:
             raise Exception("Supabase client not available")
         
-        # Get preferred meat types for database filtering
         preferred_types = user_preferences.get('preferred_meat_types', [])
+        logger.info(f"User preferences loaded - preferred_meat_types: {preferred_types}")
         
-        # Build Supabase query with database-level filtering
         query = supabase_client.table('products').select('*')
         
-        # Filter by meat types at database level if specified
         if preferred_types:
             query = query.in_('meat_type', preferred_types)
             logger.info(f"Filtering at database level for meat types: {preferred_types}")
+        else:
+            logger.info("No meat type preferences - fetching all products")
         
-        # Add pagination at database level
         query = query.range(offset, offset + limit - 1)
         
-        # Execute the optimized query
         products_result = query.execute()
         if not products_result.data:
             logger.warning("No products found in database for explore recommendations")
@@ -650,23 +648,28 @@ async def get_personalized_explore(
                 "hasMore": False
             }
         
-        # Convert to objects with proper attributes using a simple namespace
         from types import SimpleNamespace
         filtered_products = []
         for product_data in products_result.data:
-            # Use SimpleNamespace for proper attribute access
             product = SimpleNamespace(**product_data)
             filtered_products.append(product)
         
+        returned_meat_types = set()
+        for product in filtered_products:
+            if hasattr(product, 'meat_type') and product.meat_type:
+                returned_meat_types.add(product.meat_type)
+        
         logger.info(f"Retrieved {len(filtered_products)} products from database")
+        logger.info(f"Meat types in returned products: {sorted(list(returned_meat_types))}")
+        
+        if preferred_types and returned_meat_types - set(preferred_types):
+            logger.error(f"ERROR: Database returned unwanted meat types! Wanted: {preferred_types}, Got extra: {returned_meat_types - set(preferred_types)}")
         
         try:
-            # Pre-compute max nutritional values once for all products (O(n) instead of O(n²))
             logger.info("Computing max nutritional values...")
             max_values = compute_max_nutritional_values(filtered_products)
             logger.info(f"Max values computed: {max_values}")
             
-            # Score products based on preferences
             logger.info("Starting product scoring...")
             scored_products = []
             for i, product in enumerate(filtered_products):
@@ -675,24 +678,32 @@ async def get_personalized_explore(
                     scored_products.append((product, score))
                 except Exception as score_error:
                     logger.error(f"Error scoring product {i}: {str(score_error)}")
-                    # Use default score on error
                     scored_products.append((product, 0.0))
             
             logger.info(f"Scored {len(scored_products)} products")
             
-            # Sort by score (highest first)
             scored_products.sort(key=lambda x: x[1], reverse=True)
             
-            # Apply diversity factor to ensure representation of different meat types
-            logger.info("Applying diversity factor...")
+            logger.info(f"Applying diversity factor with preferred_types: {preferred_types}")
             recommended_products = apply_diversity_factor(scored_products, limit, preferred_types)
             logger.info(f"Selected {len(recommended_products)} products after diversity")
+            
+            if preferred_types:
+                final_meat_types = set()
+                for product in recommended_products:
+                    if hasattr(product, 'meat_type') and product.meat_type:
+                        final_meat_types.add(product.meat_type)
+                
+                unwanted = final_meat_types - set(preferred_types)
+                if unwanted:
+                    logger.error(f"ERROR: Final results contain unwanted meat types! Wanted: {preferred_types}, Got extra: {unwanted}")
+                    recommended_products = [p for p in recommended_products 
+                                           if hasattr(p, 'meat_type') and p.meat_type in preferred_types]
+                    logger.info(f"Filtered to {len(recommended_products)} products after removing unwanted types")
         except Exception as processing_error:
             logger.error(f"Error processing products: {str(processing_error)}")
-            # Return first N products as fallback
             recommended_products = filtered_products[:limit]
         
-        # Convert to Pydantic models for response
         logger.info("Converting to Pydantic models...")
         from app.models.product import Product as ProductModel
         result = []
@@ -725,14 +736,12 @@ async def get_personalized_explore(
         
         logger.info(f"Successfully converted {len(result)} products to models")
         
-        # Return paginated response with optimized metadata
-        # Use simple hasMore logic: if we got fewer results than requested, no more pages
         has_more = len(result) == limit
         
         logger.info(f"Returning response with {len(result)} recommendations")
         return {
             "recommendations": result,
-            "totalMatches": offset + len(result) + (1 if has_more else 0),  # Estimated count
+            "totalMatches": offset + len(result) + (1 if has_more else 0),
             "hasMore": has_more,
             "offset": offset,
             "limit": limit
@@ -829,42 +838,46 @@ def score_product_by_preferences(product, preferences, all_products):
     return score
 
 def apply_diversity_factor(scored_products, limit, preferred_types):
-    """Apply a diversity factor to ensure representation of different meat types."""
+    """Apply a diversity factor to ensure representation of different meat types.
+    
+    IMPORTANT: If preferred_types is specified, ONLY return products from those types.
+    """
     if not scored_products:
         return []
     
-    # If no preferred types, use all available types from scored products
     if not preferred_types:
         preferred_types = sorted(list(set(
             p.get('meat_type') if isinstance(p, dict) else getattr(p, 'meat_type', None) 
             for p, _ in scored_products 
             if (p.get('meat_type') if isinstance(p, dict) else getattr(p, 'meat_type', None))
         )))
+        logger.info(f"No user preference - using all available types: {preferred_types}")
+    else:
+        logger.info(f"Strict filtering - only using user preferred types: {preferred_types}")
     
     if not preferred_types:
         return [product for product, score in scored_products[:limit]]
     
-    # Calculate target distribution based on available types
     num_types = len(preferred_types)
-    slots_per_type = max(1, limit // num_types)  # Ensure at least 1 slot per type
+    slots_per_type = max(1, limit // num_types)
     
     selected_products = []
     type_counts = {meat_type: 0 for meat_type in preferred_types}
     type_products = {meat_type: [] for meat_type in preferred_types}
     
-    # Group products by meat type (handle both dict and object types)
     for product, score in scored_products:
         if isinstance(product, dict):
             meat_type = product.get('meat_type')
         else:
             meat_type = getattr(product, 'meat_type', None)
             
-        if meat_type and meat_type in type_products:
+        if meat_type and meat_type in preferred_types and meat_type in type_products:
             type_products[meat_type].append((product, score))
+        elif meat_type and meat_type not in preferred_types:
+            logger.warning(f"Skipping product with meat_type '{meat_type}' - not in preferred types {preferred_types}")
     
-    # Distribute slots fairly across meat types with timeout protection
     remaining_slots = limit
-    max_iterations = limit * 2  # Prevent infinite loops
+    max_iterations = limit * 2
     iteration_count = 0
     
     while remaining_slots > 0 and any(type_products[mt] for mt in preferred_types) and iteration_count < max_iterations:
@@ -881,16 +894,14 @@ def apply_diversity_factor(scored_products, limit, preferred_types):
                 remaining_slots -= 1
                 made_progress = True
         
-        # If no progress was made in this iteration, break to prevent infinite loop
         if not made_progress:
             break
     
-    # Fill remaining slots with best remaining products if needed
     if remaining_slots > 0:
         remaining_products = []
         for meat_type in preferred_types:
             remaining_products.extend(type_products[meat_type])
-        remaining_products.sort(key=lambda x: x[1], reverse=True)  # Sort by score
+        remaining_products.sort(key=lambda x: x[1], reverse=True)
         for product, score in remaining_products[:remaining_slots]:
             selected_products.append(product)
     
