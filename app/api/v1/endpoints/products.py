@@ -10,7 +10,7 @@ import datetime
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status, Path, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status, Path, BackgroundTasks, Request
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
 import uuid
@@ -20,7 +20,8 @@ from app.db import models as db_models
 from app.db.supabase_client import get_supabase_service
 from app.db.session import get_db
 from app.utils import helpers
-from app.internal.dependencies import get_current_active_user
+from app.internal.dependencies import get_current_active_user, get_current_user_optional
+from app.middleware.rate_limiting import check_guest_rate_limit
 from app.services.recommendation_service import (
     get_personalized_recommendations, analyze_product_match
 )
@@ -1223,10 +1224,11 @@ async def complete_ai_assessment_in_background(
 async def get_product_health_assessment_mcp(
     code: str,
     background_tasks: BackgroundTasks,
+    request: Request,
     format: Optional[str] = Query(None, regex="^(mobile|full)$", description="Response format: 'mobile' for optimized mobile response, 'full' for complete data"),
     db: Session = Depends(get_db),
     supabase_service = Depends(get_supabase_service),
-    current_user: db_models.User = Depends(get_current_active_user)
+    current_user: Optional[db_models.User] = Depends(get_current_user_optional)
 ) -> Union[models.HealthAssessment, Dict[str, Any]]:
     """
     Generate an evidence-based health assessment using MCP (Model Context Protocol).
@@ -1263,7 +1265,13 @@ async def get_product_health_assessment_mcp(
     Returns:
         Evidence-based health assessment with real scientific citations
     """
-    logger.info(f"Starting MCP health assessment for product {code}")
+    # Check rate limit for guest users (5 scans per hour)
+    check_guest_rate_limit(request, current_user)
+    
+    # Log request type
+    user_type = "authenticated" if current_user else "guest"
+    logger.info(f"Starting MCP health assessment for product {code} (user: {user_type})")
+    
     try:
         # Step 1: Fetch product data from Supabase
         logger.info("Step 1: Fetching product data from Supabase")
