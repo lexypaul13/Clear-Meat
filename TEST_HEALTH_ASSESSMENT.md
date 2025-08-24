@@ -1,5 +1,4 @@
-# Health Assessment Endpoint Testing Guide
-
+j
 ## Quick Test Script
 
 Create and run this Python script to test the health assessment endpoint:
