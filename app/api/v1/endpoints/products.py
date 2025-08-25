@@ -349,7 +349,28 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
                     })
                     break
         
-        # Citations removed - using AI-generated responses only
+        # Add citations for App Store compliance (medical information sources)
+        if "citations" in assessment and assessment["citations"]:
+            # Use citations from Google Search grounding
+            for cite in assessment["citations"][:3]:  # Limit to top 3 for mobile performance
+                optimized["citations"].append({
+                    "id": cite.get("id", 1),
+                    "title": cite.get("title", "Medical Research")[:100],  # Truncate long titles  
+                    "source": cite.get("source", "Research")[:50],
+                    "year": str(cite.get("year", "2024"))
+                })
+        elif "grounding_citations" in assessment and assessment["grounding_citations"]:
+            # Fallback: Convert grounding citations to proper format
+            for i, cite in enumerate(assessment["grounding_citations"][:3], 1):
+                source_name = "FDA" if 'fda.gov' in cite.get('url', '') else \
+                             "NIH" if 'nih.gov' in cite.get('url', '') else \
+                             "Medical Research"
+                optimized["citations"].append({
+                    "id": i,
+                    "title": cite.get("title", "Medical Research")[:100],
+                    "source": source_name,
+                    "year": "2024"
+                })
         
         # Add meta field for mobile apps
         optimized["meta"] = {

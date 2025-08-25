@@ -99,7 +99,7 @@ class HealthAssessmentMCPService:
             # Generate cache key with version to force refresh with enhanced citation system
             # Add timestamp to force fresh generation for debugging
             import time
-            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v28_no_citations")
+            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v29_with_citations")
             
             # Check cache first with fixed citation URLs
             cached_result = cache.get(cache_key)
@@ -956,8 +956,19 @@ class HealthAssessmentMCPService:
                                 })
                     
                     if grounding_citations:
-                        assessment_data["grounding_citations"] = grounding_citations
-                        logger.info(f"[Google Search Grounding] Found {len(grounding_citations)} web sources")
+                        # Convert to Citation model format for App Store compliance
+                        citations = []
+                        for i, cite in enumerate(grounding_citations[:3], 1):  # Limit to top 3 citations
+                            citations.append({
+                                "id": i,
+                                "title": cite.get('title', 'Medical Research')[:100],  # Truncate long titles
+                                "source": self._extract_source_name(cite.get('url', '')),
+                                "year": "2024"  # Default for web sources
+                            })
+                        
+                        assessment_data["citations"] = citations
+                        assessment_data["grounding_citations"] = grounding_citations  # Keep for debugging
+                        logger.info(f"[Google Search Grounding] Found {len(citations)} citations for App Store compliance")
                     
                     # Add metadata about grounding
                     if "metadata" not in assessment_data:
@@ -1970,6 +1981,41 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
         # Remove common prefixes/suffixes
         ingredient_clean = ingredient_clean.replace('natural ', '').replace(' extract', '').replace(' powder', '')
         return ingredient_clean in self.TRIVIAL_INGREDIENTS
+    
+    def _extract_source_name(self, url: str) -> str:
+        """Extract clean source name from URL for citations."""
+        if not url:
+            return "Medical Research"
+        
+        # Extract domain and convert to clean source names
+        if 'fda.gov' in url:
+            return "FDA"
+        elif 'nih.gov' in url or 'pubmed.ncbi.nlm.nih.gov' in url:
+            return "NIH"
+        elif 'usda.gov' in url:
+            return "USDA"
+        elif 'cdc.gov' in url:
+            return "CDC"
+        elif 'mayoclinic.org' in url:
+            return "Mayo Clinic"
+        elif 'clevelandclinic.org' in url:
+            return "Cleveland Clinic"
+        elif 'hopkinsmedicine.org' in url:
+            return "Johns Hopkins"
+        elif 'who.int' in url:
+            return "WHO"
+        elif 'consumerreports.org' in url:
+            return "Consumer Reports"
+        elif 'ewg.org' in url:
+            return "EWG"
+        else:
+            # Extract domain name for other sources
+            try:
+                from urllib.parse import urlparse
+                domain = urlparse(url).netloc.replace('www.', '')
+                return domain.split('.')[0].title()
+            except:
+                return "Medical Research"
     
     def _get_ingredient_specific_search_terms(self, ingredient: str, risk_level: str) -> str:
         """Generate ingredient-specific search terms for more relevant citations."""
