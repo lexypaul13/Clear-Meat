@@ -26,8 +26,8 @@ RUN pip install --upgrade pip && \
 # Copy the rest of the application
 COPY . .
 
-# Expose port
-EXPOSE 8000
+# Expose port (Railway will set PORT dynamically)
+EXPOSE $PORT
 
-# Command to run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"] 
+# Command to run the application (use start.sh which handles PORT properly)
+CMD ["./start.sh"] 
