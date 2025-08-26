@@ -280,7 +280,8 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
             "high_risk": [],
             "moderate_risk": [],
             "low_risk": [],
-            "nutrition": []
+            "nutrition": [],
+            "citations": []  # Initialize citations array for App Store compliance
         }
         
         # Optimized ingredient processing without citations
@@ -359,18 +360,8 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
                     "source": cite.get("source", "Research")[:50],
                     "year": str(cite.get("year", "2024"))
                 })
-        elif "grounding_citations" in assessment and assessment["grounding_citations"]:
-            # Fallback: Convert grounding citations to proper format
-            for i, cite in enumerate(assessment["grounding_citations"][:3], 1):
-                source_name = "FDA" if 'fda.gov' in cite.get('url', '') else \
-                             "NIH" if 'nih.gov' in cite.get('url', '') else \
-                             "Medical Research"
-                optimized["citations"].append({
-                    "id": i,
-                    "title": cite.get("title", "Medical Research")[:100],
-                    "source": source_name,
-                    "year": "2024"
-                })
+        # Note: grounding_citations removed from production to avoid leaking URLs
+        # Citations should be properly formatted in the backend
         
         # Add meta field for mobile apps
         optimized["meta"] = {

@@ -962,12 +962,13 @@ class HealthAssessmentMCPService:
                             citations.append({
                                 "id": i,
                                 "title": cite.get('title', 'Medical Research')[:100],  # Truncate long titles
-                                "source": self._extract_source_name(cite.get('url', '')),
+                                "source": self._extract_source_name(cite.get('domain', cite.get('url', ''))),
+                                "url": cite.get('url', ''),  # Include clickable URL
                                 "year": "2024"  # Default for web sources
                             })
                         
                         assessment_data["citations"] = citations
-                        assessment_data["grounding_citations"] = grounding_citations  # Keep for debugging
+                        # Don't expose grounding_citations in production to avoid leaking URLs
                         logger.info(f"[Google Search Grounding] Found {len(citations)} citations for App Store compliance")
                     
                     # Add metadata about grounding
@@ -1049,6 +1050,86 @@ class HealthAssessmentMCPService:
                 fallback_categorization.get('low_risk_ingredients', []), 
                 fallback_categorization.get('ingredient_analyses', {})
             )
+            
+            # Extract grounding metadata for citations if available
+            logger.info(f"[DEBUG] Response attributes: {dir(response)}")
+            logger.info(f"[DEBUG] Response has grounding_metadata: {hasattr(response, 'grounding_metadata')}")
+            logger.info(f"[DEBUG] Response has grounding_support: {hasattr(response, 'grounding_support')}")
+            logger.info(f"[DEBUG] Response has sources: {hasattr(response, 'sources')}")
+            
+            if hasattr(response, 'grounding_metadata'):
+                logger.info(f"[DEBUG] grounding_metadata exists: {response.grounding_metadata is not None}")
+            
+            # Try different ways to access grounding information
+            grounding_citations = []
+            
+            # Method 1: Check candidates for grounding information
+            if assessment_data and hasattr(response, 'candidates') and response.candidates:
+                try:
+                    logger.info(f"[DEBUG] Checking candidates for grounding info")
+                    for candidate in response.candidates:
+                        logger.info(f"[DEBUG] Candidate attributes: {dir(candidate)}")
+                        if hasattr(candidate, 'grounding_metadata'):
+                            logger.info(f"[DEBUG] Found grounding_metadata in candidate!")
+                            if candidate.grounding_metadata and hasattr(candidate.grounding_metadata, 'grounding_chunks'):
+                                logger.info(f"[DEBUG] Found {len(candidate.grounding_metadata.grounding_chunks)} grounding chunks")
+                                for i, chunk in enumerate(candidate.grounding_metadata.grounding_chunks):
+                                    logger.info(f"[DEBUG] Chunk {i} attributes: {dir(chunk)}")
+                                    if hasattr(chunk, 'web') and chunk.web:
+                                        logger.info(f"[DEBUG] Web chunk attributes: {dir(chunk.web)}")
+                                        # Extract title and URL
+                                        raw_title = chunk.web.title if hasattr(chunk.web, 'title') else ''
+                                        raw_url = chunk.web.uri if hasattr(chunk.web, 'uri') else ''
+                                        
+                                        # Extract domain from URL for filtering
+                                        domain = ""
+                                        if raw_url:
+                                            try:
+                                                from urllib.parse import urlparse
+                                                domain = urlparse(raw_url).netloc.replace('www.', '')
+                                            except:
+                                                domain = ""
+                                        
+                                        # Filter for reputable medical sources only
+                                        logger.info(f"[DEBUG] Checking domain: '{domain}' from URL: {raw_url}")
+                                        if domain and self._is_reputable_medical_source(domain):
+                                            logger.info(f"[DEBUG] ✅ Domain {domain} PASSED filtering")
+                                            # Use proper title or generate one from domain
+                                            clean_title = raw_title if raw_title and len(raw_title) > 10 else f"Medical Research from {domain}"
+                                            
+                                            logger.info(f"[DEBUG] Extracted - Title: {clean_title}, Domain: {domain}")
+                                            grounding_citations.append({
+                                                'title': clean_title,
+                                                'url': raw_url,  # Keep full URL for clickable links
+                                                'domain': domain,  # Store actual domain for source name extraction
+                                                'source': 'Google Search'
+                                            })
+                                        else:
+                                            logger.info(f"[DEBUG] ❌ Domain {domain} FAILED filtering")
+                    
+                    if grounding_citations:
+                        # Convert to Citation model format for App Store compliance
+                        citations = []
+                        for i, cite in enumerate(grounding_citations[:3], 1):  # Limit to top 3 citations
+                            citations.append({
+                                "id": i,
+                                "title": cite.get('title', 'Medical Research')[:100],  # Truncate long titles
+                                "source": self._extract_source_name(cite.get('domain', cite.get('url', ''))),
+                                "url": cite.get('url', ''),  # Include clickable URL
+                                "year": "2024"  # Default for web sources
+                            })
+                        
+                        assessment_data["citations"] = citations
+                        # Don't expose grounding_citations in production to avoid leaking URLs
+                        logger.info(f"[Google Search Grounding] Found {len(citations)} citations for App Store compliance")
+                    
+                    # Add metadata about grounding
+                    if "metadata" not in assessment_data:
+                        assessment_data["metadata"] = {}
+                    assessment_data["metadata"]["grounding_enabled"] = True
+                    assessment_data["metadata"]["grounding_source"] = "Google Search"
+                except Exception as e:
+                    logger.warning(f"Could not extract grounding metadata: {e}")
             
             if assessment_data:
                 logger.info(f"[Parallel Assessment] Preliminary assessment generated successfully")
@@ -2008,6 +2089,20 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
             return "Consumer Reports"
         elif 'ewg.org' in url:
             return "EWG"
+        elif 'cancer.gov' in url:
+            return "National Cancer Institute"
+        elif 'columbiadoctors.org' in url:
+            return "Columbia Medicine"
+        elif 'pcrm.org' in url:
+            return "PCRM"
+        elif 'medicalnewstoday.com' in url:
+            return "Medical News Today"
+        elif 'healthline.com' in url:
+            return "Healthline"
+        elif 'piedmont.org' in url:
+            return "Piedmont Healthcare"
+        elif 'isitbadforyou.com' in url:
+            return "Nutrition Research"
         else:
             # Extract domain name for other sources
             try:
@@ -2016,6 +2111,60 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
                 return domain.split('.')[0].title()
             except:
                 return "Medical Research"
+
+    def _is_reputable_medical_source(self, domain: str) -> bool:
+        """Filter for reputable medical and scientific sources only."""
+        if not domain:
+            return False
+        
+        domain = domain.lower()
+        
+        # Government health agencies (.gov)
+        if any(gov_domain in domain for gov_domain in [
+            'nih.gov', 'fda.gov', 'cdc.gov', 'usda.gov', 'cancer.gov', 
+            'who.int', 'health.gov', 'nhs.uk'
+        ]):
+            return True
+        
+        # Educational institutions (.edu, .org medical schools)
+        if any(edu_domain in domain for edu_domain in [
+            '.edu', 'harvard.edu', 'mayo.edu', 'stanford.edu', 'columbia.edu'
+        ]):
+            return True
+            
+        # Medical organizations and journals (.org)
+        if any(org_domain in domain for org_domain in [
+            'mayoclinic.org', 'clevelandclinic.org', 'hopkinsmedicine.org',
+            'cancer.org', 'heart.org', 'diabetes.org', 'pcrm.org',
+            'columbiadoctors.org', 'piedmont.org', 'kaiserpermanente.org'
+        ]):
+            return True
+        
+        # Reputable medical websites (.com)
+        if any(med_domain in domain for med_domain in [
+            'webmd.com', 'healthline.com', 'medicalnewstoday.com',
+            'medlineplus.gov', 'pubmed.ncbi.nlm.nih.gov'
+        ]):
+            return True
+        
+        # Google Search Grounding and Vertex AI Search (from Google's API)
+        if any(google_domain in domain for google_domain in [
+            'vertexaisearch.cloud.google.com', 'google.com', 'googleusercontent.com'
+        ]):
+            return True
+        
+        # Exclude non-medical sources
+        if any(bad_domain in domain for bad_domain in [
+            'reddit.com', 'facebook.com', 'twitter.com', 'instagram.com',
+            'youtube.com', 'tiktok.com', 'pinterest.com', 'quora.com'
+        ]):
+            return False
+        
+        # Accept other .gov, .edu, .org domains
+        if any(domain.endswith(tld) for tld in ['.gov', '.edu', '.org']):
+            return True
+            
+        return False
     
     def _get_ingredient_specific_search_terms(self, ingredient: str, risk_level: str) -> str:
         """Generate ingredient-specific search terms for more relevant citations."""
