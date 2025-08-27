@@ -233,9 +233,9 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
         
         # Build product_info, only including image_url if it has a value
         product_info = {
-            "name": assessment.get("metadata", {}).get("product_name", ""),
-            "brand": assessment.get("metadata", {}).get("product_brand", ""),
-            "code": assessment.get("metadata", {}).get("product_code", "")
+                "name": assessment.get("metadata", {}).get("product_name", ""),
+                "brand": assessment.get("metadata", {}).get("product_brand", ""),
+                "code": assessment.get("metadata", {}).get("product_code", "")
         }
         
         # Only add image_url if it has a value
@@ -358,10 +358,10 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
                     "id": cite.get("id", 1),
                     "title": cite.get("title", "Medical Research")[:100],  # Truncate long titles  
                     "source": cite.get("source", "Research")[:50],
+                    "url": cite.get("url", ""),  # Include URL for iOS SafariView clickability
                     "year": str(cite.get("year", "2024"))
                 })
-        # Note: grounding_citations removed from production to avoid leaking URLs
-        # Citations should be properly formatted in the backend
+        # Note: Citations now include URLs for proper iOS SafariView integration
         
         # Add meta field for mobile apps
         optimized["meta"] = {
@@ -1355,8 +1355,8 @@ async def get_product_health_assessment_mcp(
             import asyncio
             assessment = await asyncio.wait_for(
                 mcp_service.generate_health_assessment_with_real_evidence(
-                    structured_product, 
-                    existing_risk_rating=existing_risk_rating
+                structured_product, 
+                existing_risk_rating=existing_risk_rating
                 ),
                 timeout=timeout_seconds
             )
