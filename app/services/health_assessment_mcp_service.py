@@ -968,7 +968,9 @@ class HealthAssessmentMCPService:
                             })
                         
                         assessment_data["citations"] = citations
-                        # Don't expose grounding_citations in production to avoid leaking URLs
+                        # Log citations for debugging
+                        for c in citations:
+                            logger.info(f"[Citation Debug] ID: {c['id']}, Title: {c['title'][:30]}..., URL: {c['url'][:50] if c['url'] else 'EMPTY'}")
                         logger.info(f"[Google Search Grounding] Found {len(citations)} citations for App Store compliance")
                     
                     # Add metadata about grounding
@@ -982,7 +984,7 @@ class HealthAssessmentMCPService:
                 logger.info(f"[Google Search Grounding] Successfully generated grounded assessment")
                 
                 # Cache the grounded assessment
-                if assessment_data:
+            if assessment_data:
                     grounded_cache.cache_grounded_assessment(
                         product.product.code,
                         assessment_data,
@@ -1081,6 +1083,9 @@ class HealthAssessmentMCPService:
                                         raw_title = chunk.web.title if hasattr(chunk.web, 'title') else ''
                                         raw_url = chunk.web.uri if hasattr(chunk.web, 'uri') else ''
                                         
+                                        # Log the raw extraction
+                                        logger.info(f"[DEBUG] Raw extraction - Title: '{raw_title}', URL: '{raw_url}'")
+                                        
                                         # Extract domain from URL for filtering
                                         domain = ""
                                         if raw_url:
@@ -1097,7 +1102,7 @@ class HealthAssessmentMCPService:
                                             # Use proper title or generate one from domain
                                             clean_title = raw_title if raw_title and len(raw_title) > 10 else f"Medical Research from {domain}"
                                             
-                                            logger.info(f"[DEBUG] Extracted - Title: {clean_title}, Domain: {domain}")
+                                            logger.info(f"[DEBUG] Extracted - Title: {clean_title}, Domain: {domain}, URL: {raw_url}")
                                             grounding_citations.append({
                                                 'title': clean_title,
                                                 'url': raw_url,  # Keep full URL for clickable links
@@ -1120,7 +1125,9 @@ class HealthAssessmentMCPService:
                             })
                         
                         assessment_data["citations"] = citations
-                        # Don't expose grounding_citations in production to avoid leaking URLs
+                        # Log citations for debugging
+                        for c in citations:
+                            logger.info(f"[Citation Debug] ID: {c['id']}, Title: {c['title'][:30]}..., URL: {c['url'][:50] if c['url'] else 'EMPTY'}")
                         logger.info(f"[Google Search Grounding] Found {len(citations)} citations for App Store compliance")
                     
                     # Add metadata about grounding
