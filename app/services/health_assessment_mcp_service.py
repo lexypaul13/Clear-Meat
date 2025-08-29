@@ -17,6 +17,7 @@ DANGEROUS_INGREDIENTS = ['sodium nitrite', 'bha', 'bht', 'msg', 'monosodium glut
 import google.generativeai as genai
 from pydantic import ValidationError
 from fastapi import HTTPException
+import aiohttp
 
 # Direct Gemini API usage - no LangChain needed
 
@@ -932,14 +933,15 @@ class HealthAssessmentMCPService:
                                 })
                     
                     if grounding_citations:
-                        # Convert to Citation model format for App Store compliance
+                        # Convert to Citation model format for App Store compliance with URL resolution
                         citations = []
                         for i, cite in enumerate(grounding_citations[:3], 1):  # Limit to top 3 citations
+                            resolved_url = await self._resolve_redirect_url(cite.get('url', ''))
                             citations.append({
                                 "id": i,
                                 "title": cite.get('title', 'Medical Research')[:100],  # Truncate long titles
                                 "source": self._extract_source_name(cite.get('domain', cite.get('url', ''))),
-                                "url": cite.get('url', ''),  # Include clickable URL
+                                "url": resolved_url,  # Resolved final destination URL
                                 "year": "2024"  # Default for web sources
                             })
                         
@@ -1096,14 +1098,15 @@ class HealthAssessmentMCPService:
                         # Sort citations by priority (highest authority first) for Apple compliance
                         grounding_citations.sort(key=lambda x: x.get('priority', 0), reverse=True)
                         
-                        # Convert to Citation model format for App Store compliance
+                        # Convert to Citation model format for App Store compliance with URL resolution
                         citations = []
                         for i, cite in enumerate(grounding_citations[:3], 1):  # Limit to top 3 highest authority citations
+                            resolved_url = await self._resolve_redirect_url(cite.get('url', ''))
                             citations.append({
                                 "id": i,
                                 "title": cite.get('title', 'Medical Research')[:100],  # Truncate long titles
                                 "source": self._extract_source_name(cite.get('domain', cite.get('url', ''))),
-                                "url": cite.get('url', ''),  # Include clickable URL
+                                "url": resolved_url,  # Resolved final destination URL
                                 "year": "2024"  # Default for web sources
                             })
                         
@@ -2051,6 +2054,42 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
     
     # Removed obsolete _search_citations_sync - using Google grounding metadata
     
+    async def _resolve_redirect_url(self, redirect_url: str) -> str:
+        """Resolve Google grounding redirect URL to final destination URL."""
+        if not redirect_url or not redirect_url.startswith('https://vertexaisearch.cloud.google.com'):
+            return redirect_url  # Return as-is if not a Google redirect
+            
+        try:
+            logger.info(f"[URL Resolution] Resolving redirect: {redirect_url[:80]}...")
+            
+            # Use aiohttp to follow the redirect and get the final URL
+            timeout = aiohttp.ClientTimeout(total=3.0)  # 3 second timeout
+            
+            # Create SSL context that doesn't verify certificates for Google's redirect service
+            import ssl
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            
+            connector = aiohttp.TCPConnector(ssl=ssl_context)
+            async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+                async with session.head(redirect_url, allow_redirects=False) as response:
+                    if response.status in [301, 302, 303, 307, 308]:
+                        final_url = response.headers.get('Location', redirect_url)
+                        logger.info(f"[URL Resolution] ✅ Resolved to: {final_url}")
+                        return final_url
+                    else:
+                        logger.info(f"[URL Resolution] No redirect, status: {response.status}")
+                        return redirect_url
+                        
+        except asyncio.TimeoutError:
+            logger.warning(f"[URL Resolution] Timeout resolving redirect URL")
+            return redirect_url  # Fallback to original URL
+        except Exception as e:
+            logger.warning(f"[URL Resolution] Failed to resolve redirect URL: {e}")
+            return redirect_url  # Fallback to original URL
+
+
     async def _return_cached_result(self, cached_result):
         """Helper to return cached result as an awaitable."""
         return cached_result
