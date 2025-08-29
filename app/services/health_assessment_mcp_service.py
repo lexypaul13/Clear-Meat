@@ -1075,6 +1075,12 @@ class HealthAssessmentMCPService:
                                         
                                         # Filter for reputable medical sources only
                                         logger.info(f"[DEBUG] Checking domain: '{domain}' from URL: {raw_url}")
+                                        
+                                        # CRITICAL: Block TikTok and other non-medical sources immediately
+                                        if self._is_blocked_source(domain):
+                                            logger.warning(f"[DEBUG] ❌ BLOCKED non-medical source: {domain}")
+                                            continue
+                                            
                                         if domain and self._is_reputable_medical_source(domain):
                                             logger.info(f"[DEBUG] ✅ Domain {domain} PASSED filtering")
                                             # Use proper title or generate one from domain
@@ -1873,6 +1879,8 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
         if not url:
             return "Medical Research"
         
+        logger.info(f"[Source Extraction] Processing URL: {url}")
+        
         # Extract domain and convert to clean source names
         if 'fda.gov' in url:
             return "FDA"
@@ -1913,8 +1921,19 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
             try:
                 from urllib.parse import urlparse
                 domain = urlparse(url).netloc.replace('www.', '')
-                return domain.split('.')[0].title()
-            except:
+                logger.info(f"[Source Extraction] Extracted domain: {domain}")
+                
+                # Block any non-medical sources that slip through
+                if self._is_blocked_source(domain):
+                    logger.warning(f"[Source Extraction] Blocked non-medical domain: {domain}")
+                    return "Medical Research"  # Safe fallback
+                
+                # Extract clean name from domain
+                clean_name = domain.split('.')[0].title()
+                logger.info(f"[Source Extraction] Final source name: {clean_name}")
+                return clean_name
+            except Exception as e:
+                logger.warning(f"[Source Extraction] Failed to parse URL {url}: {e}")
                 return "Medical Research"
 
     def _is_reputable_medical_source(self, domain: str) -> bool:
@@ -1972,6 +1991,30 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
         if any(domain.endswith(tld) for tld in ['.gov', '.edu', '.org']):
             return True
         
+        return False
+
+    def _is_blocked_source(self, domain: str) -> bool:
+        """Block non-medical sources that should never appear in health citations."""
+        if not domain:
+            return True
+            
+        domain = domain.lower()
+        
+        # CRITICAL: Block social media and non-medical sources
+        blocked_domains = [
+            'tiktok.com', 'tiktok', 'bytedance.com',
+            'facebook.com', 'instagram.com', 'twitter.com', 'x.com',
+            'youtube.com', 'youtu.be', 'pinterest.com', 'snapchat.com',
+            'reddit.com', 'quora.com', 'yahoo.com', 'bing.com',
+            'wikipedia.org', 'wiki', 'blog', 'wordpress.com',
+            'medium.com', 'substack.com', 'linkedin.com'
+        ]
+        
+        # Check if any blocked domain appears in the URL
+        for blocked in blocked_domains:
+            if blocked in domain:
+                return True
+                
         return False
 
     def _get_source_priority_score(self, domain: str) -> int:
@@ -2044,15 +2087,7 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
         if 'google.com' in domain or 'vertexaisearch' in domain:
             return 10
             
-        return 5  # Unknown sources get minimal score
-    
-    # Removed obsolete _get_ingredient_specific_search_terms - handled by enhanced prompt
-    
-    # Removed obsolete _generate_real_citations - using Google grounding metadata
-    
-    # Removed obsolete _search_citations_async - using Google grounding metadata
-    
-    # Removed obsolete _search_citations_sync - using Google grounding metadata
+        return 5  
     
     async def _resolve_redirect_url(self, redirect_url: str) -> str:
         """Resolve Google grounding redirect URL to final destination URL."""
@@ -2089,7 +2124,7 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
             logger.warning(f"[URL Resolution] Failed to resolve redirect URL: {e}")
             return redirect_url  # Fallback to original URL
 
-
+    
     async def _return_cached_result(self, cached_result):
         """Helper to return cached result as an awaitable."""
         return cached_result
