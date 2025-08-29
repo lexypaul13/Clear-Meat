@@ -984,7 +984,7 @@ class HealthAssessmentMCPService:
                 logger.info(f"[Google Search Grounding] Successfully generated grounded assessment")
                 
                 # Cache the grounded assessment
-                if assessment_data:
+            if assessment_data:
                     grounded_cache.cache_grounded_assessment(
                         product.product.code,
                         assessment_data,
@@ -1102,20 +1102,27 @@ class HealthAssessmentMCPService:
                                             # Use proper title or generate one from domain
                                             clean_title = raw_title if raw_title and len(raw_title) > 10 else f"Medical Research from {domain}"
                                             
-                                            logger.info(f"[DEBUG] Extracted - Title: {clean_title}, Domain: {domain}, URL: {raw_url}")
+                                            # Calculate priority score for Apple compliance
+                                            priority_score = self._get_source_priority_score(domain)
+                                            
+                                            logger.info(f"[DEBUG] Extracted - Title: {clean_title}, Domain: {domain}, Priority: {priority_score}, URL: {raw_url}")
                                             grounding_citations.append({
                                                 'title': clean_title,
                                                 'url': raw_url,  # Keep full URL for clickable links
                                                 'domain': domain,  # Store actual domain for source name extraction
-                                                'source': 'Google Search'
+                                                'source': 'Google Search',
+                                                'priority': priority_score  # For sorting by authority
                                             })
                                         else:
                                             logger.info(f"[DEBUG] ❌ Domain {domain} FAILED filtering")
                     
                     if grounding_citations:
+                        # Sort citations by priority (highest authority first) for Apple compliance
+                        grounding_citations.sort(key=lambda x: x.get('priority', 0), reverse=True)
+                        
                         # Convert to Citation model format for App Store compliance
                         citations = []
-                        for i, cite in enumerate(grounding_citations[:3], 1):  # Limit to top 3 citations
+                        for i, cite in enumerate(grounding_citations[:3], 1):  # Limit to top 3 highest authority citations
                             citations.append({
                                 "id": i,
                                 "title": cite.get('title', 'Medical Research')[:100],  # Truncate long titles
@@ -1252,7 +1259,7 @@ Categorize all {len(all_ingredients)} ingredients above."""
         high_risk_ingredients: List[str],
         moderate_risk_ingredients: List[str]
     ) -> str:
-        """Build prompt for Google Search grounded assessment with detailed citations."""
+        """Build enhanced prompt for targeted medical database searches with accurate citations."""
         
         ingredients_list = []
         if high_risk_ingredients:
@@ -1260,33 +1267,57 @@ Categorize all {len(all_ingredients)} ingredients above."""
         if moderate_risk_ingredients:
             ingredients_list.extend([f"{ing} (moderate-risk)" for ing in moderate_risk_ingredients[:2]])
         
-        return f"""Analyze these meat product ingredients using current scientific evidence.
+        # Create specific search queries for each ingredient
+        search_instructions = []
+        all_ingredients = high_risk_ingredients[:3] + moderate_risk_ingredients[:2]
+        
+        for ingredient in all_ingredients:
+            ingredient_clean = ingredient.replace("(", "").replace(")", "").strip()
+            search_instructions.append(f"""
+FOR {ingredient_clean.upper()}:
+Search these EXACT queries:
+• "FDA {ingredient_clean} safety assessment site:fda.gov"
+• "NIH {ingredient_clean} health effects site:nih.gov"  
+• "WHO {ingredient_clean} food safety site:who.int"
+• "{ingredient_clean} toxicity study site:pubmed.ncbi.nlm.nih.gov"
+• "Mayo Clinic {ingredient_clean} health risks site:mayoclinic.org"
+            """)
+        
+        return f"""You are analyzing meat product ingredients for health assessment. Use TARGETED medical database searches to find authoritative sources.
 
 PRODUCT: {product.product.name}
 INGREDIENTS TO RESEARCH: {', '.join(ingredients_list)}
 
-For each ingredient, provide:
-1. Detailed health effects (2-3 sentences) with specific studies cited
-2. Mechanism of action in the body  
-3. Safe consumption levels per FDA/WHO guidelines
-4. Special population concerns (pregnant women, children, etc.)
-5. Any recent regulatory updates or safety assessments (2020-2024)
+CRITICAL: You must search for each ingredient using these SPECIFIC search strategies:
+{' '.join(search_instructions)}
 
-Format your response with:
-- Clear health implications backed by evidence
-- Inline citations as [1], [2] etc.
-- Practical consumer guidance
+SEARCH PRIORITY (in this order):
+1. FDA.gov - official food safety assessments
+2. NIH.gov - government health research  
+3. WHO.int - international health guidelines
+4. PubMed (pubmed.ncbi.nlm.nih.gov) - peer-reviewed studies
+5. Mayo Clinic - trusted medical information
+6. Cleveland Clinic, Johns Hopkins - medical institutions
 
-Search these trusted sources:
-- FDA, USDA, CDC, NIH databases
-- Mayo Clinic, Cleveland Clinic, Johns Hopkins
-- PubMed studies (prioritize 2020-2024)
-- WHO food safety guidelines
-- Consumer Reports, EWG assessments
+For each ingredient found to have health risks, provide:
+1. Specific health effects (2-3 sentences) with exact study citations
+2. Mechanism of biological action
+3. FDA/WHO established safe levels (if available)
+4. Populations at higher risk
+5. Current regulatory status
 
-At the end, list all sources:
-[1] Source Name (Year): "Key finding or quote" - URL
-[2] Source Name (Year): "Key finding or quote" - URL"""
+CITATION REQUIREMENTS:
+- Only cite sources from the priority list above
+- Include exact URLs from your search results
+- Use format: [1] FDA (2024): "Specific quote" - https://www.fda.gov/...
+- Verify each citation corresponds to the specific ingredient claim
+
+AVOID generic sources like:
+- Random blogs, commercial websites
+- Non-medical news sites
+- Marketing or promotional content
+
+Focus on ingredients with documented health concerns. Skip ingredients with no significant health risks."""
     
     def _build_evidence_assessment_prompt(
         self, 
@@ -2120,41 +2151,44 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
                 return "Medical Research"
 
     def _is_reputable_medical_source(self, domain: str) -> bool:
-        """Filter for reputable medical and scientific sources only."""
+        """Filter for reputable medical and scientific sources only - prioritizing Apple App Store compliance."""
         if not domain:
             return False
         
         domain = domain.lower()
         
-        # Government health agencies (.gov)
-        if any(gov_domain in domain for gov_domain in [
-            'nih.gov', 'fda.gov', 'cdc.gov', 'usda.gov', 'cancer.gov', 
-            'who.int', 'health.gov', 'nhs.uk'
-        ]):
+        # TIER 1: Primary government health authorities (highest priority for Apple compliance)
+        tier_1_domains = [
+            'fda.gov', 'nih.gov', 'cdc.gov', 'usda.gov', 'who.int', 
+            'cancer.gov', 'health.gov', 'pubmed.ncbi.nlm.nih.gov'
+        ]
+        if any(gov_domain in domain for gov_domain in tier_1_domains):
             return True
         
-        # Educational institutions (.edu, .org medical schools)
-        if any(edu_domain in domain for edu_domain in [
-            '.edu', 'harvard.edu', 'mayo.edu', 'stanford.edu', 'columbia.edu'
-        ]):
+        # TIER 2: Major medical institutions (strong authority for Apple compliance)
+        tier_2_domains = [
+            'mayoclinic.org', 'clevelandclinic.org', 'hopkinsmedicine.org',
+            'harvard.edu', 'stanford.edu', 'columbia.edu', 'mayo.edu'
+        ]
+        if any(med_domain in domain for med_domain in tier_2_domains):
             return True
             
-        # Medical organizations and journals (.org)
-        if any(org_domain in domain for org_domain in [
-            'mayoclinic.org', 'clevelandclinic.org', 'hopkinsmedicine.org',
+        # TIER 3: Medical organizations and journals
+        tier_3_domains = [
             'cancer.org', 'heart.org', 'diabetes.org', 'pcrm.org',
             'columbiadoctors.org', 'piedmont.org', 'kaiserpermanente.org'
-        ]):
+        ]
+        if any(org_domain in domain for org_domain in tier_3_domains):
             return True
         
-        # Reputable medical websites (.com)
-        if any(med_domain in domain for med_domain in [
-            'webmd.com', 'healthline.com', 'medicalnewstoday.com',
-            'medlineplus.gov', 'pubmed.ncbi.nlm.nih.gov'
-        ]):
+        # TIER 4: Reputable medical information sites (use cautiously)
+        tier_4_domains = [
+            'webmd.com', 'healthline.com', 'medicalnewstoday.com', 'medlineplus.gov'
+        ]
+        if any(med_domain in domain for med_domain in tier_4_domains):
             return True
         
-        # Google Search Grounding and Vertex AI Search (from Google's API)
+        # Google Search Grounding - allow but deprioritize
         if any(google_domain in domain for google_domain in [
             'vertexaisearch.cloud.google.com', 'google.com', 'googleusercontent.com'
         ]):
@@ -2167,11 +2201,83 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
         ]):
             return False
         
-        # Accept other .gov, .edu, .org domains
+                # Accept other .gov, .edu, .org domains
         if any(domain.endswith(tld) for tld in ['.gov', '.edu', '.org']):
             return True
-            
+        
         return False
+
+    def _get_source_priority_score(self, domain: str) -> int:
+        """Calculate priority score for medical sources - higher scores = better for Apple App Store compliance."""
+        if not domain:
+            return 0
+            
+        domain = domain.lower()
+        
+        # TIER 1: Government health authorities (score: 100-90)
+        tier_1_scores = {
+            'fda.gov': 100,
+            'nih.gov': 99, 
+            'who.int': 98,
+            'cdc.gov': 97,
+            'pubmed.ncbi.nlm.nih.gov': 96,
+            'cancer.gov': 95,
+            'usda.gov': 94,
+            'health.gov': 93
+        }
+        for gov_domain, score in tier_1_scores.items():
+            if gov_domain in domain:
+                return score
+        
+        # TIER 2: Major medical institutions (score: 89-80)
+        tier_2_scores = {
+            'mayoclinic.org': 89,
+            'clevelandclinic.org': 88,
+            'hopkinsmedicine.org': 87,
+            'harvard.edu': 86,
+            'stanford.edu': 85,
+            'columbia.edu': 84,
+            'mayo.edu': 83
+        }
+        for med_domain, score in tier_2_scores.items():
+            if med_domain in domain:
+                return score
+        
+        # TIER 3: Medical organizations (score: 79-70)
+        tier_3_scores = {
+            'cancer.org': 79,
+            'heart.org': 78,
+            'diabetes.org': 77,
+            'pcrm.org': 76
+        }
+        for org_domain, score in tier_3_scores.items():
+            if org_domain in domain:
+                return score
+        
+        # TIER 4: Medical information sites (score: 69-60)
+        tier_4_scores = {
+            'medlineplus.gov': 69,
+            'webmd.com': 65,
+            'healthline.com': 63,
+            'medicalnewstoday.com': 61
+        }
+        for info_domain, score in tier_4_scores.items():
+            if info_domain in domain:
+                return score
+        
+        # Generic .gov, .edu, .org get moderate scores
+        if domain.endswith('.gov'):
+            return 50
+        elif domain.endswith('.edu'):
+            return 45
+        elif domain.endswith('.org'):
+            return 40
+        
+        # Google grounding gets lowest priority
+        if 'google.com' in domain or 'vertexaisearch' in domain:
+            return 10
+            
+        return 5  # Unknown sources get minimal score
     
     def _get_ingredient_specific_search_terms(self, ingredient: str, risk_level: str) -> str:
         """Generate ingredient-specific search terms for more relevant citations."""
