@@ -981,15 +981,15 @@ class HealthAssessmentMCPService:
                 except Exception as e:
                     logger.warning(f"Could not extract grounding metadata: {e}")
                 
-                logger.info(f"[Google Search Grounding] Successfully generated grounded assessment")
-                
-                # Cache the grounded assessment
+            logger.info(f"[Google Search Grounding] Successfully generated grounded assessment")
+            
+            # Cache the grounded assessment
             if assessment_data:
-                    grounded_cache.cache_grounded_assessment(
-                        product.product.code,
-                        assessment_data,
-                        high_risk_ingredients + moderate_risk_ingredients
-                    )
+                grounded_cache.cache_grounded_assessment(
+                    product.product.code,
+                    assessment_data,
+                    high_risk_ingredients + moderate_risk_ingredients
+                )
                 return assessment_data
                 
         except asyncio.TimeoutError:
@@ -1254,70 +1254,60 @@ LOW RISK INGREDIENTS:
 Categorize all {len(all_ingredients)} ingredients above."""
     
     def _build_grounded_assessment_prompt(
-        self, 
+        self,
         product: ProductStructured,
         high_risk_ingredients: List[str],
         moderate_risk_ingredients: List[str]
     ) -> str:
         """Build enhanced prompt for targeted medical database searches with accurate citations."""
-        
-        ingredients_list = []
-        if high_risk_ingredients:
-            ingredients_list.extend([f"{ing} (high-risk)" for ing in high_risk_ingredients[:3]])
-        if moderate_risk_ingredients:
-            ingredients_list.extend([f"{ing} (moderate-risk)" for ing in moderate_risk_ingredients[:2]])
-        
-        # Create specific search queries for each ingredient
+
+        # Focus research on the top 3 high-risk and top 2 moderate-risk ingredients for speed and relevance
+        ingredients_to_research = high_risk_ingredients[:3] + moderate_risk_ingredients[:2]
+        if not ingredients_to_research:
+            return "No ingredients provided for assessment."
+
+        # Create specific search query instructions for each ingredient
         search_instructions = []
-        all_ingredients = high_risk_ingredients[:3] + moderate_risk_ingredients[:2]
-        
-        for ingredient in all_ingredients:
+        for ingredient in ingredients_to_research:
+            # Clean the ingredient name for use in a search query
             ingredient_clean = ingredient.replace("(", "").replace(")", "").strip()
             search_instructions.append(f"""
 FOR {ingredient_clean.upper()}:
-Search these EXACT queries:
-• "FDA {ingredient_clean} safety assessment site:fda.gov"
-• "NIH {ingredient_clean} health effects site:nih.gov"  
-• "WHO {ingredient_clean} food safety site:who.int"
-• "{ingredient_clean} toxicity study site:pubmed.ncbi.nlm.nih.gov"
-• "Mayo Clinic {ingredient_clean} health risks site:mayoclinic.org"
+Use these EXACT search queries:
+- "health effects of {ingredient_clean} site:fda.gov"
+- "{ingredient_clean} safety assessment site:nih.gov"
+- "{ingredient_clean} toxicity study site:pubmed.ncbi.nlm.nih.gov"
+- "is {ingredient_clean} safe site:who.int"
+- "{ingredient_clean} risks and benefits site:mayoclinic.org"
             """)
-        
-        return f"""You are analyzing meat product ingredients for health assessment. Use TARGETED medical database searches to find authoritative sources.
+
+        return f"""You are a meticulous health researcher analyzing food ingredients for a health assessment. Your ONLY source of information will be from targeted searches on authoritative medical websites.
 
 PRODUCT: {product.product.name}
-INGREDIENTS TO RESEARCH: {', '.join(ingredients_list)}
+INGREDIENTS TO RESEARCH: {', '.join(ingredients_to_research)}
 
-CRITICAL: You must search for each ingredient using these SPECIFIC search strategies:
-{' '.join(search_instructions)}
+CRITICAL INSTRUCTIONS:
+You MUST research each ingredient using the following SPECIFIC search strategies. Do not use any other search queries.
+{''.join(search_instructions)}
 
-SEARCH PRIORITY (in this order):
-1. FDA.gov - official food safety assessments
-2. NIH.gov - government health research  
-3. WHO.int - international health guidelines
-4. PubMed (pubmed.ncbi.nlm.nih.gov) - peer-reviewed studies
-5. Mayo Clinic - trusted medical information
-6. Cleveland Clinic, Johns Hopkins - medical institutions
+SEARCH AND CITATION RULES:
+1.  **Restrict Sources:** Base your entire analysis ONLY on information found from the following domains: `fda.gov`, `nih.gov`, `pubmed.ncbi.nlm.nih.gov`, `who.int`, `mayoclinic.org`, `clevelandclinic.org`, `hopkinsmedicine.org`.
+2.  **Synthesize Findings:** For each ingredient, summarize the specific health effects, mechanism of action, and official safety status found on these sites.
+3.  **Mandatory Citations:** You MUST cite the exact URL for every piece of information you provide. Use a format like: "Sodium Nitrite is a preservative that can form nitrosamines under certain conditions."
+4.  **No Outside Knowledge:** If you cannot find information on these specific sites, you must state: "No information was found for [ingredient] on the specified authoritative sources." DO NOT use your general training knowledge.
 
-For each ingredient found to have health risks, provide:
-1. Specific health effects (2-3 sentences) with exact study citations
-2. Mechanism of biological action
-3. FDA/WHO established safe levels (if available)
-4. Populations at higher risk
-5. Current regulatory status
+RESPONSE FORMAT:
+SUMMARY: [Brief overall summary based ONLY on your findings from the required sites.]
 
-CITATION REQUIREMENTS:
-- Only cite sources from the priority list above
-- Include exact URLs from your search results
-- Use format: [1] FDA (2024): "Specific quote" - https://www.fda.gov/...
-- Verify each citation corresponds to the specific ingredient claim
+INGREDIENT ANALYSIS:
+- **Name:** [Ingredient Name]
+  - **Findings:** [Detailed analysis with multiple citations to the required URLs.]
+  - **Regulatory Status:** [Mention FDA/WHO status if found.]
 
-AVOID generic sources like:
-- Random blogs, commercial websites
-- Non-medical news sites
-- Marketing or promotional content
-
-Focus on ingredients with documented health concerns. Skip ingredients with no significant health risks."""
+- **Name:** [Next Ingredient Name]
+  - **Findings:** [Detailed analysis with multiple citations to the required URLs.]
+  - **Regulatory Status:** [Mention FDA/WHO status if found.]
+"""
     
     def _build_evidence_assessment_prompt(
         self, 
