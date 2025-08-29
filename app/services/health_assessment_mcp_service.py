@@ -1082,7 +1082,11 @@ class HealthAssessmentMCPService:
                                             logger.warning(f"[DEBUG] ❌ BLOCKED non-medical source: {domain}")
                                             continue
                                             
-                                        if domain and self._is_reputable_medical_source(domain):
+                                        # Check if domain passes medical source validation
+                                        is_medical = self._is_reputable_medical_source(domain)
+                                        logger.info(f"[DEBUG] Domain {domain} medical check: {is_medical}")
+                                        
+                                        if domain and is_medical:
                                             logger.info(f"[DEBUG] ✅ Domain {domain} PASSED filtering")
                                             # Use proper title or generate one from domain
                                             clean_title = raw_title if raw_title and len(raw_title) > 10 else f"Medical Research from {domain}"
@@ -1099,7 +1103,7 @@ class HealthAssessmentMCPService:
                                                 'priority': priority_score  # For sorting by authority
                                             })
                                         else:
-                                            logger.info(f"[DEBUG] ❌ Domain {domain} FAILED filtering")
+                                            logger.warning(f"[DEBUG] ❌ Domain {domain} REJECTED - not a medical authority")
                     
                     if grounding_citations:
                         # Sort citations by priority (highest authority first) for Apple compliance
@@ -2140,14 +2144,14 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
                         final_url = response.headers.get('Location', redirect_url)
                         logger.info(f"[URL Resolution] ✅ Resolved to: {final_url}")
                         return final_url
-                    else:
+                else:
                         logger.info(f"[URL Resolution] No redirect, status: {response.status}")
                         return redirect_url
-                        
-        except asyncio.TimeoutError:
+                    
+            except asyncio.TimeoutError:
             logger.warning(f"[URL Resolution] Timeout resolving redirect URL")
             return redirect_url  # Fallback to original URL
-        except Exception as e:
+            except Exception as e:
             logger.warning(f"[URL Resolution] Failed to resolve redirect URL: {e}")
             return redirect_url  # Fallback to original URL
 
