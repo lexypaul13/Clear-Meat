@@ -1969,17 +1969,23 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
         if any(med_domain in domain for med_domain in tier_2_domains):
             return True
             
-        # TIER 3: Medical organizations and journals
+        # TIER 3: Medical organizations and journals (expanded for trustworthiness)
         tier_3_domains = [
             'cancer.org', 'heart.org', 'diabetes.org', 'pcrm.org',
-            'columbiadoctors.org', 'piedmont.org', 'kaiserpermanente.org'
+            'columbiadoctors.org', 'piedmont.org', 'kaiserpermanente.org',
+            # Additional trustworthy medical organizations
+            'aicr.org', 'cancercouncil.com.au', 'cancerresearchuk.org',
+            'diabetesjournals.org', 'nutrition.org', 'hsph.harvard.edu',
+            'nutritionsource.hsph.harvard.edu', 'health.harvard.edu'
         ]
         if any(org_domain in domain for org_domain in tier_3_domains):
             return True
         
-        # TIER 4: Government medical information sites only (stricter filtering)
+        # TIER 4: Additional reputable medical and research sites
         tier_4_domains = [
-            'medlineplus.gov'  # Only government medical sites in tier 4
+            'medlineplus.gov', 'healthline.com', 'medicalnewstoday.com',
+            'webmd.com', 'verywellhealth.com', 'everydayhealth.com',
+            'nutrition.gov', 'foodsafety.gov', 'extension.org'
         ]
         if any(med_domain in domain for med_domain in tier_4_domains):
             return True
