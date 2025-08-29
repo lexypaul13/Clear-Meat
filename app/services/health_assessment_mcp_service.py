@@ -1987,8 +1987,9 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
         ]):
             return False
         
-                # Accept other .gov, .edu, .org domains
-        if any(domain.endswith(tld) for tld in ['.gov', '.edu', '.org']):
+        # STRICT: Only accept .gov and .edu domains automatically
+        # .org domains must be explicitly whitelisted above
+        if any(domain.endswith(tld) for tld in ['.gov', '.edu']):
             return True
         
         return False
@@ -2007,7 +2008,10 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
             'youtube.com', 'youtu.be', 'pinterest.com', 'snapchat.com',
             'reddit.com', 'quora.com', 'yahoo.com', 'bing.com',
             'wikipedia.org', 'wiki', 'blog', 'wordpress.com',
-            'medium.com', 'substack.com', 'linkedin.com'
+            'medium.com', 'substack.com', 'linkedin.com',
+            # CRITICAL: Block food databases that are not medical authorities
+            'openfoodfacts.org', 'world.openfoodfacts.org', 'foodfacts.org',
+            'nutritionix.com', 'myfitnesspal.com', 'cronometer.com'
         ]
         
         # Check if any blocked domain appears in the URL
