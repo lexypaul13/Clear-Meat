@@ -1065,17 +1065,21 @@ class HealthAssessmentMCPService:
                                         # Log the raw extraction
                                         logger.info(f"[DEBUG] Raw extraction - Title: '{raw_title}', URL: '{raw_url}'")
                                         
-                                        # Extract domain from URL for filtering
+                                        # CRITICAL: Resolve redirect URL FIRST, then filter on final destination
+                                        resolved_url = await self._resolve_redirect_url(raw_url)
+                                        logger.info(f"[DEBUG] Resolved URL: {resolved_url}")
+                                        
+                                        # Extract domain from RESOLVED URL for filtering
                                         domain = ""
-                                        if raw_url:
+                                        if resolved_url:
                                             try:
                                                 from urllib.parse import urlparse
-                                                domain = urlparse(raw_url).netloc.replace('www.', '')
+                                                domain = urlparse(resolved_url).netloc.replace('www.', '')
                                             except:
                                                 domain = ""
                                         
                                         # Filter for reputable medical sources only
-                                        logger.info(f"[DEBUG] Checking domain: '{domain}' from URL: {raw_url}")
+                                        logger.info(f"[DEBUG] Checking FINAL domain: '{domain}' from resolved URL: {resolved_url}")
                                         
                                         # CRITICAL: Block TikTok and other non-medical sources immediately
                                         if self._is_blocked_source(domain):
@@ -1084,7 +1088,7 @@ class HealthAssessmentMCPService:
                                             
                                         # Check if domain passes medical source validation
                                         is_medical = self._is_reputable_medical_source(domain)
-                                        logger.info(f"[DEBUG] Domain {domain} medical check: {is_medical}")
+                                        logger.info(f"[DEBUG] Final domain {domain} medical check: {is_medical}")
                                         
                                         if domain and is_medical:
                                             logger.info(f"[DEBUG] ✅ Domain {domain} PASSED filtering")
@@ -1094,10 +1098,10 @@ class HealthAssessmentMCPService:
                                             # Calculate priority score for Apple compliance
                                             priority_score = self._get_source_priority_score(domain)
                                             
-                                            logger.info(f"[DEBUG] Extracted - Title: {clean_title}, Domain: {domain}, Priority: {priority_score}, URL: {raw_url}")
+                                            logger.info(f"[DEBUG] Extracted - Title: {clean_title}, Domain: {domain}, Priority: {priority_score}, URL: {resolved_url}")
                                             grounding_citations.append({
                                                 'title': clean_title,
-                                                'url': raw_url,  # Keep full URL for clickable links
+                                                'url': resolved_url,  # Use resolved URL for clickable links
                                                 'domain': domain,  # Store actual domain for source name extraction
                                                 'source': 'Google Search',
                                                 'priority': priority_score  # For sorting by authority
@@ -1109,16 +1113,16 @@ class HealthAssessmentMCPService:
                         # Sort citations by priority (highest authority first) for Apple compliance
                         grounding_citations.sort(key=lambda x: x.get('priority', 0), reverse=True)
                         
-                        # Convert to Citation model format for App Store compliance with URL resolution
+                        # Convert to Citation model format for App Store compliance
                         # QUALITY OVER QUANTITY: Limit to top 2 highest-authority citations
                         citations = []
                         for i, cite in enumerate(grounding_citations[:2], 1):  # Limit to top 2 citations
-                            resolved_url = await self._resolve_redirect_url(cite.get('url', ''))
+                            # URL is already resolved in the filtering step
                             citations.append({
                                 "id": i,
                                 "title": cite.get('title', 'Medical Research')[:100],  # Truncate long titles
                                 "source": self._extract_source_name(cite.get('domain', cite.get('url', ''))),
-                                "url": resolved_url,  # Resolved final destination URL
+                                "url": cite.get('url', ''),  # Already resolved URL
                                 "year": "2024"  # Default for web sources
                             })
                         
