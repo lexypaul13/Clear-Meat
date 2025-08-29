@@ -2157,7 +2157,7 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
                     else:
                         logger.info(f"[URL Resolution] No redirect, status: {response.status}")
                         return redirect_url
-                        
+                    
         except asyncio.TimeoutError:
             logger.warning(f"[URL Resolution] Timeout resolving redirect URL")
             return redirect_url  # Fallback to original URL
