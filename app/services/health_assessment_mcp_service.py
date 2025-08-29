@@ -1969,9 +1969,9 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
         if any(org_domain in domain for org_domain in tier_3_domains):
             return True
         
-        # TIER 4: Reputable medical information sites (use cautiously)
+        # TIER 4: Government medical information sites only (stricter filtering)
         tier_4_domains = [
-            'webmd.com', 'healthline.com', 'medicalnewstoday.com', 'medlineplus.gov'
+            'medlineplus.gov'  # Only government medical sites in tier 4
         ]
         if any(med_domain in domain for med_domain in tier_4_domains):
             return True
@@ -2013,7 +2013,9 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
             'medium.com', 'substack.com', 'linkedin.com',
             # CRITICAL: Block food databases that are not medical authorities
             'openfoodfacts.org', 'world.openfoodfacts.org', 'foodfacts.org',
-            'nutritionix.com', 'myfitnesspal.com', 'cronometer.com'
+            'nutritionix.com', 'myfitnesspal.com', 'cronometer.com',
+            # Block non-medical health blogs and commercial sites
+            'eatresist.com', 'healthyeating.org', 'nutrition.org', 'foodsafety.org'
         ]
         
         # Check if any blocked domain appears in the URL
