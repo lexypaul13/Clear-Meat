@@ -1,0 +1,102 @@
+{
+  "summary": "grilled Cajun chicken breast, spicy wedges & sour cream receives a D grade due to concerning additives and processing. Consume sparingly. [1][2]",
+  "risk_summary": {
+    "grade": "D",
+    "color": "Red"
+  },
+  "ingredients_assessment": {
+    "high_risk": [
+      {
+        "name": "Piment de Cayenne",
+        "micro_report": "** Capsaicin, the active component, can cause irritation and inflammation of the mouth, esophagus, and stomach at high concentrations.  In rare cases, severe reactions may occur.  (Source:  Multiple scientific studies on capsaicin's effects)"
+      }
+    ],
+    "moderate_risk": [
+      {
+        "name": "Cr\u00e8me aigre britannique",
+        "micro_report": "**  May contain high levels of saturated fat and sodium, contributing to cardiovascular issues if consumed excessively. Allergens like milk proteins are also possible. (Source:  Nutritional information on sour cream varies by brand)"
+      },
+      {
+        "name": "Sel",
+        "micro_report": "** High sodium intake is linked to hypertension and increased risk of cardiovascular diseases.  Moderation is key. (Source:  Numerous studies on the effects of sodium on blood pressure)"
+      },
+      {
+        "name": "Sel fum\u00e9",
+        "micro_report": "** Similar to regular salt, high consumption can lead to hypertension and related health problems. (Source:  Studies on sodium intake and health)"
+      },
+      {
+        "name": "Vinaigre de vin blanc",
+        "micro_report": "** Contains sulfites, which can trigger allergic reactions in sensitive individuals. (Source:  Product label information)"
+      },
+      {
+        "name": "Concentr\u00e9 de tomate",
+        "micro_report": "**  High in sodium, potentially contributing to hypertension. (Source:  Nutritional information on tomato paste varies by brand)"
+      },
+      {
+        "name": "\u00c9pices moulues",
+        "micro_report": "**  Depending on the specific spices included, some may contain allergens or compounds that could cause adverse reactions in susceptible individuals. (Source:  Allergen information varies by spice)"
+      }
+    ],
+    "low_risk": []
+  },
+  "nutrition_insights": [
+    {
+      "nutrient": "Protein",
+      "amount_per_serving": "8.9 g",
+      "evaluation": "moderate",
+      "ai_commentary": "Moderate protein; good for muscle growth."
+    },
+    {
+      "nutrient": "Fat",
+      "amount_per_serving": "1.6 g",
+      "evaluation": "low",
+      "ai_commentary": "Low in fat, contributing to a healthy diet."
+    },
+    {
+      "nutrient": "Carbohydrates",
+      "amount_per_serving": "7.8 g",
+      "evaluation": "low",
+      "ai_commentary": "Low carb content, suitable for many diets."
+    },
+    {
+      "nutrient": "Salt",
+      "amount_per_serving": "250 mg",
+      "evaluation": "moderate",
+      "ai_commentary": "Moderately salty; consider portion size."
+    }
+  ],
+  "metadata": {
+    "generated_at": "2025-08-29T09:49:41.621159",
+    "product_code": "00073455",
+    "product_name": "grilled Cajun chicken breast, spicy wedges & sour cream",
+    "product_brand": "Marks & Spencer,M&S,Count on US",
+    "ingredients": "Pommes de terre (29%), Blanc de poulet cuit (23%), Tomates (11%), Eau, Cr\u00e8me aigre britannique (_Lait_) (8%), Oignons, Poivrons de piquillo (3%), Poivrons rouges, Pur\u00e9e d\u2019ail, Jus de citron vert, Oignons rouges, Concentr\u00e9 de tomate, Huile de colza, F\u00e9cule de mais, \u00c9pices moulues (Paprika fum\u00e9, Cumin, Poivre noir, Poivre blanc, Piment de Cayenne, Paprika), F\u00e9cule de pomme de terre, Thym, Vinaigre de cidre, Sel, Coriandre, Eau fum\u00e9e au bois de ch\u00eane d\u2019Anglesey, Sel fum\u00e9, Sucre, Piments rouges, Graines de cumin, Huile de tournesol, Vinaigre de vin blanc, Piments Chipotle d\u00e9shydrat\u00e9s, Tomates s\u00e9ch\u00e9es, G\u00e9lifiant : Pectine, Correcteur d\u2019acidit\u00e9 : Acide citrique, Romarin moulu, Ar\u00f4mes.",
+    "assessment_type": "MCP Evidence-Based Health Assessment",
+    "product_image_url": "https://tse4.mm.bing.net/th/id/OIP.-CspNKjEMYxFVDGdazIIQgAAAA?w=205&h=205&c=7&r=0&o=5&pid=1.7",
+    "grounding_enabled": true,
+    "grounding_source": "Google Search"
+  },
+  "citations": [
+    {
+      "id": 1,
+      "title": "Medical Research from vertexaisearch.cloud.google.com",
+      "source": "",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFQnqaujrFlEK0Fny6BkEYl8UHABIJsNXZsuWVm2t5BCUHSLyVhBxjn0rYoU6ZqWrjrdo-hxDeAA528VTFC6ibGRYJKjIUhg6bF2v5KbcELhsIDZodgL-11PTtWsMrfD_l6VVi0Q6sHT1p81FWBVSvIFM5YkBObwUSO827a",
+      "year": "2024"
+    },
+    {
+      "id": 2,
+      "title": "Medical Research from vertexaisearch.cloud.google.com",
+      "source": "",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQEuo5h5UlqfqO5ho9TEeIW3A5ulFNZkIoPnng56rw4tH-LnFRXrNX2KsSR4CDGthuCweY_Qca_9OS8KfpqZjLB9x8I80qOK0F-gJ2NQh-BT3L-n6Qjw21jXnbBb4PDlbo3Z6NtiygXe3vtYTKg7CGF0rsANJ5muluZ9hXUkBLJOV79uG67cE5x4AxAMnTv34_glhA==",
+      "year": "2024"
+    },
+    {
+      "id": 3,
+      "title": "medicalnewstoday.com",
+      "source": "",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQHi20U17U3_4_wBkfxTVavtqymur87hQPvTPkIyp03cT4fkSE4WSqFJrOv2ppgYPkvURKXcYrEIbGWS-dYPivmCzk7SfPFG8c2AZJxdeG6qodIENdm3vRKFbmaXOt2fFNoN4zV6c-5IKBWp1WX9fnfBb4FGhpbFzrw0s9WAvsxUq95TzKBfXwW5Jg5SeIlrx6GAv4LQpYJwZEgGGsD0V8DfWJMPiA6b9cZLChCCxF3yYQ==",
+      "year": "2024"
+    }
+  ]
+}
