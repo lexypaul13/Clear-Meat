@@ -352,9 +352,15 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
                     break
         
         # Add citations for App Store compliance (medical information sources)
+        logger.info(f"[Mobile Debug] Processing citations - 'citations' in assessment: {'citations' in assessment}")
+        logger.info(f"[Mobile Debug] Assessment citations value: {assessment.get('citations', 'KEY_MISSING')}")
+        logger.info(f"[Mobile Debug] Citations truthy check: {bool(assessment.get('citations'))}")
+        
         if "citations" in assessment and assessment["citations"]:
+            logger.info(f"[Mobile Debug] ✅ Citation condition passed - processing {len(assessment['citations'])} citations")
             # Use citations from Google Search grounding
-            for cite in assessment["citations"][:3]:  # Limit to top 3 for mobile performance
+            for i, cite in enumerate(assessment["citations"][:3]):  # Limit to top 3 for mobile performance
+                logger.info(f"[Mobile Debug] Processing citation {i+1}: {cite.get('source', 'N/A')}")
                 optimized["citations"].append({
                     "id": cite.get("id", 1),
                     "title": cite.get("title", "Medical Research")[:100],  # Truncate long titles  
@@ -362,6 +368,12 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
                     "url": cite.get("url", ""),  # Include URL for iOS SafariView clickability
                     "year": str(cite.get("year", "2024"))
                 })
+        else:
+            logger.warning(f"[Mobile Debug] ❌ Citation condition FAILED - no citations will be added to mobile response")
+            logger.warning(f"[Mobile Debug] Assessment keys: {list(assessment.keys())}")
+            if "citations" in assessment:
+                logger.warning(f"[Mobile Debug] Citations value type: {type(assessment['citations'])}")
+                logger.warning(f"[Mobile Debug] Citations length: {len(assessment['citations']) if assessment['citations'] else 'None/Empty'}")
         # Note: Citations now include URLs for proper iOS SafariView integration
         
         # Add meta field for mobile apps
@@ -1406,9 +1418,24 @@ async def get_product_health_assessment_mcp(
         
         logger.info("Step 3: MCP health assessment generated successfully")
         
+        # Debug: Log citations before mobile optimization
+        pre_mobile_citations = assessment.get('citations', [])
+        logger.info(f"[API Debug] Citations before mobile optimization: {len(pre_mobile_citations)}")
+        
         # Optimize response for mobile if requested
         if format == "mobile":
             assessment = _optimize_for_mobile(assessment)
+            
+            # Debug: Log citations after mobile optimization
+            post_mobile_citations = assessment.get('citations', [])
+            logger.info(f"[API Debug] Citations after mobile optimization: {len(post_mobile_citations)}")
+            
+            if len(pre_mobile_citations) != len(post_mobile_citations):
+                logger.warning(f"[API Debug] ⚠️ Citation count changed! Before: {len(pre_mobile_citations)}, After: {len(post_mobile_citations)}")
+        
+        # Debug: Log final response structure
+        logger.info(f"[API Debug] Final response keys: {list(assessment.keys())}")
+        logger.info(f"[API Debug] Final citations in response: {len(assessment.get('citations', []))}")
         
         # Return dict directly to avoid Pydantic model conversion issues
         from fastapi.responses import JSONResponse
