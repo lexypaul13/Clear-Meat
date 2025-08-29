@@ -1418,24 +1418,9 @@ async def get_product_health_assessment_mcp(
         
         logger.info("Step 3: MCP health assessment generated successfully")
         
-        # Debug: Log citations before mobile optimization
-        pre_mobile_citations = assessment.get('citations', [])
-        logger.info(f"[API Debug] Citations before mobile optimization: {len(pre_mobile_citations)}")
-        
         # Optimize response for mobile if requested
         if format == "mobile":
             assessment = _optimize_for_mobile(assessment)
-            
-            # Debug: Log citations after mobile optimization
-            post_mobile_citations = assessment.get('citations', [])
-            logger.info(f"[API Debug] Citations after mobile optimization: {len(post_mobile_citations)}")
-            
-            if len(pre_mobile_citations) != len(post_mobile_citations):
-                logger.warning(f"[API Debug] ⚠️ Citation count changed! Before: {len(pre_mobile_citations)}, After: {len(post_mobile_citations)}")
-        
-        # Debug: Log final response structure
-        logger.info(f"[API Debug] Final response keys: {list(assessment.keys())}")
-        logger.info(f"[API Debug] Final citations in response: {len(assessment.get('citations', []))}")
         
         # Return dict directly to avoid Pydantic model conversion issues
         from fastapi.responses import JSONResponse
