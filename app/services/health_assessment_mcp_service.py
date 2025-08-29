@@ -2144,14 +2144,14 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
                         final_url = response.headers.get('Location', redirect_url)
                         logger.info(f"[URL Resolution] ✅ Resolved to: {final_url}")
                         return final_url
-                else:
+                    else:
                         logger.info(f"[URL Resolution] No redirect, status: {response.status}")
                         return redirect_url
-                    
-            except asyncio.TimeoutError:
+                        
+        except asyncio.TimeoutError:
             logger.warning(f"[URL Resolution] Timeout resolving redirect URL")
             return redirect_url  # Fallback to original URL
-            except Exception as e:
+        except Exception as e:
             logger.warning(f"[URL Resolution] Failed to resolve redirect URL: {e}")
             return redirect_url  # Fallback to original URL
 
