@@ -10,20 +10,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional, List, Tuple
 from contextlib import AsyncExitStack
 
-# Pre-compiled regex patterns for 90% faster text parsing
-SECTION_PATTERNS = {
-    'summary': re.compile(r'SUMMARY:\s*(.+)', re.IGNORECASE),
-    'ingredients': re.compile(r'INGREDIENT ANALYSIS:', re.IGNORECASE), 
-    'grade': re.compile(r'OVERALL GRADE:\s*([A-F][+-]?)', re.IGNORECASE),
-    'color': re.compile(r'GRADE COLOR:\s*(\w+)', re.IGNORECASE),
-    'works_cited': re.compile(r'WORKS CITED:', re.IGNORECASE)
-}
-
-INGREDIENT_PATTERNS = {
-    'name': re.compile(r'Name:\s*(.+)', re.IGNORECASE),
-    'risk_level': re.compile(r'Risk Level:\s*(High|Moderate|Low)', re.IGNORECASE),
-    'micro_report': re.compile(r'(?:Micro Report|Detailed Analysis):\s*(.+)', re.IGNORECASE)
-}
+# Streamlined parsing using modern AI response handling
 
 DANGEROUS_INGREDIENTS = ['sodium nitrite', 'bha', 'bht', 'msg', 'monosodium glutamate']
 
@@ -31,17 +18,13 @@ import google.generativeai as genai
 from pydantic import ValidationError
 from fastapi import HTTPException
 
-# LangChain imports for tool integration
-from langchain.agents import create_tool_calling_agent, AgentExecutor
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.prompts import ChatPromptTemplate
+# Direct Gemini API usage - no LangChain needed
 
 from app.core.config import settings
 from app.core.cache import cache
 from app.models.product import HealthAssessment, ProductStructured
 
 from app.services.grounded_cache_service import grounded_cache
-# from app.services.langchain_citation_tools import citation_tools  # Disabled - using Gemini Google Search instead
 
 logger = logging.getLogger(__name__)
 
@@ -69,14 +52,7 @@ class HealthAssessmentMCPService:
         genai.configure(api_key=settings.GEMINI_API_KEY)
         self.model = settings.GEMINI_MODEL
         
-        # Initialize LangChain components
-        self.llm = ChatGoogleGenerativeAI(
-            model="gemini-pro",
-            google_api_key=settings.GEMINI_API_KEY,
-            temperature=0
-        )
-        # self.citation_tools = citation_tools  # Disabled - using Google Search grounding
-        self.citation_tools = []  # Empty list for compatibility
+        # Direct Gemini API configuration - streamlined approach
         
     async def generate_health_assessment_with_real_evidence(
         self, 
@@ -1565,217 +1541,15 @@ YOUR ANALYSIS MUST BE RESEARCH-DRIVEN, DETAILED, AND EVIDENCE-BASED."""
             logger.error(f"Assessment parsing failed: {e}")
             return None
     
-    def _split_response_into_sections(self, response_text: str) -> Dict[str, str]:
-        """Split response into named sections using pre-compiled regex patterns for 90% faster parsing."""
-        sections = {}
-        lines = response_text.split('\n')
-        current_section = None
-        current_content = []
-        
-        for line in lines:
-            line = line.strip()
-            
-            # Use pre-compiled patterns for faster matching
-            section_found = False
-            
-            if SECTION_PATTERNS['summary'].search(line):
-                if current_section:
-                    sections[current_section] = '\n'.join(current_content)
-                current_section = 'SUMMARY'
-                match = SECTION_PATTERNS['summary'].search(line)
-                current_content = [match.group(1) if match else '']
-                section_found = True
-                
-            elif SECTION_PATTERNS['ingredients'].search(line):
-                if current_section:
-                    sections[current_section] = '\n'.join(current_content)
-                current_section = 'INGREDIENT ANALYSIS'
-                current_content = []
-                section_found = True
-                
-            elif SECTION_PATTERNS['grade'].search(line):
-                if current_section:
-                    sections[current_section] = '\n'.join(current_content)
-                current_section = 'OVERALL GRADE'
-                match = SECTION_PATTERNS['grade'].search(line)
-                current_content = [match.group(1) if match else '']
-                section_found = True
-                
-            elif SECTION_PATTERNS['color'].search(line):
-                if current_section:
-                    sections[current_section] = '\n'.join(current_content)
-                current_section = 'GRADE COLOR'
-                match = SECTION_PATTERNS['color'].search(line)
-                current_content = [match.group(1) if match else '']
-                section_found = True
-                
-            elif SECTION_PATTERNS['works_cited'].search(line):
-                if current_section:
-                    sections[current_section] = '\n'.join(current_content)
-                current_section = 'WORKS CITED'
-                current_content = []
-                section_found = True
-            
-            if not section_found and current_section:
-                current_content.append(line)
-        
-        # Save final section
-        if current_section:
-            sections[current_section] = '\n'.join(current_content)
-        
-        return sections
+    # Removed obsolete _split_response_into_sections - using modern structured parsing
     
-    def _parse_ingredient_analysis(self, ingredient_text: str) -> List[Dict[str, Any]]:
-        """Parse ingredient analysis section."""
-        ingredients = []
-        lines = ingredient_text.split('\n')
-        current_ingredient = {}
-        
-        for line in lines:
-            line = line.strip()
-            
-            if line.startswith('- Name:') or line.startswith('Name:'):
-                # Save previous ingredient
-                if current_ingredient:
-                    ingredients.append(current_ingredient)
-                    current_ingredient = {}
-                
-                # Start new ingredient
-                name = line.split(':', 1)[1].strip()
-                current_ingredient = {
-                    'name': name,
-                    'risk_level': 'moderate',
-                    'micro_report': '',
-                    'citations': []
-                }
-            elif ('Risk Level:' in line or 'risk level:' in line.lower()) and current_ingredient:
-                risk_level = line.split(':', 1)[1].strip()
-                current_ingredient['risk_level'] = risk_level
-            elif ('Micro Report:' in line or 'micro report:' in line.lower()) and current_ingredient:
-                micro_report = line.split(':', 1)[1].strip()
-                current_ingredient['micro_report'] = micro_report  # Show full analysis
-            elif ('Citations:' in line or 'citations:' in line.lower()) and current_ingredient:
-                # Simple citation parsing - just extract citation markers as integers
-                citations_text = line.split(':', 1)[1].strip()
-                citation_markers = []
-                import re
-                markers = re.findall(r'\[(\d+)\]', citations_text)
-                # Skip citation processing
-        
-        # Save final ingredient
-        if current_ingredient:
-            ingredients.append(current_ingredient)
-        
-        return ingredients
+    # Removed obsolete _parse_ingredient_analysis - using _parse_ai_categorization_response
     
-    def _parse_citations(self, citations_text: str) -> List[Dict[str, Any]]:
-        """Parse works cited section."""
-        citations = []
-        lines = citations_text.split('\n')
-        
-        for line in lines:
-            line = line.strip()
-            if line and (line[0].isdigit() or line.startswith('[')):
-                # Extract citation
-                citation_text = line
-                # Remove numbering
-                import re
-                citation_clean = re.sub(r'^\d+\.?\s*', '', citation_text)
-                citation_clean = re.sub(r'^\[\d+\]\s*', '', citation_clean)
-                
-                if citation_clean:
-                    citations.append({
-                        'id': len(citations) + 1,
-                        'citation': citation_clean.strip()
-                    })
-        
-        return citations
+    # Removed obsolete _parse_citations - using Google grounding metadata
     
-    def _parse_citations_from_response(self, response_text: str) -> List[Dict[str, Any]]:
-        """Parse citations from AI response that used MCP tools."""
-        citations = []
-        
-        # Find WORKS CITED section
-        works_cited_match = re.search(r'WORKS CITED:(.*?)(?=\n\n|\Z)', response_text, re.IGNORECASE | re.DOTALL)
-        if not works_cited_match:
-            logger.warning("[MCP Citations] No WORKS CITED section found in AI response")
-            return []
-        
-        citations_text = works_cited_match.group(1)
-        lines = citations_text.strip().split('\n')
-        
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-                
-            # Parse numbered citations that should include URLs from MCP search
-            match = re.match(r'^\d+\.\s*(.+)', line)
-            if match:
-                citation_text = match.group(1)
-                
-                # Extract title and URL from citation
-                # Format expected: "Title of Article. Source. URL"
-                url_match = re.search(r'(https?://[^\s]+)', citation_text)
-                if url_match:
-                    url = url_match.group(1).rstrip('.,;')
-                    title = citation_text[:url_match.start()].strip().rstrip('.,')
-                else:
-                    # No URL found - this shouldn't happen with MCP
-                    logger.warning(f"[MCP Citations] No URL found in citation: {citation_text}")
-                    continue
-                
-                # Extract source/journal name if present
-                parts = title.split('.')
-                if len(parts) >= 2:
-                    actual_title = parts[0].strip()
-                    source = parts[1].strip()
-                else:
-                    actual_title = title
-                    source = "Scientific Research"
-                
-                citations.append({
-                    "id": len(citations) + 1,
-                    "title": actual_title,
-                    "source": source,
-                    "year": 2024,  # Default year - can be extracted if present
-                    "url": url,
-                    "source_type": "research"
-                })
-        
-        return citations
+    # Removed obsolete _parse_citations_from_response - using Google grounding metadata
     
-    def _parse_citations_new_format(self, citations_text: str) -> List[Dict[str, Any]]:
-        """Parse works cited section into new citation format."""
-        citations = []
-        lines = citations_text.split('\n')
-        
-        for line in lines:
-            line = line.strip()
-            if line and (line[0].isdigit() or line.startswith('[')):
-                # Extract citation with new format
-                citation_text = line
-                # Remove numbering
-                import re
-                citation_clean = re.sub(r'^\d+\.?\s*', '', citation_text)
-                citation_clean = re.sub(r'^\[\d+\]\s*', '', citation_clean)
-                
-                if citation_clean:
-                    # Parse into title, source, year format
-                    # Simple parsing - can be enhanced based on actual citation formats
-                    parts = citation_clean.split('.')
-                    title = parts[0].strip() if parts else "Unknown Title"
-                    source = parts[1].strip() if len(parts) > 1 else "Unknown Source"
-                    year = "2023"  # Default year, can extract from text if needed
-                    
-                    citations.append({
-                        "id": len(citations) + 1,
-                        "title": title,
-                        "source": source,
-                        "year": year
-                    })
-        
-        return citations
+    # Removed obsolete _parse_citations_new_format - using Google grounding metadata
     
     async def _generate_nutrition_insights(self, product: ProductStructured) -> List[Dict[str, Any]]:
         """Generate dynamic AI-powered nutrition insights for the key nutrients."""
@@ -2269,245 +2043,13 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
             
         return 5  # Unknown sources get minimal score
     
-    def _get_ingredient_specific_search_terms(self, ingredient: str, risk_level: str) -> str:
-        """Generate ingredient-specific search terms for more relevant citations."""
-        ingredient_lower = ingredient.lower()
-        
-        # Specific search strategies for common problematic ingredients
-        if 'sodium phosphate' in ingredient_lower or 'phosphate' in ingredient_lower:
-            return "sodium phosphate food additive preservative hypertension health effects"
-        
-        elif 'nitrite' in ingredient_lower or 'nitrate' in ingredient_lower:
-            return "sodium nitrite nitrate processed meat preservative cancer health effects"
-        
-        elif 'bha' in ingredient_lower or 'bht' in ingredient_lower:
-            return "BHA BHT antioxidant preservative carcinogenic health safety"
-        
-        elif 'carrageenan' in ingredient_lower:
-            return "carrageenan food additive inflammatory bowel health effects"
-        
-        elif 'msg' in ingredient_lower or 'monosodium glutamate' in ingredient_lower:
-            return "monosodium glutamate MSG food additive headache health effects"
-        
-        elif 'artificial color' in ingredient_lower or 'dye' in ingredient_lower or any(color in ingredient_lower for color in ['red 40', 'yellow 6', 'blue 1']):
-            return "artificial food coloring dye hyperactivity health effects children"
-        
-        elif 'high fructose corn syrup' in ingredient_lower or 'hfcs' in ingredient_lower:
-            return "high fructose corn syrup HFCS obesity diabetes health effects"
-        
-        elif 'trans fat' in ingredient_lower or 'partially hydrogenated' in ingredient_lower:
-            return "trans fat partially hydrogenated oil cardiovascular health effects"
-        
-        elif any(sugar in ingredient_lower for sugar in ['sugar', 'syrup', 'dextrose', 'fructose']):
-            return f"{ingredient} added sugar diabetes obesity health effects"
-        
-        elif any(preservative in ingredient_lower for preservative in ['benzoate', 'sorbate', 'sulfite']):
-            return f"{ingredient} food preservative allergic reaction health effects"
-        
-        elif 'powder' in ingredient_lower and any(natural in ingredient_lower for natural in ['cherry', 'apple', 'berry', 'fruit']):
-            # For natural flavor powders, focus on additive safety
-            base_ingredient = ingredient_lower.replace(' powder', '').replace(' extract', '')
-            return f"{base_ingredient} powder natural flavoring food additive safety"
-        
-        elif 'extract' in ingredient_lower:
-            # For extracts, focus on processing and safety
-            base_ingredient = ingredient_lower.replace(' extract', '')
-            return f"{base_ingredient} extract food flavoring processing safety"
-        
-        # Default search terms based on risk level
-        elif risk_level == "high":
-            return f"{ingredient} food additive toxicity carcinogenic health effects"
-        else:
-            return f"{ingredient} food additive safety health assessment"
+    # Removed obsolete _get_ingredient_specific_search_terms - handled by enhanced prompt
     
-    async def _generate_real_citations(self, high_risk_ingredients: List[str], moderate_risk_ingredients: List[str]) -> List[Dict[str, Any]]:
-        """Generate real scientific citations for concerning ingredients found in the product."""
-        try:
-            logger.info(f"[Real Citations] Starting citation generation for {len(high_risk_ingredients)} high-risk, {len(moderate_risk_ingredients)} moderate-risk ingredients")
-            
-            # Citation generation removed - using AI-generated responses only
-            
-            # Filter out trivial ingredients to save time
-            filtered_high_risk = [ing for ing in high_risk_ingredients if not self._should_skip_citation(ing)]
-            filtered_moderate_risk = [ing for ing in moderate_risk_ingredients if not self._should_skip_citation(ing)]
-            
-            skipped_count = (len(high_risk_ingredients) - len(filtered_high_risk)) + (len(moderate_risk_ingredients) - len(filtered_moderate_risk))
-            if skipped_count > 0:
-                logger.info(f"[Citation Optimization] Skipped {skipped_count} trivial ingredients (water, salt, vitamins, etc.)")
-            
-            # Find ingredients that warrant citation search (limit to top 6 total for speed)
-            ingredients_to_research = []
-            
-            # Prioritize high-risk ingredients (max 4)
-            for ingredient in filtered_high_risk[:4]:
-                health_claim = self._get_ingredient_specific_search_terms(ingredient, "high")
-                ingredients_to_research.append((ingredient, "high", health_claim))
-            
-            # Add moderate-risk ingredients (max 2 more)
-            remaining_slots = 6 - len(ingredients_to_research)
-            for ingredient in filtered_moderate_risk[:remaining_slots]:
-                health_claim = self._get_ingredient_specific_search_terms(ingredient, "moderate")
-                ingredients_to_research.append((ingredient, "moderate", health_claim))
-            
-            logger.info(f"[Real Citations] Researching {len(ingredients_to_research)} concerning ingredients (filtered from {len(high_risk_ingredients + moderate_risk_ingredients)} total)")
-            
-            # Research ingredients in parallel with web sources as fallback
-            citation_tasks = []
-            
-            for ingredient, risk_type, health_claim in ingredients_to_research:
-                # Enable web sources as fallback for better coverage
-                search_params = CitationSearch(
-                    ingredient=ingredient,
-                    health_claim=health_claim,
-                    max_results=2 if risk_type == "high" else 1,
-                    # Disable academic sources that cause rate limiting
-                    search_pubmed=False,
-                    search_crossref=False,
-                    # Focus on reliable web authority sources
-                    search_fda=False,  # Disabled due to SSL handshake failures
-                    search_cdc=True,
-                    search_mayo_clinic=True,
-                    search_nih=True,
-                    search_who=False,  # Disabled due to 404 errors
-                    search_harvard_health=True,
-                    # Disable preprint sources for reliability
-                    search_arxiv=False,
-                    search_biorxiv=False,
-                    search_doaj=False,
-                    search_europe_pmc=False
-                )
-                citation_tasks.append(self._search_citations_async(search_params, risk_type))
-            
-            # Execute citation searches with timeout protection (max 8 seconds total)
-            logger.info(f"[Parallel Citations] Starting {len(citation_tasks)} citation searches with 8-second timeout")
-            
-            try:
-                # Apply global timeout to prevent hanging
-                citation_results = await asyncio.wait_for(
-                    asyncio.gather(*citation_tasks, return_exceptions=True),
-                    timeout=8.0  # 8-second timeout for all citations
-                )
-                logger.info(f"[Citation Timeout] Completed {len(citation_results)} searches in <8 seconds")
-            except asyncio.TimeoutError:
-                logger.warning(f"[Citation Timeout] Citation search timed out after 8 seconds, proceeding without citations")
-                citation_results = [None] * len(citation_tasks)
-            
-            # Process results and build citations list
-            for result in citation_results:
-                if isinstance(result, Exception):
-                    logger.warning(f"Citation search failed: {result}")
-                    continue
-                
-                if result and result.get('citations'):
-                    for citation_data in result['citations']:
-                        citations.append({
-                            "id": citation_id,
-                            "title": citation_data['title'],
-                            "source": citation_data['source'],
-                            "year": citation_data['year'],
-                            "url": citation_data.get('url'),
-                            "source_type": citation_data.get('source_type', 'research')
-                        })
-                        citation_id += 1
-            
-            # If no real research found, return empty list (better than fake citations)
-            if not citations:
-                logger.info("No real scientific citations found for these ingredients")
-                return []  # Empty list - iOS will handle this gracefully
-            
-            logger.info(f"Generated {len(citations)} real citations from scientific databases")
-            return citations
-            
-        except Exception as e:
-            logger.error(f"Real citation generation failed: {e}")
-            # Return fallback when research fails with URL so it passes mobile filter
-            return [{
-                "id": 1,
-                "title": "OpenFoodFacts Product Database",
-                "source": "OpenFoodFacts", 
-                "year": 2024,
-                "url": "https://world.openfoodfacts.org/",
-                "source_type": "database"
-            }]
+    # Removed obsolete _generate_real_citations - using Google grounding metadata
     
-    async def _search_citations_async(self, search_params, risk_level: str) -> Optional[Dict[str, Any]]:
-        """Search citations asynchronously with retry logic for rate limiting."""
-        max_retries = 1  # Reduced for faster failure with unreliable internet
-        base_delay = 0.5
-        
-        for attempt in range(max_retries + 1):
-            try:
-                # Add small delay before each search to avoid overwhelming APIs
-                await asyncio.sleep(0.5 * attempt)  # Progressive delay
-                
-                # Run the synchronous citation search in a thread executor with timeout
-                result = await asyncio.wait_for(
-                    asyncio.get_event_loop().run_in_executor(
-                        None,
-                        lambda: self._search_citations_sync(search_params)
-                    ),
-                    timeout=3.0  # 3-second timeout per individual search
-                )
-                
-                if result and result.citations:
-                    citations_data = []
-                    for citation in result.citations[:1]:  # Take 1 per ingredient
-                        # Format URL properly - ensure DOIs are converted to full URLs
-                        url = citation.url
-                        if not url and citation.doi:
-                            # Convert DOI to proper URL format
-                            doi = citation.doi.strip()
-                            if doi.startswith('10.'):
-                                url = f"https://doi.org/{doi}"
-                            else:
-                                url = doi
-                        
-                        citations_data.append({
-                            "title": citation.title[:100] + "..." if len(citation.title) > 100 else citation.title,
-                            "source": citation.journal or ("Academic Research" if risk_level == "high" else "Scientific Research Database"),
-                            "year": citation.publication_date.year if citation.publication_date else (2023 if risk_level == "high" else 2024),
-                            "url": url,
-                            "source_type": getattr(citation, 'source_type', 'research')
-                        })
-                    
-                    return {"analysis": "processed"}
-                
-                # If no results and we have retries left, continue to next attempt
-                if attempt < max_retries:
-                    logger.info(f"No citations found for {search_params.ingredient}, retrying (attempt {attempt + 1}/{max_retries})")
-                    continue
-                else:
-                    return None
-                    
-            except asyncio.TimeoutError:
-                logger.warning(f"Citation search timed out for {search_params.ingredient} (attempt {attempt + 1})")
-                if attempt < max_retries:
-                    continue
-                else:
-                    return None
-            except Exception as e:
-                # Check if it's a rate limiting error
-                if "429" in str(e) or "rate limit" in str(e).lower():
-                    if attempt < max_retries:
-                        delay = base_delay * (2 ** attempt)  # Exponential backoff
-                        logger.warning(f"Rate limit hit for {search_params.ingredient}, retrying in {delay}s (attempt {attempt + 1}/{max_retries})")
-                        await asyncio.sleep(delay)
-                        continue
-                    else:
-                        logger.error(f"Rate limit exhausted for {search_params.ingredient}: {e}")
-                        return None
-                else:
-                    logger.warning(f"Citation search failed for {search_params.ingredient}: {e}")
-                    if attempt < max_retries:
-                        continue
-                    else:
-                        return None
-        
-        return None
+    # Removed obsolete _search_citations_async - using Google grounding metadata
     
-    def _search_citations_sync(self, search_params):
-        """Citation search disabled - using AI-generated responses only."""
-        return None
+    # Removed obsolete _search_citations_sync - using Google grounding metadata
     
     async def _return_cached_result(self, cached_result):
         """Helper to return cached result as an awaitable."""
@@ -2557,12 +2099,12 @@ async def test_mcp_health_assessment():
     
     if result:
         logger.info("✅ MCP Health Assessment Generated!")
-        logger.info(f"Summary: {result.summary}")
-        logger.info(f"Grade: {result.risk_summary.grade}")
-        logger.info(f"Real citations: {len(result.real_citations) if result.real_citations else 0}")
-        if result.ingredients_assessment:
-            high_risk_count = len(result.ingredients_assessment.high_risk)
-            moderate_risk_count = len(result.ingredients_assessment.moderate_risk)
+        logger.info(f"Summary: {result.get('summary', 'N/A')}")
+        logger.info(f"Grade: {result.get('risk_summary', {}).get('grade', 'N/A')}")
+        logger.info(f"Citations: {len(result.get('citations', [])) if result.get('citations') else 0}")
+        if result.get('ingredients_assessment'):
+            high_risk_count = len(result['ingredients_assessment'].get('high_risk', []))
+            moderate_risk_count = len(result['ingredients_assessment'].get('moderate_risk', []))
             logger.info(f"High-risk ingredients: {high_risk_count}")
             logger.info(f"Moderate-risk ingredients: {moderate_risk_count}")
     else:
