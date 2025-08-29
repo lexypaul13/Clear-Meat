@@ -16,6 +16,8 @@ from app.internal.dependencies import get_current_active_user
 from app.services.recommendation_service import (
     get_personalized_recommendations, analyze_product_match
 )
+from app.utils.circuit_breaker import with_circuit_breaker
+from app.core.cache import cache
 
 # Configure logging for this module
 logger = logging.getLogger(__name__)
@@ -375,7 +377,8 @@ def remove_favorite(
     },
     tags=["Users", "Recommendations"]
 )
-def get_explore_recommendations(
+@with_circuit_breaker(timeout=25.0)
+async def get_explore_recommendations(
     db: Session = Depends(get_db),
     supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user),
@@ -397,6 +400,13 @@ def get_explore_recommendations(
         RecommendationResponse: List of recommended products with match details
     """
     try:
+        # Check cache first (5-minute aggressive caching to reduce DB load)
+        cache_key = cache.generate_key(f"user_{current_user.id}_limit_{limit}", prefix="explore_recommendations")
+        cached_result = cache.get(cache_key)
+        if cached_result:
+            logger.info(f"Returning cached explore recommendations for user {current_user.id}")
+            return cached_result
+        
         logger.info(f"Generating explore recommendations for user {current_user.id}")
         
         # Get user preferences
@@ -459,10 +469,15 @@ def get_explore_recommendations(
         
         logger.info(f"Returning {len(result)} explore recommendations")
         
-        return models.RecommendationResponse(
+        response = models.RecommendationResponse(
             recommendations=result,
             total_matches=len(result)
         )
+        
+        # Cache the response for 5 minutes (300 seconds)
+        cache.set(cache_key, response, ttl=300)
+        
+        return response
     except Exception as e:
         logger.error(f"Error generating explore recommendations: {str(e)}")
         raise HTTPException(

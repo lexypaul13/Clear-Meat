@@ -28,6 +28,7 @@ from app.services.recommendation_service import (
 from app.services.health_assessment_mcp_service import HealthAssessmentMCPService
 from app.services.search_service import search_products
 from app.services.openfoodfacts_service import get_openfoodfacts_service
+from app.utils.circuit_breaker import with_circuit_breaker
 from app.utils.personalization import apply_user_preferences
 from app.core.cache import cache, CacheService
 
@@ -1552,6 +1553,7 @@ async def debug_mcp_health_assessment(
     },
     tags=["Products", "Public"]
 )
+@with_circuit_breaker(timeout=25.0)
 async def get_public_recommendations(
     supabase_service = Depends(get_supabase_service),
     limit: int = Query(30, ge=1, le=100, description="Maximum number of recommendations to return", example=20),
@@ -1570,6 +1572,13 @@ async def get_public_recommendations(
         RecommendationResponse: List of recommended products with match details and pre-populated health assessments
     """
     try:
+        # Check cache first (5-minute aggressive caching for public endpoint)
+        cache_key = cache.generate_key(f"public_limit_{limit}", prefix="public_explore_recommendations")
+        cached_result = cache.get(cache_key)
+        if cached_result:
+            logger.info(f"Returning cached public explore recommendations (limit: {limit})")
+            return cached_result
+        
         logger.info(f"Generating public explore recommendations with parallel health assessments (limit: {limit})")
         
         # Use default healthy preferences for anonymous users
@@ -1627,10 +1636,15 @@ async def get_public_recommendations(
         
         logger.info(f"Returning {len(result)} public recommendations (no pre-generation)")
         
-        return models.RecommendationResponse(
+        response = models.RecommendationResponse(
             recommendations=result,
             total_matches=total_count
         )
+        
+        # Cache the response for 5 minutes (300 seconds)
+        cache.set(cache_key, response, ttl=300)
+        
+        return response
     except Exception as e:
         logger.error(f"Error generating public recommendations: {str(e)}")
         raise HTTPException(
