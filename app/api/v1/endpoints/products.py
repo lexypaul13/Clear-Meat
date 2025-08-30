@@ -94,50 +94,6 @@ _INGREDIENT_INSIGHTS_CACHE = {
     }
 }
 
-def _is_ingredient_citation_match(ingredient_name: str, cite_title: str, cite_source: str) -> bool:
-    """Check if a citation is relevant to a specific ingredient using aliases and common names."""
-    ingredient_lower = ingredient_name.lower().strip()
-    search_text = f"{cite_title} {cite_source}".lower()
-    
-    # Common ingredient aliases and alternative names
-    ingredient_aliases = {
-        "sodium nitrite": ["nitrite", "e250", "preservative", "curing salt"],
-        "sodium nitrate": ["nitrate", "e251", "preservative"],
-        "monosodium glutamate": ["msg", "glutamate", "flavor enhancer", "e621"],
-        "butylated hydroxyanisole": ["bha", "antioxidant", "e320"],
-        "butylated hydroxytoluene": ["bht", "antioxidant", "e321"],
-        "sodium benzoate": ["benzoate", "preservative", "e211"],
-        "potassium sorbate": ["sorbate", "preservative", "e202"],
-        "caramel color": ["caramel", "coloring", "e150"],
-        "phosphoric acid": ["phosphate", "acidulant", "e338"],
-        "sodium phosphate": ["phosphate", "emulsifier", "e339"],
-        "carrageenan": ["seaweed extract", "thickener", "e407"],
-        "xanthan gum": ["xanthan", "thickener", "e415"],
-        "high fructose corn syrup": ["hfcs", "corn syrup", "sweetener"],
-        "artificial flavor": ["artificial flavoring", "synthetic flavor"],
-        "natural flavor": ["natural flavoring", "flavor"],
-    }
-    
-    # Check direct match first
-    if ingredient_lower in search_text:
-        return True
-    
-    # Check aliases
-    for main_ingredient, aliases in ingredient_aliases.items():
-        if ingredient_lower == main_ingredient or ingredient_lower in aliases:
-            # Check if any alias appears in the citation
-            for alias in aliases + [main_ingredient]:
-                if alias in search_text:
-                    return True
-    
-    # Check for partial matches with common preservatives/additives
-    preservative_keywords = ["preservative", "additive", "chemical", "compound"]
-    if any(keyword in ingredient_lower for keyword in preservative_keywords):
-        if any(keyword in search_text for keyword in preservative_keywords):
-            return True
-    
-    return False
-
 
 def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
     """Optimize health assessment response for mobile consumption with performance-optimized ingredient insights.
@@ -341,30 +297,8 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
             
             micro_report = clean_text(ingredient.get("micro_report", ""))
             
-            # Extract ingredient-specific citations
-            ingredient_citations = []
-            if "citations" in assessment and assessment["citations"]:
-                # Filter citations that are relevant to this specific ingredient
-                for cite in assessment["citations"]:
-                    cite_title = cite.get("title", "").lower()
-                    cite_source = cite.get("source", "").lower()
-                    ingredient_lower = ingredient_name.lower()
-                    
-                    # Check if citation is relevant to this ingredient
-                    if (ingredient_lower in cite_title or 
-                        ingredient_lower in cite_source or
-                        # Handle common ingredient aliases
-                        _is_ingredient_citation_match(ingredient_name, cite_title, cite_source)):
-                        ingredient_citations.append({
-                            "id": cite.get("id", 1),
-                            "title": cite.get("title", "Medical Research")[:100],
-                            "source": cite.get("source", "Research")[:50],
-                            "url": cite.get("url", ""),
-                            "year": str(cite.get("year", "2024"))
-                        })
-                        # Limit to 2 citations per ingredient for mobile performance
-                        if len(ingredient_citations) >= 2:
-                            break
+            # Extract ingredient-specific citations (now provided by Gemini directly)
+            ingredient_citations = ingredient.get("citations", [])
             
             optimized["high_risk"].append({
                 "name": truncate_text(ingredient_name, 50),
@@ -388,30 +322,8 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
             
             micro_report = clean_text(ingredient.get("micro_report", ""))
             
-            # Extract ingredient-specific citations
-            ingredient_citations = []
-            if "citations" in assessment and assessment["citations"]:
-                # Filter citations that are relevant to this specific ingredient
-                for cite in assessment["citations"]:
-                    cite_title = cite.get("title", "").lower()
-                    cite_source = cite.get("source", "").lower()
-                    ingredient_lower = ingredient_name.lower()
-                    
-                    # Check if citation is relevant to this ingredient
-                    if (ingredient_lower in cite_title or 
-                        ingredient_lower in cite_source or
-                        # Handle common ingredient aliases
-                        _is_ingredient_citation_match(ingredient_name, cite_title, cite_source)):
-                        ingredient_citations.append({
-                            "id": cite.get("id", 1),
-                            "title": cite.get("title", "Medical Research")[:100],
-                            "source": cite.get("source", "Research")[:50],
-                            "url": cite.get("url", ""),
-                            "year": str(cite.get("year", "2024"))
-                        })
-                        # Limit to 2 citations per ingredient for mobile performance
-                        if len(ingredient_citations) >= 2:
-                            break
+            # Extract ingredient-specific citations (now provided by Gemini directly)
+            ingredient_citations = ingredient.get("citations", [])
             
             optimized["moderate_risk"].append({
                 "name": truncate_text(ingredient_name, 50),

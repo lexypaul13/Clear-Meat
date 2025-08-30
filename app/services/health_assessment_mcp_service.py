@@ -1173,17 +1173,50 @@ SEARCH AND CITATION RULES:
 3.  **Mandatory Citations:** You MUST cite the exact URL for every piece of information you provide. Use a format like: "Sodium Nitrite is a preservative that can form nitrosamines under certain conditions."
 4.  **No Outside Knowledge:** If you cannot find information on these specific sites, you must state: "No information was found for [ingredient] on the specified authoritative sources." DO NOT use your general training knowledge.
 
-RESPONSE FORMAT:
-SUMMARY: [Brief overall summary based ONLY on your findings from the required sites.]
+RESPONSE FORMAT - RETURN VALID JSON ONLY:
+```json
+{{
+  "summary": "Brief overall summary based ONLY on your findings from the required sites.",
+  "ingredients_assessment": {{
+    "high_risk": [
+      {{
+        "name": "Ingredient Name",
+        "risk_level": "high",
+        "category": "preservative|additive|sweetener|etc",
+        "micro_report": "Detailed analysis (200-250 chars) with specific health effects found in research",
+        "citations": [
+          {{
+            "id": 1,
+            "title": "Exact study/article title from medical source",
+            "source": "FDA|NIH|Mayo Clinic|etc",
+            "year": "2024",
+            "url": "actual URL found during search"
+          }}
+        ]
+      }}
+    ],
+    "moderate_risk": [
+      {{
+        "name": "Ingredient Name", 
+        "risk_level": "moderate",
+        "category": "preservative|additive|etc",
+        "micro_report": "Detailed analysis with moderate health concerns",
+        "citations": [
+          {{
+            "id": 2,
+            "title": "Research title",
+            "source": "Medical authority",
+            "year": "2024", 
+            "url": "actual URL"
+          }}
+        ]
+      }}
+    ]
+  }}
+}}
+```
 
-INGREDIENT ANALYSIS:
-- **Name:** [Ingredient Name]
-  - **Findings:** [Detailed analysis with multiple citations to the required URLs.]
-  - **Regulatory Status:** [Mention FDA/WHO status if found.]
-
-- **Name:** [Next Ingredient Name]
-  - **Findings:** [Detailed analysis with multiple citations to the required URLs.]
-  - **Regulatory Status:** [Mention FDA/WHO status if found.]
+CRITICAL: Each ingredient MUST have its own specific citations array with sources found during your research for THAT ingredient only. Do not reuse citations across ingredients.
 """
     
     def _build_evidence_assessment_prompt(
@@ -1248,15 +1281,43 @@ YOUR ANALYSIS MUST BE RESEARCH-DRIVEN, DETAILED, AND EVIDENCE-BASED."""
         low_risk_ingredients: List[str] = None,
         ingredient_analyses: Dict[str, Dict[str, str]] = None
     ) -> Optional[Dict[str, Any]]:
-        """Parse Gemini's structured response into HealthAssessment format."""
+        """Parse Gemini's structured JSON response with ingredient-specific citations."""
         try:
-            # For now, create a robust fallback assessment with the exact structure needed
-            # This ensures we always return valid data matching the expected format
-            
             # Get product info from the current processing context
             product = getattr(self, '_current_product', None)
             if not product:
                 return None
+            
+            # Try to parse the JSON response from Gemini
+            import json
+            import re
+            
+            # Extract JSON from markdown code blocks if present
+            json_match = re.search(r'```json\s*(.*?)\s*```', response_text, re.DOTALL)
+            if json_match:
+                json_text = json_match.group(1)
+            else:
+                # Try to find JSON in the raw text
+                json_text = response_text.strip()
+            
+            logger.info(f"[Gemini JSON Parse] Attempting to parse: {json_text[:200]}...")
+            
+            try:
+                gemini_data = json.loads(json_text)
+                logger.info(f"[Gemini JSON Parse] Successfully parsed JSON structure")
+                
+                # Extract ingredients with their specific citations
+                ingredients_assessment = gemini_data.get("ingredients_assessment", {})
+                high_risk_with_citations = ingredients_assessment.get("high_risk", [])
+                moderate_risk_with_citations = ingredients_assessment.get("moderate_risk", [])
+                
+                logger.info(f"[Gemini JSON Parse] Found {len(high_risk_with_citations)} high-risk and {len(moderate_risk_with_citations)} moderate-risk ingredients with citations")
+                
+            except json.JSONDecodeError as e:
+                logger.warning(f"[Gemini JSON Parse] Failed to parse JSON: {e}. Using fallback structure.")
+                gemini_data = None
+                high_risk_with_citations = []
+                moderate_risk_with_citations = []
                 
             # Use database risk_rating as the authoritative source for grading
             if existing_risk_rating:
@@ -1264,73 +1325,61 @@ YOUR ANALYSIS MUST BE RESEARCH-DRIVEN, DETAILED, AND EVIDENCE-BASED."""
             else:
                 grade, color = "C", "Yellow"  # Minimal fallback
             
+            # Use Gemini's structured response if available, otherwise create fallback
+            if gemini_data and gemini_data.get("summary"):
+                summary = gemini_data["summary"]
+            else:
+                summary = "This product contains preservatives and additives requiring moderation. High salt content may contribute to cardiovascular concerns."
+            
             assessment_data = {
-                "summary": "This product contains preservatives and additives requiring moderation. High salt content may contribute to cardiovascular concerns. [1][2]",
+                "summary": summary,
                 "risk_summary": {
                     "grade": grade,
                     "color": color
                 },
                 "ingredients_assessment": {
-                    "high_risk": [],
-                    "moderate_risk": [],
+                    "high_risk": high_risk_with_citations,  # Use Gemini's structured data with citations
+                    "moderate_risk": moderate_risk_with_citations,  # Use Gemini's structured data with citations
                     "low_risk": []
                 },
                 "nutrition_insights": [],
                 "metadata": {
                     "generated_at": datetime.now().isoformat(),
-                    "product_code": "",
-                    "product_name": "",
-                    "product_brand": "",
-                    "ingredients": "",
-                    "assessment_type": "MCP Evidence-Based Health Assessment"
+                    "product_code": product.product.code or "",
+                    "product_name": product.product.name or "",
+                    "product_brand": product.product.brand or "",
+                    "ingredients": product.product.ingredients_text or "",
+                    "assessment_type": "Gemini Grounded Health Assessment with Ingredient-Specific Citations"
                 }
             }
             
-            # Trust AI categorization completely - no re-categorization
-            actual_high_risk = high_risk_ingredients
-            actual_moderate_risk = moderate_risk_ingredients
+            logger.info(f"[Gemini Assessment] Created structured assessment with {len(high_risk_with_citations)} high-risk and {len(moderate_risk_with_citations)} moderate-risk ingredients")
             
-            logger.info(f"Using AI categorization as-is: {len(actual_high_risk)} high risk, {len(actual_moderate_risk)} moderate risk")
-            
-            # Use AI-generated micro-reports for high-risk ingredients
-            for ingredient in actual_high_risk:
-                # Get AI's analysis or use fallback
-                micro_report = ""
-                if ingredient_analyses and 'high' in ingredient_analyses:
-                    micro_report = ingredient_analyses['high'].get(ingredient, "")
-                    if micro_report:
-                        logger.debug(f"Using AI analysis for high-risk ingredient '{ingredient}': {micro_report[:50]}...")
-                
-                if not micro_report:
+            # If Gemini didn't provide structured data, create fallback ingredients
+            if not high_risk_with_citations and high_risk_ingredients:
+                logger.warning(f"[Gemini Fallback] Creating fallback structure for {len(high_risk_ingredients)} high-risk ingredients")
+                for ingredient in high_risk_ingredients:
                     micro_report = self._generate_ingredient_specific_fallback(ingredient, "high")
-                    logger.debug(f"Using fallback analysis for high-risk ingredient '{ingredient}': {micro_report[:50]}...")
-                
-                assessment_data["ingredients_assessment"]["high_risk"].append({
-                    "name": ingredient,
-                    "risk_level": "high",
-                    "micro_report": micro_report,  # Show full analysis
-
-                })
+                    assessment_data["ingredients_assessment"]["high_risk"].append({
+                        "name": ingredient,
+                        "risk_level": "high",
+                        "category": "preservative",
+                        "micro_report": micro_report,
+                        "citations": []  # Empty citations for fallback
+                    })
             
-            # Use AI-generated micro-reports for moderate-risk ingredients
-            for ingredient in actual_moderate_risk:
-                # Get AI's analysis or use fallback
-                micro_report = ""
-                if ingredient_analyses and 'moderate' in ingredient_analyses:
-                    micro_report = ingredient_analyses['moderate'].get(ingredient, "")
-                    if micro_report:
-                        logger.debug(f"Using AI analysis for moderate-risk ingredient '{ingredient}': {micro_report[:50]}...")
-                
-                if not micro_report:
+            # Same for moderate-risk ingredients
+            if not moderate_risk_with_citations and moderate_risk_ingredients:
+                logger.warning(f"[Gemini Fallback] Creating fallback structure for {len(moderate_risk_ingredients)} moderate-risk ingredients")
+                for ingredient in moderate_risk_ingredients:
                     micro_report = self._generate_ingredient_specific_fallback(ingredient, "moderate")
-                    logger.debug(f"Using fallback analysis for moderate-risk ingredient '{ingredient}': {micro_report[:50]}...")
-                
-                assessment_data["ingredients_assessment"]["moderate_risk"].append({
-                    "name": ingredient,
-                    "risk_level": "moderate",
-                    "micro_report": micro_report,
-
-                })
+                    assessment_data["ingredients_assessment"]["moderate_risk"].append({
+                        "name": ingredient,
+                        "risk_level": "moderate", 
+                        "category": "additive",
+                        "micro_report": micro_report,
+                        "citations": []  # Empty citations for fallback
+                    })
             
             # Extract ALL ingredients from the product
             all_product_ingredients = self._extract_all_ingredients(
