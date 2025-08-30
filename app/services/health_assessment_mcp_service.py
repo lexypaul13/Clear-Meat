@@ -1,4 +1,4 @@
-"""Evidence-based health assessment service using LangChain for tool integration."""
+"""Evidence-based health assessment service using Gemini with Google Search grounding."""
 import logging
 import time
 import asyncio
@@ -10,16 +10,12 @@ from datetime import datetime
 from typing import Dict, Any, Optional, List, Tuple
 from contextlib import AsyncExitStack
 
-# Streamlined parsing using modern AI response handling
-
 DANGEROUS_INGREDIENTS = ['sodium nitrite', 'bha', 'bht', 'msg', 'monosodium glutamate']
 
 import google.generativeai as genai
 from pydantic import ValidationError
 from fastapi import HTTPException
 import aiohttp
-
-# Direct Gemini API usage - no LangChain needed
 
 from app.core.config import settings
 from app.core.cache import cache
@@ -31,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 class HealthAssessmentMCPService:
-    """Evidence-based health assessment service using LangChain for real scientific citations."""
+    """Evidence-based health assessment service using Gemini with Google Search grounding for ingredient-specific citations."""
     
     # Trivial ingredients that don't need citation research (saves ~30-60 seconds)
     TRIVIAL_INGREDIENTS = {
@@ -863,8 +859,8 @@ class HealthAssessmentMCPService:
             high_risk_ingredients = fallback_categorization.get('high_risk_ingredients', [])
             moderate_risk_ingredients = fallback_categorization.get('moderate_risk_ingredients', [])
             
-            # Build the evidence-based assessment prompt
-            prompt = self._build_evidence_assessment_prompt(
+            # Build the grounded assessment prompt for fallback
+            prompt = self._build_grounded_assessment_prompt(
                 product, high_risk_ingredients, moderate_risk_ingredients
             )
             
@@ -1087,16 +1083,7 @@ class HealthAssessmentMCPService:
             # Return preliminary assessment as fallback
             return preliminary_assessment
     
-    def _update_citations_for_ingredients(
-        self,
-        high_risk_ingredients: List[str],
-        moderate_risk_ingredients: List[str]
-    ) -> List[Dict[str, Any]]:
-        """Generate appropriate citations for the real ingredients (no longer using placeholders)."""
-        # No longer generate placeholder citations - return empty list
-        # Real citations will be added by the citation search process
-        return []
-    
+
     def _build_categorization_prompt(self, product: ProductStructured) -> str:
         """Build prompt for ingredient categorization."""
         ingredients_text = product.product.ingredients_text or "Ingredients not available"
@@ -1219,59 +1206,7 @@ RESPONSE FORMAT - RETURN VALID JSON ONLY:
 CRITICAL: Each ingredient MUST have its own specific citations array with sources found during your research for THAT ingredient only. Do not reuse citations across ingredients.
 """
     
-    def _build_evidence_assessment_prompt(
-        self, 
-        product: ProductStructured,
-        high_risk_ingredients: List[str],
-        moderate_risk_ingredients: List[str]
-    ) -> str:
-        """Build prompt for evidence-based assessment using MCP tools."""
-        
-        return f"""You are a health assessment specialist with access to real-time scientific literature search tools. Your responses must be based EXCLUSIVELY on current research findings, NOT on your training data.
 
-PRODUCT TO ANALYZE:
-Name: {product.product.name}
-Ingredients: {product.product.ingredients_text or "Not available"}
-
-HIGH-RISK INGREDIENTS: {', '.join(high_risk_ingredients) if high_risk_ingredients else 'None'}
-MODERATE-RISK INGREDIENTS: {', '.join(moderate_risk_ingredients) if moderate_risk_ingredients else 'None'}
-
-CRITICAL RESEARCH REQUIREMENTS:
-1. For EVERY high-risk and moderate-risk ingredient, you MUST search for current scientific evidence
-2. Use search_all_health_citations tool for each ingredient with specific health concerns
-3. Analyze the abstracts and findings from the research papers you discover
-4. Write detailed analyses (200-300 characters) based ONLY on the research evidence you find
-5. Quote specific studies, statistics, and findings from the papers
-6. Include working URLs to the actual research sources
-
-MANDATORY RESEARCH PROTOCOL:
-- search_all_health_citations(ingredient, "carcinogenic effects cancer risk", 3) for suspected carcinogens
-- search_all_health_citations(ingredient, "cardiovascular effects blood pressure", 2) for sodium compounds  
-- search_all_health_citations(ingredient, "toxicity safety assessment", 2) for chemical additives
-- search_all_health_citations(ingredient, "metabolic effects diabetes obesity", 2) for sugars/sweeteners
-
-RESPONSE REQUIREMENTS:
-1. DETAILED SUMMARY (4-5 sentences): Comprehensive assessment based on research findings
-2. EVIDENCE-BASED INGREDIENT ANALYSIS:
-   For each ingredient:
-   - Name: [Exact ingredient name]
-   - Risk Level: [High/Moderate/Low based on research evidence]
-   - Detailed Analysis (250-300 chars): Quote specific research findings, studies, and statistics
-   - Research Sources: [List actual paper titles and working URLs]
-
-3. SCIENTIFIC GRADE: [A-F based on research evidence]
-4. RISK COLOR: [Green/Yellow/Orange/Red based on research severity]
-
-STRICT GUIDELINES:
-- NEVER use general knowledge from training data
-- ALWAYS base responses on research papers you find via tools
-- Include specific study names, publication years, and findings
-- Use phrases like "According to [Study Name]...", "Research published in [Journal]...", "Studies show..."
-- Provide detailed explanations of health mechanisms found in research
-- Include exact statistics and findings from papers (e.g., "increased risk by 23%", "correlation coefficient of 0.74")
-
-YOUR ANALYSIS MUST BE RESEARCH-DRIVEN, DETAILED, AND EVIDENCE-BASED."""
-    
     async def _parse_assessment_response(
         self, 
         response_text: str,
@@ -2096,66 +2031,3 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
             logger.warning(f"[URL Resolution] Failed to resolve redirect URL: {e}")
             return redirect_url  # Fallback to original URL
 
-    
-    async def _return_cached_result(self, cached_result):
-        """Helper to return cached result as an awaitable."""
-        return cached_result
-
-
-
-# Test function
-async def test_mcp_health_assessment():
-    """Test the MCP-based health assessment."""
-    
-    # Create a test product
-    from app.models.product import ProductInfo, ProductCriteria, ProductHealth, ProductEnvironment, ProductMetadata, ProductStructured, ProductNutrition
-    
-    test_product_data = ProductInfo(
-        code="test_mcp_product",
-        name="Test Bacon with BHA and Sodium Nitrite",
-        brand="Test Brand",
-        ingredients_text="Pork, Water, Salt, Sugar, Sodium Nitrite, BHA, Natural Flavors, Celery Powder"
-    )
-    
-    test_health = ProductHealth(
-        nutrition=ProductNutrition(
-            calories=250,
-            protein=15.0,
-            fat=20.0,
-            carbohydrates=1.0,
-            salt=2.5
-        )
-    )
-    
-    test_criteria = ProductCriteria()
-    test_environment = ProductEnvironment()
-    test_metadata = ProductMetadata()
-    
-    test_product = ProductStructured(
-        product=test_product_data,
-        criteria=test_criteria,
-        health=test_health,
-        environment=test_environment,
-        metadata=test_metadata
-    )
-    
-    # Test the MCP assessment
-    service = HealthAssessmentMCPService()
-    result = await service.generate_health_assessment_with_real_evidence(test_product)
-    
-    if result:
-        logger.info("✅ MCP Health Assessment Generated!")
-        logger.info(f"Summary: {result.get('summary', 'N/A')}")
-        logger.info(f"Grade: {result.get('risk_summary', {}).get('grade', 'N/A')}")
-        logger.info(f"Citations: {len(result.get('citations', [])) if result.get('citations') else 0}")
-        if result.get('ingredients_assessment'):
-            high_risk_count = len(result['ingredients_assessment'].get('high_risk', []))
-            moderate_risk_count = len(result['ingredients_assessment'].get('moderate_risk', []))
-            logger.info(f"High-risk ingredients: {high_risk_count}")
-            logger.info(f"Moderate-risk ingredients: {moderate_risk_count}")
-    else:
-        logger.error("❌ Failed to generate MCP assessment")
-
-
-if __name__ == "__main__":
-    asyncio.run(test_mcp_health_assessment())
