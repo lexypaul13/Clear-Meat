@@ -184,6 +184,18 @@ class Settings(BaseSettings):
             logging.warning("Environment variable 'GEMINI_API_KEY' is not set. Gemini features may not work.")
             print("WARNING: Environment variable 'GEMINI_API_KEY' is not set. Gemini features may not work.", file=sys.stderr)
         return v
+    
+    # Perplexity AI for citations
+    PERPLEXITY_API_KEY: str = os.getenv("PERPLEXITY_API_KEY", "")
+    PERPLEXITY_MODEL: str = os.getenv("PERPLEXITY_MODEL", "sonar")
+    
+    @field_validator("PERPLEXITY_API_KEY", mode="before")
+    def warn_if_perplexity_missing(cls, v: str) -> str:
+        """Warn if Perplexity API Key is not set."""
+        if not v:
+            logging.warning("Environment variable 'PERPLEXITY_API_KEY' is not set. Citation features will be disabled.")
+            print("WARNING: Environment variable 'PERPLEXITY_API_KEY' is not set. Citation features will be disabled.", file=sys.stderr)
+        return v
 
     # Replace the Config inner class with model_config
     model_config = SettingsConfigDict(

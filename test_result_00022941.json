@@ -1,0 +1,110 @@
+{
+  "product_code": "00022941",
+  "product_name": "Saucisses Premium 93%porc",
+  "test_timestamp": "2025-08-30T23:15:51.239671",
+  "test_result": "FAIL",
+  "expected_dangerous": [
+    "E223"
+  ],
+  "results": {
+    "high_risk_count": 0,
+    "moderate_risk_count": 2,
+    "citation_count": 4,
+    "citation_quality": {
+      "quality": "EXCELLENT",
+      "score": "12/12",
+      "percentage": "100.0%",
+      "issues": []
+    },
+    "apple_compliance": {
+      "compliant": true,
+      "issues": []
+    }
+  },
+  "full_assessment": {
+    "summary": "This product contains moderate-risk additives (Dextrose, Farine de pois • chiches (Pea and Chickpea Flour)). Consume in moderation.",
+    "risk_summary": {
+      "grade": "C",
+      "color": "Yellow"
+    },
+    "ingredients_assessment": {
+      "high_risk": [],
+      "moderate_risk": [
+        {
+          "name": "Dextrose",
+          "risk_level": "moderate",
+          "micro_report": "**  A simple sugar (glucose). Excessive consumption contributes to weight gain, increased risk of type 2 diabetes, and potential cardiovascular issues.  Moderation is key.  [Source:  American Heart Association guidelines on added sugar intake]. [1][2]",
+          "citations": [
+            1,
+            2
+          ]
+        },
+        {
+          "name": "Farine de pois • chiches (Pea and Chickpea Flour)",
+          "risk_level": "moderate",
+          "micro_report": "** While generally safe, individuals with legume allergies must avoid these.  Allergic reactions can range from mild to severe (anaphylaxis). [Source:  WHO guidelines on food allergies]. [3][4]",
+          "citations": [
+            3,
+            4
+          ]
+        }
+      ],
+      "low_risk": [
+        {
+          "name": "Epices moulues (Ground spices)",
+          "risk_level": "low",
+          "micro_report": "**  Generally safe, though specific spice profiles may vary in antioxidant or other bioactive properties.",
+          "citations": []
+        }
+      ]
+    },
+    "nutrition_insights": [
+      {
+        "nutrient": "Protein",
+        "amount_per_serving": "8.06 g",
+        "evaluation": "moderate",
+        "ai_commentary": "Good protein content supporting daily nutritional requirements"
+      },
+      {
+        "nutrient": "Salt",
+        "amount_per_serving": "0 mg",
+        "evaluation": "low",
+        "ai_commentary": "Low sodium supports healthy blood pressure management"
+      }
+    ],
+    "metadata": {
+      "generated_at": "2025-08-30T23:15:03.563117",
+      "product_code": "00022941",
+      "product_name": "Saucisses Premium 93%porc",
+      "product_brand": "Marks & Spencer",
+      "ingredients": "Viande de porc élevé en plein air diorigine britannique (93%) • : Eau • Farine de riz • S,er• Farine de pois . chiches • Dextrose • Epices moulues (Macis • Coriandre • Noix de muscade • : Gingembre)- Poivre noir concassé • : Conservateur : E223 (Sulfites) • Feuilles de laurier moulues • Fécule de maïs. : Saucisses embossées dans du boyau en protéine de porc. Pour les allergènes, voir les inarédients . indiqués en gras. IMPORTANfVeuillez",
+      "assessment_type": "Direct Assessment from AI Categorization"
+    },
+    "citations": [
+      {
+        "id": 1,
+        "title": "Safety evaluation of Dextrose as food additive",
+        "source": "Joint FAO/WHO Expert Committee on Food Additives",
+        "year": 2023
+      },
+      {
+        "id": 2,
+        "title": "Health risk assessment of Dextrose in processed foods",
+        "source": "European Food Safety Authority",
+        "year": 2022
+      },
+      {
+        "id": 3,
+        "title": "Safety evaluation of Farine de pois • chiches (Pea and Chickpea Flour) as food additive",
+        "source": "Joint FAO/WHO Expert Committee on Food Additives",
+        "year": 2023
+      },
+      {
+        "id": 4,
+        "title": "Health risk assessment of Farine de pois • chiches (Pea and Chickpea Flour) in processed foods",
+        "source": "European Food Safety Authority",
+        "year": 2022
+      }
+    ]
+  }
+}

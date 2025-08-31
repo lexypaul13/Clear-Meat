@@ -1,0 +1,146 @@
+{
+  "product_code": "00043533",
+  "product_name": "Sweet & smoky mini fillets",
+  "test_timestamp": "2025-08-30T23:17:29.684099",
+  "test_result": "PASS",
+  "expected_dangerous": [
+    "PAHs"
+  ],
+  "results": {
+    "high_risk_count": 1,
+    "moderate_risk_count": 2,
+    "citation_count": 6,
+    "citation_quality": {
+      "quality": "EXCELLENT",
+      "score": "17/18",
+      "percentage": "94.4%",
+      "issues": [
+        "Non-authoritative source: 'International Agency for Research on Cancer'"
+      ]
+    },
+    "apple_compliance": {
+      "compliant": true,
+      "issues": []
+    }
+  },
+  "full_assessment": {
+    "summary": "This product contains high-risk preservatives (Polycyclic Aromatic Hydrocarbons (PAHs)). Regular consumption may increase health risks.",
+    "risk_summary": {
+      "grade": "D",
+      "color": "Red"
+    },
+    "ingredients_assessment": {
+      "high_risk": [
+        {
+          "name": "Polycyclic Aromatic Hydrocarbons (PAHs)",
+          "risk_level": "high",
+          "micro_report": "**  [PAHs form during the smoking process at high temperatures.  They are potent carcinogens, linked to various cancers through DNA damage and oxidative stress.  The type and amount of PAHs depend on the smoking method and wood type.  (Source: IARC Monographs on the Evaluation of Carcinogenic Risks to Humans)]. [1][2]",
+          "citations": [
+            1,
+            2
+          ]
+        }
+      ],
+      "moderate_risk": [
+        {
+          "name": "Sodium (if added)",
+          "risk_level": "moderate",
+          "micro_report": "** [Sodium chloride (salt) is often added to enhance flavor. Excessive sodium intake is linked to hypertension and cardiovascular disease.  Moderation is key; recommended daily intake is generally under 2300mg. (Source: American Heart Association)]. [3][4]",
+          "citations": [
+            3,
+            4
+          ]
+        },
+        {
+          "name": "Nitrites/Nitrates (if added)",
+          "risk_level": "moderate",
+          "micro_report": "** [These preservatives are sometimes used in processed meats.  While they prevent botulism, they can form nitrosamines during cooking, which are carcinogenic.  The risk depends on the amount and cooking method. (Source: National Cancer Institute)]. [5][6]",
+          "citations": [
+            5,
+            6
+          ]
+        }
+      ],
+      "low_risk": [
+        {
+          "name": "Chicken Breast",
+          "risk_level": "low",
+          "micro_report": "** [Good source of lean protein.]",
+          "citations": []
+        },
+        {
+          "name": "Hickory Wood Smoke (Caryer)",
+          "risk_level": "low",
+          "micro_report": "** [Generally safe, but PAH formation is a concern as mentioned above.]",
+          "citations": []
+        },
+        {
+          "name": "*Important Note",
+          "risk_level": "low",
+          "micro_report": "** This analysis is based on the potential presence of ingredients commonly found in processed smoked chicken.  A complete risk assessment requires a full ingredient list and information on processing methods (temperature, duration, type of smoke, etc.).  The absence of specific ingredients does not guarantee the absence of risk.",
+          "citations": []
+        }
+      ]
+    },
+    "nutrition_insights": [
+      {
+        "nutrient": "Protein",
+        "amount_per_serving": "25.5 g",
+        "evaluation": "high",
+        "ai_commentary": "Excellent protein source providing 51% daily needs for muscle health"
+      },
+      {
+        "nutrient": "Salt",
+        "amount_per_serving": "0 mg",
+        "evaluation": "low",
+        "ai_commentary": "Low sodium supports healthy blood pressure management"
+      }
+    ],
+    "metadata": {
+      "generated_at": "2025-08-30T23:15:54.131964",
+      "product_code": "00043533",
+      "product_name": "Sweet & smoky mini fillets",
+      "product_brand": "Marks and Spencer",
+      "ingredients": "Blanc de poulet fumé au bois de caryer (86%) • Cassonade brune • Sel • Sucre • Fécule de pomme de terre • Vinaigre • Epices moulues (Paprika doux • Paprika fumé • Clous de girofle • Piment de la Jamaïque) • Purée de tomate • Fécule de maïs • Purée d'ail • Purée d'oignon • Pâte de tamarin • Vinaigre balsamique • Sirop de sucre • Sel de mer • Oignons déshydratés • Purée de gingembre • Flocons de piment Habanero • Poivre noir concassé • Purée de piment rouge • Jus de citron concentré. CONSEILS Prêt à deguster chaud ou froid. CONSERVATION",
+      "assessment_type": "Direct Assessment from AI Categorization"
+    },
+    "citations": [
+      {
+        "id": 1,
+        "title": "IARC Monographs on polycyclic aromatic hydrocarbons",
+        "source": "International Agency for Research on Cancer",
+        "year": 2010
+      },
+      {
+        "id": 2,
+        "title": "PAHs in smoked and grilled foods: health risk assessment",
+        "source": "Food Control Journal",
+        "year": 2023
+      },
+      {
+        "id": 3,
+        "title": "Safety evaluation of Sodium (if added) as food additive",
+        "source": "Joint FAO/WHO Expert Committee on Food Additives",
+        "year": 2023
+      },
+      {
+        "id": 4,
+        "title": "Health risk assessment of Sodium (if added) in processed foods",
+        "source": "European Food Safety Authority",
+        "year": 2022
+      },
+      {
+        "id": 5,
+        "title": "Nitrate and nitrite in food and water: scientific opinion",
+        "source": "EFSA Journal",
+        "year": 2017
+      },
+      {
+        "id": 6,
+        "title": "Processed meat consumption and cancer risk",
+        "source": "WHO International Agency for Research on Cancer",
+        "year": 2015
+      }
+    ]
+  }
+}

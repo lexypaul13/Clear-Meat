@@ -21,21 +21,51 @@
 5. ✅ **Code Cleanup** - Removed 18% of obsolete code
 6. ❌ **DuckDuckGo Integration** - Failed due to compatibility issues
 
-## Proposed Solution: Dual-LLM Architecture
+## **CRITICAL ISSUE: Gemini Assessment Failures**
 
-### Primary: Perplexity API for Citations
+### **Backend Logs Show System Failure:**
+```
+[ERROR] Assessment returned None/empty result
+[INFO] Creating direct assessment from categorization with 0 high-risk, 5 moderate-risk
+[INFO] Final ingredients: 0 high-risk, 5 moderate-risk, 5 low-risk
+```
+
+### **Root Cause Analysis:**
+1. **Gemini Inconsistency**: Sometimes works, sometimes returns `None/empty result`
+2. **Fallback Without Citations**: System falls back to basic categorization with `citations: []`
+3. **iOS Receives Empty**: Frontend gets ingredients with no citations
+4. **User Sees Nothing**: No citations displayed despite backend "success"
+
+### **Gemini vs Perplexity Comparison:**
+
+| Issue | Gemini (Current) | Perplexity (Proposed) |
+|-------|------------------|----------------------|
+| **Reliability** | ❌ Inconsistent, fails silently | ✅ Consistent citation generation |
+| **Complexity** | ❌ Complex JSON prompting, grounding metadata | ✅ Simple question → answer with citations |
+| **Medical Focus** | ❌ Generic web search with filtering | ✅ Built for research with medical authorities |
+| **Implementation** | ❌ 8+ steps: prompt → parse → filter → resolve → map | ✅ 2 steps: ask → receive citations |
+| **Maintenance** | ❌ Complex prompt engineering, domain lists | ✅ Minimal maintenance required |
+
+## Proposed Solution: Hybrid Architecture
+
+### **Approach: Best of Both Worlds**
 ```
 Health Assessment Flow:
-1. Gemini 1.5 Pro → Ingredient analysis & health assessment
-2. Perplexity API → Medical citations for high-risk ingredients
-3. Merge results → Final response with authoritative citations
+1. Gemini 1.5 Pro → Ingredient categorization (what it does well)
+2. Perplexity API → Medical citations for high-risk ingredients (what it does best)
+3. Merge results → Reliable response with authoritative citations
 ```
 
-### Benefits
-- **Native Medical Research**: Perplexity designed for research with automatic citations
-- **Higher Quality Sources**: Better at finding authoritative medical literature
-- **Real-time Web Search**: No redirect URL issues
-- **Cost Effective**: Use Perplexity only for citation-critical requests
+### **Why This Works:**
+- **Gemini**: Excellent at ingredient analysis and categorization
+- **Perplexity**: Excellent at research and citation generation
+- **Combined**: Reliable system using each AI's strengths
+
+### **Implementation Benefits:**
+- ✅ **Simpler Code**: Less complex than current Gemini-only approach
+- ✅ **More Reliable**: Perplexity specializes in citations
+- ✅ **Cost Effective**: Use Perplexity only for citation-critical requests
+- ✅ **Apple Compliant**: Consistent, authoritative medical citations
 
 ### Implementation Plan
 1. Create `PerplexityCitationService` class
@@ -47,9 +77,10 @@ Health Assessment Flow:
 - ✅ Apple App Store compliance with authoritative medical citations
 - ✅ Maintain current assessment quality and performance
 - ✅ Cost-effective hybrid approach (Gemini + Perplexity)
-- ✅ Reliable, consistent citation generation
+- ✅ **Reliable, consistent citation generation** (solving current failures)
 
 ## Test Products
 - `0006345049070` - Processed meat with preservatives
 - `00073455` - High sodium content
 - `00084215` - Multiple additives and preservatives
+- `00080897` - Current failing product (Ghee, Salt, Chili, Nuts, Yogurt)

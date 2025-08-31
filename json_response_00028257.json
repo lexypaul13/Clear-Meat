@@ -1,0 +1,199 @@
+{
+  "metadata": {
+    "product_code": "00028257",
+    "product_name": "Salt marsh lamb& mint hand cook crips",
+    "brand": "M&S",
+    "generated_at": "2025-08-30T16:40:02.800208",
+    "ingredients_raw": "Potatoes • Sunflower Oil • Rice Flour • Igar • Salt • Dried Yeast Extract • Dried Onions . Dried der Vinegar • Dried Garlic • Dried Mint Flavouring • itish Salt Marsh Lamb Seasoning (Salt • Lamb Fat • )semary Extract) • Ground Black Pepper • Acidity Citric Acid • Colour: Paprika Extract.",
+    "assessment_status": "success"
+  },
+  "input_data": {
+    "product_info": {
+      "code": "00028257",
+      "name": "Salt marsh lamb& mint hand cook crips",
+      "brand": "M&S",
+      "ingredients_text": "Potatoes • Sunflower Oil • Rice Flour • Igar • Salt • Dried Yeast Extract • Dried Onions . Dried der Vinegar • Dried Garlic • Dried Mint Flavouring • itish Salt Marsh Lamb Seasoning (Salt • Lamb Fat • )semary Extract) • Ground Black Pepper • Acidity Citric Acid • Colour: Paprika Extract."
+    },
+    "nutrition_data": {
+      "protein": 6,
+      "fat_100g": 0,
+      "carbohydrates_100g": 0,
+      "salt_100g": 0,
+      "sugars_100g": 0,
+      "fiber_100g": 0,
+      "sodium_100g": 0
+    }
+  },
+  "health_assessment_response": {
+    "summary": "This product contains moderate-risk additives (Salt (including British Salt Marsh Lamb Seasoning), Sunflower Oil). Consume in moderation.",
+    "risk_summary": {
+      "grade": "C",
+      "color": "Yellow"
+    },
+    "ingredients_assessment": {
+      "high_risk": [],
+      "moderate_risk": [
+        {
+          "name": "Salt (including British Salt Marsh Lamb Seasoning)",
+          "risk_level": "moderate",
+          "micro_report": "** High sodium intake is linked to hypertension and increased risk of cardiovascular diseases.  The mechanism involves increased blood volume and vascular damage.  Moderation is key; recommended daily intake varies by individual factors. (Source: WHO guidelines on sodium intake).",
+          "citations": []
+        },
+        {
+          "name": "Sunflower Oil",
+          "risk_level": "moderate",
+          "micro_report": "** While generally safe,  high consumption of any oil can contribute to weight gain and potential health issues if part of an unbalanced diet.  The type of oil and processing methods can influence its health profile.  Moderation is advised.",
+          "citations": []
+        },
+        {
+          "name": "Potatoes",
+          "risk_level": "moderate",
+          "micro_report": "**  Acrylamide, a potential carcinogen, can form during high-temperature cooking (frying).  The amount formed depends on cooking temperature and time.  Reducing cooking temperature and time minimizes acrylamide formation. (Source: EFSA reports on acrylamide).",
+          "citations": []
+        }
+      ],
+      "low_risk": [
+        {
+          "name": "Rice Flour",
+          "risk_level": "low",
+          "micro_report": "**  Good source of carbohydrates, generally safe.",
+          "citations": []
+        },
+        {
+          "name": "Igar (assuming this is a misspelling of Agar-Agar)",
+          "risk_level": "low",
+          "micro_report": "**  A gelling agent derived from seaweed; generally recognized as safe.",
+          "citations": []
+        },
+        {
+          "name": "Dried Yeast Extract",
+          "risk_level": "low",
+          "micro_report": "**  Source of umami flavor and B vitamins; generally safe.",
+          "citations": []
+        },
+        {
+          "name": "Dried Onions",
+          "risk_level": "low",
+          "micro_report": "**  Good source of antioxidants and flavor; generally safe.",
+          "citations": []
+        },
+        {
+          "name": "Dried Wine Vinegar",
+          "risk_level": "low",
+          "micro_report": "**  Adds flavor and acidity; generally safe in moderation.",
+          "citations": []
+        }
+      ]
+    },
+    "nutrition_insights": [
+      {
+        "nutrient": "Protein",
+        "amount_per_serving": "6 g",
+        "evaluation": "moderate",
+        "ai_commentary": "Good protein content supporting daily nutritional requirements"
+      },
+      {
+        "nutrient": "Salt",
+        "amount_per_serving": "0 mg",
+        "evaluation": "low",
+        "ai_commentary": "Low sodium supports healthy blood pressure management"
+      }
+    ],
+    "metadata": {
+      "generated_at": "2025-08-30T16:40:02.799952",
+      "product_code": "00028257",
+      "product_name": "Salt marsh lamb& mint hand cook crips",
+      "product_brand": "M&S",
+      "ingredients": "Potatoes • Sunflower Oil • Rice Flour • Igar • Salt • Dried Yeast Extract • Dried Onions . Dried der Vinegar • Dried Garlic • Dried Mint Flavouring • itish Salt Marsh Lamb Seasoning (Salt • Lamb Fat • )semary Extract) • Ground Black Pepper • Acidity Citric Acid • Colour: Paprika Extract.",
+      "assessment_type": "Direct Assessment from AI Categorization"
+    },
+    "citations": []
+  },
+  "analysis": {
+    "total_ingredients": 8,
+    "high_risk_count": 0,
+    "moderate_risk_count": 3,
+    "low_risk_count": 5,
+    "citation_count": 0,
+    "has_citations": false
+  },
+  "ingredient_breakdown": {
+    "high_risk": [],
+    "moderate_risk": [
+      {
+        "name": "Salt (including British Salt Marsh Lamb Seasoning)",
+        "risk_level": "moderate",
+        "category": "unknown",
+        "micro_report": "** High sodium intake is linked to hypertension and increased risk of cardiovascular diseases.  The mechanism involves increased blood volume and vascular damage.  Moderation is key; recommended daily intake varies by individual factors. (Source: WHO guidelines on sodium intake).",
+        "citations": [],
+        "has_citation_markers": false,
+        "analysis_length": 280
+      },
+      {
+        "name": "Sunflower Oil",
+        "risk_level": "moderate",
+        "category": "unknown",
+        "micro_report": "** While generally safe,  high consumption of any oil can contribute to weight gain and potential health issues if part of an unbalanced diet.  The type of oil and processing methods can influence its health profile.  Moderation is advised.",
+        "citations": [],
+        "has_citation_markers": false,
+        "analysis_length": 240
+      },
+      {
+        "name": "Potatoes",
+        "risk_level": "moderate",
+        "category": "unknown",
+        "micro_report": "**  Acrylamide, a potential carcinogen, can form during high-temperature cooking (frying).  The amount formed depends on cooking temperature and time.  Reducing cooking temperature and time minimizes acrylamide formation. (Source: EFSA reports on acrylamide).",
+        "citations": [],
+        "has_citation_markers": false,
+        "analysis_length": 259
+      }
+    ],
+    "low_risk": [
+      {
+        "name": "Rice Flour",
+        "risk_level": "low",
+        "category": "unknown",
+        "micro_report": "**  Good source of carbohydrates, generally safe.",
+        "citations": [],
+        "has_citation_markers": false,
+        "analysis_length": 49
+      },
+      {
+        "name": "Igar (assuming this is a misspelling of Agar-Agar)",
+        "risk_level": "low",
+        "category": "unknown",
+        "micro_report": "**  A gelling agent derived from seaweed; generally recognized as safe.",
+        "citations": [],
+        "has_citation_markers": false,
+        "analysis_length": 71
+      },
+      {
+        "name": "Dried Yeast Extract",
+        "risk_level": "low",
+        "category": "unknown",
+        "micro_report": "**  Source of umami flavor and B vitamins; generally safe.",
+        "citations": [],
+        "has_citation_markers": false,
+        "analysis_length": 58
+      },
+      {
+        "name": "Dried Onions",
+        "risk_level": "low",
+        "category": "unknown",
+        "micro_report": "**  Good source of antioxidants and flavor; generally safe.",
+        "citations": [],
+        "has_citation_markers": false,
+        "analysis_length": 59
+      },
+      {
+        "name": "Dried Wine Vinegar",
+        "risk_level": "low",
+        "category": "unknown",
+        "micro_report": "**  Adds flavor and acidity; generally safe in moderation.",
+        "citations": [],
+        "has_citation_markers": false,
+        "analysis_length": 58
+      }
+    ]
+  }
+}

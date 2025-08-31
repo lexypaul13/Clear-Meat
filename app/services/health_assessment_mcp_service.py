@@ -22,6 +22,7 @@ from app.core.cache import cache
 from app.models.product import HealthAssessment, ProductStructured
 
 from app.services.grounded_cache_service import grounded_cache
+from app.services.perplexity_citation_service import integrate_perplexity_citations
 
 logger = logging.getLogger(__name__)
 
@@ -213,6 +214,15 @@ class HealthAssessmentMCPService:
                     logger.error(f"[RESULT PROCESSING] Expected: sodium nitrite, BHA, BHT from: {product.product.ingredients_text}")
             
             if assessment_result:
+                # Step 5: Enhance with Perplexity citations for high-risk ingredients
+                try:
+                    logger.info("[Perplexity Integration] Adding citations for high-risk ingredients")
+                    assessment_result = await integrate_perplexity_citations(assessment_result)
+                    logger.info("[Perplexity Integration] Citations integrated successfully")
+                except Exception as e:
+                    logger.warning(f"[Perplexity Integration] Failed to add citations: {e}")
+                    # Continue without citations rather than failing completely
+                
                 # Cache the result - assessment_result is already a dict
                 cache.set(cache_key, assessment_result, ttl=86400)  # 24 hours
                 logger.info(f"[MCP Health Assessment] Evidence-based assessment generated successfully")
@@ -244,11 +254,10 @@ class HealthAssessmentMCPService:
                     None,
                     lambda: genai.GenerativeModel(self.model).generate_content(
                         prompt,
-                        generation_config=genai.GenerationConfig(temperature=0),
-                        tools=['google_search_retrieval']  # Enable Google Search for ingredient research
+                        generation_config=genai.GenerationConfig(temperature=0)
                     )
                 ),
-                timeout=30.0  # Increased timeout from 10s to 30s
+                timeout=15.0  # Reduced timeout since no Google Search
             )
             
             elapsed_time = time.time() - start_time
@@ -718,9 +727,32 @@ class HealthAssessmentMCPService:
         
         # Known high-risk ingredients (based on scientific consensus)
         high_risk_patterns = [
-            'sodium nitrite', 'sodium nitrate', 'bha', 'bht', 'msg', 'monosodium glutamate',
-            'red dye', 'yellow dye', 'blue dye', 'carrageenan', 'potassium bromate',
-            'sodium benzoate', 'sulfur dioxide', 'tbhq'
+            # Nitrites/Nitrates (cancer-linked preservatives)
+            'sodium nitrite', 'sodium nitrate', 'potassium nitrite', 'potassium nitrate',
+            'e249', 'e250', 'e251', 'e252',
+            
+            # Sulfites (allergenic preservatives) 
+            'e223', 'e224', 'e225', 'e226', 'e227', 'e228',
+            'sodium metabisulfite', 'potassium metabisulfite', 'sodium sulfite', 'potassium sulfite',
+            'sulfur dioxide', 'calcium sulfite', 'sodium bisulfite',
+            
+            # Antioxidants (potential carcinogens)
+            'bha', 'bht', 'e320', 'e321', 'tbhq', 'e319',
+            'butylated hydroxyanisole', 'butylated hydroxytoluene',
+            
+            # Flavor enhancers (neurological concerns)
+            'msg', 'monosodium glutamate', 'e621', 'disodium guanylate', 'e627',
+            'disodium inosinate', 'e631', 'calcium diglutamate', 'e623',
+            
+            # Artificial colors (hyperactivity/allergy linked)
+            'red dye', 'yellow dye', 'blue dye', 'artificial color', 'artificial colour',
+            'e102', 'e104', 'e110', 'e122', 'e124', 'e129', 'e133', 'e142', 'e151',
+            'tartrazine', 'sunset yellow', 'allura red', 'brilliant blue',
+            
+            # Other high-risk preservatives
+            'carrageenan', 'potassium bromate', 'sodium benzoate', 'e211',
+            'calcium propionate', 'sodium propionate', 'e280', 'e281', 'e282', 'e283',
+            'formaldehyde', 'hexamethylenetetramine', 'e239'
         ]
         
         # Known moderate-risk ingredients  
@@ -733,6 +765,19 @@ class HealthAssessmentMCPService:
         high_risk_ingredients = []
         moderate_risk_ingredients = []
         low_risk_ingredients = []
+        
+        # Also check the full ingredients text for embedded E-numbers
+        ingredients_text_lower = ingredients_text.lower()
+        for pattern in high_risk_patterns:
+            if pattern.startswith('e') and len(pattern) == 4:  # E-number like e223
+                if pattern in ingredients_text_lower:
+                    # Extract the E-number with its description
+                    import re
+                    e_match = re.search(rf'{pattern}\s*\([^)]+\)', ingredients_text_lower, re.IGNORECASE)
+                    if e_match:
+                        e_ingredient = e_match.group(0).upper()
+                        high_risk_ingredients.append(e_ingredient)
+                        logger.info(f"[E-Number Detection] Found HIGH RISK: {e_ingredient}")
         
         for ingredient in all_ingredients:
             ingredient_lower = ingredient.lower().strip()
@@ -867,7 +912,7 @@ class HealthAssessmentMCPService:
             # Use direct Gemini with Google Search grounding (no LangChain agent)
             logger.info(f"[Google Search Grounding] Starting fallback assessment with web search")
             
-            # Execute assessment with Google Search grounding
+            # Execute basic assessment without search grounding
             response = await asyncio.wait_for(
                 asyncio.get_event_loop().run_in_executor(
                     None,
@@ -876,11 +921,10 @@ class HealthAssessmentMCPService:
                         generation_config=genai.GenerationConfig(
                             temperature=0,
                             max_output_tokens=4000
-                        ),
-                        tools=['google_search_retrieval']  # Enable Google Search grounding
+                        )
                     )
                 ),
-                timeout=20.0  # Timeout for grounded search
+                timeout=15.0  # Reduced timeout since no Google Search
             )
             
             # Set product context for parser
@@ -1321,9 +1365,9 @@ CRITICAL: Each ingredient MUST have its own specific citations array with source
                 product.product.ingredients_text or ""
             )
             
-            # Create sets for easy lookup
-            high_risk_set = {ing.lower() for ing in actual_high_risk}
-            moderate_risk_set = {ing.lower() for ing in actual_moderate_risk}
+            # Create sets for easy lookup using the ingredient lists we just processed
+            high_risk_set = {ing.lower() for ing in high_risk_ingredients}
+            moderate_risk_set = {ing.lower() for ing in moderate_risk_ingredients}
             
             # Add remaining ingredients as low-risk
             low_risk_ingredients = []
@@ -1373,7 +1417,7 @@ CRITICAL: Each ingredient MUST have its own specific citations array with source
             
             # Analyze product quality indicators
             product_name = self._current_product.product.name.lower() if self._current_product else ""
-            product_desc = self._current_product.product.description.lower() if self._current_product and self._current_product.product.description else ""
+            product_desc = self._current_product.product.description.lower() if self._current_product and hasattr(self._current_product.product, 'description') and self._current_product.product.description else ""
             ingredients_text = self._current_product.product.ingredients_text.lower() if self._current_product and self._current_product.product.ingredients_text else ""
             
             # Check for positive quality indicators
@@ -1417,7 +1461,7 @@ CRITICAL: Each ingredient MUST have its own specific citations array with source
             assessment_data["metadata"]["product_code"] = self._current_product.product.code
             assessment_data["metadata"]["product_name"] = self._current_product.product.name
             assessment_data["metadata"]["product_brand"] = self._current_product.product.brand or ""
-            assessment_data["metadata"]["product_image_url"] = self._current_product.product.image_url or ""
+            assessment_data["metadata"]["product_image_url"] = getattr(self._current_product.product, 'image_url', '') or ""
             assessment_data["metadata"]["ingredients"] = self._current_product.product.ingredients_text or ""
             
             return assessment_data
@@ -1619,34 +1663,34 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
         return fallback_templates.get(nutrient, {}).get(evaluation, "Nutrient content within normal range")
     
     def _generate_ingredient_specific_fallback(self, ingredient: str, risk_level: str) -> str:
-        """Generate ingredient-specific fallback analysis instead of generic templates."""
+        """Generate ingredient-specific fallback analysis without citation markers."""
         ingredient_lower = ingredient.lower()
         
-        # High-risk ingredient fallbacks
+        # High-risk ingredient fallbacks (no citation markers - Perplexity will add them)
         if risk_level == "high":
             if any(word in ingredient_lower for word in ['nitrite', 'nitrate', 'sodium nitrite']):
-                return "Preservative linked to cancer risk and cardiovascular issues. Limit processed meat consumption. [1][2]"
+                return "Preservative linked to cancer risk and cardiovascular issues. Limit processed meat consumption."
             elif any(word in ingredient_lower for word in ['bha', 'bht', 'butylated hydroxyanisole']):
-                return "Synthetic antioxidant with potential carcinogenic properties. Avoid regular consumption. [1][2]"
+                return "Synthetic antioxidant with potential carcinogenic properties. Avoid regular consumption."
             elif any(word in ingredient_lower for word in ['msg', 'monosodium glutamate']):
-                return "Flavor enhancer that may cause headaches and reactions in sensitive individuals. [1][2]"
+                return "Flavor enhancer that may cause headaches and reactions in sensitive individuals."
             elif any(word in ingredient_lower for word in ['artificial color', 'red dye', 'yellow dye']):
-                return "Synthetic coloring linked to hyperactivity and allergic reactions. Minimize intake. [1][2]"
+                return "Synthetic coloring linked to hyperactivity and allergic reactions. Minimize intake."
             else:
-                return f"{ingredient} identified as high-risk based on scientific evidence. Limit consumption. [1][2]"
+                return f"{ingredient} identified as high-risk based on scientific evidence. Limit consumption."
         
         # Moderate-risk ingredient fallbacks  
         elif risk_level == "moderate":
             if any(word in ingredient_lower for word in ['sodium', 'salt']):
-                return "High sodium content may contribute to hypertension and cardiovascular strain. [3][4]"
+                return "High sodium content may contribute to hypertension and cardiovascular strain."
             elif any(word in ingredient_lower for word in ['sugar', 'corn syrup', 'glucose']):
-                return "Added sugar increases caloric content and may impact blood glucose levels. [3][4]"
+                return "Added sugar increases caloric content and may impact blood glucose levels."
             elif any(word in ingredient_lower for word in ['phosphate', 'sodium phosphate']):
-                return "Food additive that may affect calcium absorption and kidney function. [3][4]"
+                return "Food additive that may affect calcium absorption and kidney function."
             elif any(word in ingredient_lower for word in ['carrageenan', 'guar gum']):
-                return "Thickening agent that may cause digestive discomfort in sensitive individuals. [3][4]"
+                return "Thickening agent that may cause digestive discomfort in sensitive individuals."
             else:
-                return f"{ingredient} may have moderate health concerns. Consume in moderation. [3][4]"
+                return f"{ingredient} may have moderate health concerns. Consume in moderation."
         
         # Low-risk ingredient fallbacks
         else:  # risk_level == "low"
@@ -1978,23 +2022,8 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
         return 5  
     
     def _get_fallback_citations(self) -> List[Dict[str, Any]]:
-        """Provide fallback medical citations when no valid sources are found."""
-        return [
-            {
-                "id": 1,
-                "title": "Food Additive Safety Assessment",
-                "source": "FDA",
-                "url": "https://www.fda.gov/food/food-additives-petitions",
-                "year": "2024"
-            },
-            {
-                "id": 2,
-                "title": "Nutrition and Health Research",
-                "source": "NIH",
-                "url": "https://www.nih.gov/research-training/medical-research-initiatives",
-                "year": "2024"
-            }
-        ]
+        """Simplified fallback citations - Perplexity will provide real ones."""
+        return []  # Empty - Perplexity service will add real citations
     
     async def _resolve_redirect_url(self, redirect_url: str) -> str:
         """Resolve Google grounding redirect URL to final destination URL."""

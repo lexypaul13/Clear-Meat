@@ -143,12 +143,9 @@ def generate_health_assessment(product: ProductStructured, db: Optional[Session]
     
     for attempt in range(max_retries):
         try:
-            # Call Gemini API with Google Search grounding
+            # Call Gemini API for basic ingredient categorization only
             model = genai.GenerativeModel(settings.GEMINI_MODEL)
-            response = model.generate_content(
-                prompt,
-                tools=['google_search_retrieval']  # Enable Google Search grounding
-            )
+            response = model.generate_content(prompt)
             
             # Parse and validate response
             assessment = _parse_gemini_response(response.text)
@@ -658,20 +655,19 @@ def _build_health_assessment_prompt(product: ProductStructured, similar_products
 }}
 
 Your task:
-
 1. **Categorize EVERY ingredient** into exactly one bucket:
    • high_risk • moderate_risk • low_risk  
    (No item may be omitted.)
 
 2. **micro_report rules**
-   • high / moderate → ≤ 200 chars, plain English hazard + outcome, end with ≥ 2 citation markers, e.g. "… cancer risk [1][2]."  
-   • low → fixed text: "No known health concerns at typical amounts." (no markers)
+   • high / moderate → ≤ 200 chars, plain English hazard + outcome (no citation markers needed)
+   • low → fixed text: "No known health concerns at typical amounts."
 
 3. **Output schema (JSON)**
 ```json
 {{
   "ingredients_assessment": {{
-    "high_risk":    [ {{ "name", "risk_level", "category", "micro_report", "citations" }} ],
+    "high_risk":    [ {{ "name", "risk_level", "category", "micro_report" }} ],
     "moderate_risk":[ …same keys… ],
     "low_risk":     [ …same keys… ]
   }}
@@ -679,7 +675,6 @@ Your task:
 ```
 
 • `risk_level` must be "high", "moderate", or "low" (NO "_risk" suffix).
-• `citations` = array of numeric IDs that you also list in a separate `citations` array (id, title, source, year).
 
 4. **Example**
 
@@ -694,25 +689,20 @@ Output:
   "ingredients_assessment":{{
     "high_risk":[
       {{"name":"Sodium Nitrite","risk_level":"high","category":"preservative",
-       "micro_report":"Forms carcinogenic nitrosamines when heated; linked to colorectal cancer [1][2].",
-       "citations":[1,2]}}
+       "micro_report":"Forms carcinogenic nitrosamines when heated; linked to colorectal cancer."}}
     ],
     "moderate_risk":[],
     "low_risk":[
       {{"name":"Beef","risk_level":"low","category":"meat",
-       "micro_report":"No known health concerns at typical amounts.","citations":[]}},
+       "micro_report":"No known health concerns at typical amounts."}},
       {{"name":"Water","risk_level":"low","category":"ingredient",
-       "micro_report":"No known health concerns at typical amounts.","citations":[]}},
+       "micro_report":"No known health concerns at typical amounts."}},
       {{"name":"Salt","risk_level":"low","category":"preservative",
-       "micro_report":"No known health concerns at typical amounts.","citations":[]}},
+       "micro_report":"No known health concerns at typical amounts."}},
       {{"name":"Spices","risk_level":"low","category":"seasoning",
-       "micro_report":"No known health concerns at typical amounts.","citations":[]}}
+       "micro_report":"No known health concerns at typical amounts."}}
     ]
-  }},
-  "citations": [
-    {{"id": 1, "title": "Nitrite exposure and cancer risk", "source": "Journal of Food Science", "year": 2020}},
-    {{"id": 2, "title": "Processed meat and health effects", "source": "WHO Report", "year": 2021}}
-  ]
+  }}
 }}
 ```
 
@@ -735,20 +725,7 @@ def _parse_gemini_response(response_text: str) -> Optional[HealthAssessment]:
             # Try direct JSON parsing
             response_data = json.loads(text)
         
-        # Convert citations format to match HealthAssessment model
-        if "citations" in response_data:
-            # Convert citations list to works_cited format
-            works_cited = []
-            for citation in response_data["citations"]:
-                if isinstance(citation, dict):
-                    citation_text = f"{citation.get('title', 'Health Research Citation')}. {citation.get('source', 'Scientific Database')}, {citation.get('year', 2024)}"
-                    works_cited.append({
-                        "id": citation.get("id", 1),
-                        "citation": citation_text
-                    })
-            response_data["works_cited"] = works_cited
-            # Remove the original citations field as it's not expected in HealthAssessment
-            del response_data["citations"]
+        # Note: Citation processing removed - will be handled by PerplexityCitationService
         
         # Normalize risk_level values (remove "_risk" suffix if present)
         if "ingredients_assessment" in response_data:
