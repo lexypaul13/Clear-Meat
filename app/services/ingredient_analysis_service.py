@@ -1,6 +1,6 @@
 """Service for analyzing individual ingredients with AI-generated health information and citations."""
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any
 import google.generativeai as genai
 from app.core.config import settings
 from app.services.perplexity_citation_service import PerplexityCitationService
@@ -63,10 +63,8 @@ class IngredientAnalysisService:
                 "recommendations": analysis.get("recommendations", ""),
                 "citations": citations,
                 "metadata": {
-                    "generated_at": "2025-01-31",
                     "ai_model": "gemini-pro",
-                    "citation_source": "perplexity-ai" if citations else "none",
-                    "total_citations": len(citations)
+                    "citation_source": "perplexity-ai" if citations else "none"
                 }
             }
             

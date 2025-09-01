@@ -37,7 +37,7 @@ except ValueError as e:
     print("Please set required environment variables. See .env.example for reference.", file=sys.stderr)
     sys.exit(1)
 
-from app.routers import api_router
+from app.api.v1.api import api_router
 from app.middleware.security import add_security_middleware
 from app.middleware.validation import add_validation_middleware
 from app.middleware.caching import add_caching_middleware

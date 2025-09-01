@@ -71,7 +71,7 @@ async def get_ingredient_analysis(
             )
         
         # Log success
-        citation_count = result.get("citations", {}).get("total_found", 0)
+        citation_count = len(result.get("citations", []))
         logger.info(f"[Ingredient Analysis API] Successfully analyzed {ingredient_clean} with {citation_count} citations")
         
         return result
@@ -122,8 +122,7 @@ async def get_ingredient_quick_info(
             "category": quick_info["category"],
             "requires_full_analysis": True,
             "metadata": {
-                "response_type": "quick_info",
-                "timestamp": "2025-01-31"
+                "response_type": "quick_info"
             }
         }
         
@@ -197,13 +196,11 @@ async def ingredients_health_check():
             "status": "healthy",
             "service": "ingredient_analysis",
             "ai_service": "available" if test_result else "unavailable",
-            "citation_service": "available",
-            "timestamp": "2025-01-31"
+            "citation_service": "available"
         }
     except Exception as e:
         logger.error(f"Ingredients service health check failed: {e}")
         return {
             "status": "unhealthy",
-            "error": str(e),
-            "timestamp": "2025-01-31"
+            "error": str(e)
         }

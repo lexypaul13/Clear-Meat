@@ -116,7 +116,7 @@ class PerplexityCitationService:
                         "id": i,
                         "title": self._extract_title_from_url(citation_url),
                         "source": self._extract_source_from_url(citation_url),
-                        "year": 2024,  # Default year since URLs don't contain dates
+                        "year": 2024,
                         "url": citation_url
                     }
                     citations.append(citation_data)
