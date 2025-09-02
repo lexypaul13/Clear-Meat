@@ -43,8 +43,9 @@ async def get_ingredient_analysis(
         GET /api/v1/ingredients/sodium%20phosphates/analysis
     """
     try:
-        # Clean and validate ingredient name
-        ingredient_clean = ingredient_name.strip().replace("%20", " ").replace("+", " ")
+        # Clean and validate ingredient name - handle URL encoding and special characters
+        from urllib.parse import unquote
+        ingredient_clean = unquote(ingredient_name).strip().replace("+", " ")
         
         if not ingredient_clean:
             raise HTTPException(
@@ -106,7 +107,8 @@ async def get_ingredient_quick_info(
         Quick ingredient info with basic risk assessment
     """
     try:
-        ingredient_clean = ingredient_name.strip().replace("%20", " ").replace("+", " ")
+        from urllib.parse import unquote
+        ingredient_clean = unquote(ingredient_name).strip().replace("+", " ")
         
         if not ingredient_clean:
             raise HTTPException(status_code=400, detail="Ingredient name is required")

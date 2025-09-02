@@ -40,7 +40,7 @@ class PerplexityCitationService:
                 self.client = OpenAI(
                     api_key=self.api_key,
                     base_url="https://api.perplexity.ai",
-                    timeout=8.0
+                    timeout=30.0  # Increased from 8s to handle Perplexity's slower response times
                 )
                 logger.info("Perplexity client initialized successfully")
             except Exception as e:
@@ -69,9 +69,20 @@ class PerplexityCitationService:
             logger.warning("Perplexity API client not available")
             return {ingredient: [] for ingredient in ingredients}
         
-        # Execute all API calls in parallel
-        tasks = [self._get_citations_for_ingredient(ingredient) for ingredient in ingredients]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        # Execute API calls with rate limiting to avoid 429 errors
+        # Process in smaller batches with delays between batches
+        batch_size = 3  # Reduced from unlimited parallel to 3 concurrent requests
+        results = []
+        
+        for i in range(0, len(ingredients), batch_size):
+            batch = ingredients[i:i + batch_size]
+            tasks = [self._get_citations_for_ingredient(ingredient) for ingredient in batch]
+            batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+            results.extend(batch_results)
+            
+            # Add delay between batches to respect rate limits
+            if i + batch_size < len(ingredients):
+                await asyncio.sleep(1.0)  # 1 second delay between batches
         
         # Build citations map from parallel results
         citations_map = {}
