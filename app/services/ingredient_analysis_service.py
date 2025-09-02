@@ -43,9 +43,12 @@ class IngredientAnalysisService:
             
             # Step 2: Extract risk level from analysis text to determine if citations are needed
             analysis_text = analysis.get("analysis", "").lower()
-            if "high risk" in analysis_text or "dangerous" in analysis_text or "carcinogenic" in analysis_text:
+            if ("high risk" in analysis_text or "dangerous" in analysis_text or 
+                "carcinogenic" in analysis_text or "toxic" in analysis_text):
                 risk_level = "high"
-            elif "moderate risk" in analysis_text or "concern" in analysis_text or "caution" in analysis_text:
+            elif ("moderate risk" in analysis_text or "concern" in analysis_text or 
+                  "caution" in analysis_text or "cancer" in analysis_text or
+                  "carcinogenic compounds" in analysis_text or "increased risk" in analysis_text):
                 risk_level = "moderate"
             else:
                 risk_level = "low"
