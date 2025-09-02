@@ -53,14 +53,10 @@ class IngredientAnalysisService:
             else:
                 logger.info(f"[Ingredient Analysis] Skipping citations for {risk_level}-risk ingredient")
             
-            # Step 4: Combine results
+            # Step 4: Combine results (simplified response)
             result = {
                 "ingredient": ingredient_name,
                 "analysis": analysis.get("analysis", ""),
-                "risk_level": risk_level,
-                "primary_concern": analysis.get("primary_concern", ""),
-                "mechanism": analysis.get("mechanism", ""),
-                "recommendations": analysis.get("recommendations", ""),
                 "citations": citations,
                 "metadata": {
                     "ai_model": "gemini-pro",
@@ -68,7 +64,7 @@ class IngredientAnalysisService:
                 }
             }
             
-            logger.info(f"[Ingredient Analysis] Complete: {risk_level} risk, {len(citations)} citations")
+            logger.info(f"[Ingredient Analysis] Complete: {len(citations)} citations")
             return result
             
         except Exception as e:
@@ -83,23 +79,13 @@ class IngredientAnalysisService:
         
         prompt = f"""Analyze the food ingredient "{ingredient_name}" for health effects.
 
-Provide a comprehensive analysis covering:
-1. Risk level (high, moderate, low)
-2. Primary health concerns (if any)
-3. Biological mechanism of action
-4. Consumption recommendations
-
-Format your response as a detailed analysis suitable for health-conscious consumers.
-Focus on evidence-based information about safety, side effects, and health implications.
+Provide a comprehensive analysis covering safety profile, health implications, risk level, biological effects, and consumption guidance.
+Focus on evidence-based information suitable for health-conscious consumers.
 
 Ingredient: {ingredient_name}
 
 Respond in this format:
-RISK_LEVEL: [high/moderate/low]
-PRIMARY_CONCERN: [Brief concern or "Generally recognized as safe"]
-MECHANISM: [How it affects the body]
-ANALYSIS: [2-3 paragraph detailed analysis]
-RECOMMENDATIONS: [Consumption advice]"""
+ANALYSIS: [Detailed 2-3 paragraph analysis covering all aspects: risk level, health concerns, biological effects, and consumption guidance]"""
 
         try:
             logger.info(f"[Gemini Analysis] Generating analysis for: {ingredient_name}")
@@ -129,11 +115,7 @@ RECOMMENDATIONS: [Consumption advice]"""
         try:
             lines = response_text.strip().split('\n')
             result = {
-                "risk_level": "unknown",
-                "primary_concern": "",
-                "mechanism": "",
-                "analysis": "",
-                "recommendations": ""
+                "analysis": ""
             }
             
             current_section = None
@@ -142,37 +124,18 @@ RECOMMENDATIONS: [Consumption advice]"""
             for line in lines:
                 line = line.strip()
                 
-                if line.startswith("RISK_LEVEL:"):
-                    result["risk_level"] = line.replace("RISK_LEVEL:", "").strip().lower()
-                elif line.startswith("PRIMARY_CONCERN:"):
-                    result["primary_concern"] = line.replace("PRIMARY_CONCERN:", "").strip()
-                elif line.startswith("MECHANISM:"):
-                    result["mechanism"] = line.replace("MECHANISM:", "").strip()
-                elif line.startswith("ANALYSIS:"):
+                if line.startswith("ANALYSIS:"):
                     current_section = "analysis"
                     content = line.replace("ANALYSIS:", "").strip()
                     if content:
                         content_lines = [content]
                     else:
                         content_lines = []
-                elif line.startswith("RECOMMENDATIONS:"):
-                    # Save previous section
-                    if current_section == "analysis" and content_lines:
-                        result["analysis"] = " ".join(content_lines)
-                    
-                    current_section = "recommendations"
-                    content = line.replace("RECOMMENDATIONS:", "").strip()
-                    if content:
-                        content_lines = [content]
-                    else:
-                        content_lines = []
-                elif current_section and line:
+                elif current_section == "analysis" and line:
                     content_lines.append(line)
             
             # Save final section
-            if current_section == "recommendations" and content_lines:
-                result["recommendations"] = " ".join(content_lines)
-            elif current_section == "analysis" and content_lines:
+            if current_section == "analysis" and content_lines:
                 result["analysis"] = " ".join(content_lines)
             
             # Fallback: if parsing fails, use entire response as analysis
