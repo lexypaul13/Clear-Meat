@@ -4,10 +4,10 @@ Ingredient analysis endpoints for detailed health information and citations.
 
 import logging
 from fastapi import APIRouter, HTTPException, Depends
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from app.services.ingredient_analysis_service import IngredientAnalysisService
-from app.internal.dependencies import get_current_user
+from app.internal.dependencies import get_current_user_optional
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ ingredient_service = IngredientAnalysisService()
 @router.get("/{ingredient_name}/analysis")
 async def get_ingredient_analysis(
     ingredient_name: str,
-    current_user: User = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user_optional)
 ) -> Dict[str, Any]:
     """
     Get comprehensive analysis of a food ingredient including health effects and citations.
@@ -58,7 +58,8 @@ async def get_ingredient_analysis(
                 detail="Ingredient name too long (max 100 characters)"
             )
         
-        logger.info(f"[Ingredient Analysis API] User {current_user.id} requesting analysis for: {ingredient_clean}")
+        user_id = current_user.id if current_user else "guest"
+        logger.info(f"[Ingredient Analysis API] User {user_id} requesting analysis for: {ingredient_clean}")
         
         # Generate analysis
         result = await ingredient_service.analyze_ingredient(ingredient_clean)
@@ -89,7 +90,7 @@ async def get_ingredient_analysis(
 @router.get("/{ingredient_name}/quick-info")
 async def get_ingredient_quick_info(
     ingredient_name: str,
-    current_user: User = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user_optional)
 ) -> Dict[str, Any]:
     """
     Get quick ingredient information without full analysis (faster response).
@@ -110,7 +111,8 @@ async def get_ingredient_quick_info(
         if not ingredient_clean:
             raise HTTPException(status_code=400, detail="Ingredient name is required")
         
-        logger.info(f"[Quick Ingredient Info] User {current_user.id} requesting quick info for: {ingredient_clean}")
+        user_id = current_user.id if current_user else "guest"
+        logger.info(f"[Quick Ingredient Info] User {user_id} requesting quick info for: {ingredient_clean}")
         
         # Get basic categorization without full analysis
         quick_info = await _get_quick_ingredient_info(ingredient_clean)

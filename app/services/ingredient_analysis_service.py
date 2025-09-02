@@ -3,7 +3,7 @@ import logging
 from typing import Dict, Any
 import google.generativeai as genai
 from app.core.config import settings
-from app.services.perplexity_citation_service import PerplexityCitationService
+from app.services.perplexity_citation_service import get_citation_service
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +17,8 @@ class IngredientAnalysisService:
         genai.configure(api_key=settings.GEMINI_API_KEY)
         self.gemini_model = genai.GenerativeModel(settings.GEMINI_MODEL or 'gemini-2.0-flash')
         
-        # Initialize Perplexity citation service
-        self.citation_service = PerplexityCitationService()
+        # Use singleton Perplexity citation service
+        self.citation_service = get_citation_service()
         
         logger.info("IngredientAnalysisService initialized")
     

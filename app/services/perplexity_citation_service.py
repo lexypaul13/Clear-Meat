@@ -1,10 +1,13 @@
 """Perplexity-based citation service for ingredient analysis."""
 import logging
 import asyncio
-from typing import List, Dict, Any
+import hashlib
+from typing import List, Dict, Any, Tuple
 from urllib.parse import urlparse
+from functools import lru_cache
 from openai import OpenAI
 from app.core.config import settings
+from app.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +16,7 @@ class PerplexityCitationService:
     """Service for generating evidence-based citations using Perplexity API."""
     
     # Trivial ingredients that don't need citations (cost optimization)
-    TRIVIAL_INGREDIENTS = {
+    TRIVIAL_INGREDIENTS = frozenset({
         'water', 'salt', 'sugar', 'glucose', 'fructose', 'spices', 'herbs', 'herb',
         'natural flavors', 'natural flavor', 'garlic', 'onion', 'pepper', 'paprika',
         'vinegar', 'lemon juice', 'lime juice', 'citric acid', 'ascorbic acid',
@@ -22,7 +25,7 @@ class PerplexityCitationService:
         'corn starch', 'potato starch', 'wheat flour', 'rice flour', 'yeast',
         'baking soda', 'baking powder', 'vanilla', 'vanilla extract', 'cinnamon',
         'oregano', 'basil', 'thyme', 'rosemary', 'parsley', 'bay leaves'
-    }
+    })
     
     def __init__(self):
         """Initialize Perplexity citation service."""
@@ -37,7 +40,7 @@ class PerplexityCitationService:
                 self.client = OpenAI(
                     api_key=self.api_key,
                     base_url="https://api.perplexity.ai",
-                    timeout=30.0
+                    timeout=8.0
                 )
                 logger.info("Perplexity client initialized successfully")
             except Exception as e:
@@ -59,26 +62,37 @@ class PerplexityCitationService:
         self, 
         ingredients: List[str]
     ) -> Dict[str, List[Dict[str, Any]]]:
-        """Get citations for multiple ingredients."""
-        logger.info(f"Getting citations for {len(ingredients)} ingredients")
+        """Get citations for multiple ingredients in parallel."""
+        logger.info(f"Getting citations for {len(ingredients)} ingredients in parallel")
         
         if not self.client:
             logger.warning("Perplexity API client not available")
             return {ingredient: [] for ingredient in ingredients}
         
+        # Execute all API calls in parallel
+        tasks = [self._get_citations_for_ingredient(ingredient) for ingredient in ingredients]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Build citations map from parallel results
         citations_map = {}
-        for ingredient in ingredients:
-            try:
-                citations = await self._get_citations_for_ingredient(ingredient)
-                citations_map[ingredient] = citations
-            except Exception as e:
-                logger.error(f"Error getting citations for {ingredient}: {e}")
+        for ingredient, result in zip(ingredients, results):
+            if isinstance(result, Exception):
+                logger.error(f"Error getting citations for {ingredient}: {result}")
                 citations_map[ingredient] = []
+            else:
+                citations_map[ingredient] = result
         
         return citations_map
     
     async def _get_citations_for_ingredient(self, ingredient_name: str) -> List[Dict[str, Any]]:
-        """Get citations for a single ingredient from Perplexity API."""
+        """Get citations for a single ingredient from Perplexity API with caching."""
+        # Check cache first (24h TTL for ingredient citations)
+        cache_key = self._generate_cache_key(ingredient_name)
+        cached_citations = cache.get(cache_key)
+        if cached_citations:
+            logger.info(f"[Citation Cache] Using cached citations for: {ingredient_name}")
+            return cached_citations
+        
         query = f"Medical research on {ingredient_name} health effects and safety in food. Provide peer-reviewed studies and health authority reports."
         logger.info(f"[Citation Research] Researching: {ingredient_name}")
         
@@ -96,11 +110,23 @@ class PerplexityCitationService:
                 )
             )
             
-            return self._extract_citations_from_response(response)
+            citations = self._extract_citations_from_response(response)
+            
+            # Cache successful results for 24 hours
+            if citations:
+                cache.set(cache_key, citations, ttl=86400)
+                logger.info(f"[Citation Cache] Cached {len(citations)} citations for: {ingredient_name}")
+            
+            return citations
             
         except Exception as e:
             logger.error(f"[Citation Research] API error for {ingredient_name}: {e}")
             return []
+    
+    def _generate_cache_key(self, ingredient_name: str) -> str:
+        """Generate cache key for ingredient citations."""
+        ingredient_hash = hashlib.md5(ingredient_name.lower().encode()).hexdigest()[:12]
+        return f"perplexity_citations_{ingredient_hash}"
     
     def _extract_citations_from_response(self, response) -> List[Dict[str, Any]]:
         """Extract citations from Perplexity response."""
@@ -127,47 +153,54 @@ class PerplexityCitationService:
         
         return citations[:3]
     
+    @lru_cache(maxsize=128)
+    def _get_domain_info(self, url: str) -> Tuple[str, str]:
+        """Get title and source info for a URL with caching."""
+        try:
+            url_lower = url.lower()
+            domain = urlparse(url).netloc.replace('www.', '')
+            
+            # Domain mapping for consistent results
+            domain_map = {
+                'pubmed': ("PubMed Medical Research Study", "PubMed/NCBI"),
+                'ncbi.nlm.nih.gov': ("PubMed Medical Research Study", "PubMed/NCBI"),
+                'nature.com': ("Nature Scientific Publication", "Nature Publishing"),
+                'fda.gov': ("FDA Official Report", "U.S. Food and Drug Administration"),
+                'who.int': ("WHO Health Guidelines", "World Health Organization"),
+                'nih.gov': ("NIH Research Publication", "National Institutes of Health"),
+                'sciencedirect.com': ("ScienceDirect Research Article", "ScienceDirect")
+            }
+            
+            for domain_key, (title, source) in domain_map.items():
+                if domain_key in url_lower:
+                    return title, source
+            
+            # Default case
+            return f"Research study from {domain}", domain
+            
+        except Exception:
+            return "Scientific Research Publication", "Scientific Database"
+    
     def _extract_title_from_url(self, url: str) -> str:
         """Extract a meaningful title from a URL."""
-        try:
-            if 'pubmed' in url.lower() or 'ncbi.nlm.nih.gov' in url.lower():
-                return "PubMed Medical Research Study"
-            elif 'nature.com' in url.lower():
-                return "Nature Scientific Publication"
-            elif 'fda.gov' in url.lower():
-                return "FDA Official Report"
-            elif 'who.int' in url.lower():
-                return "WHO Health Guidelines"
-            elif 'nih.gov' in url.lower():
-                return "NIH Research Publication"
-            elif 'sciencedirect.com' in url.lower():
-                return "ScienceDirect Research Article"
-            else:
-                domain = urlparse(url).netloc.replace('www.', '')
-                return f"Research study from {domain}"
-        except:
-            return "Scientific Research Publication"
+        title, _ = self._get_domain_info(url)
+        return title
     
     def _extract_source_from_url(self, url: str) -> str:
         """Extract source information from URL."""
-        try:
-            if 'pubmed' in url.lower() or 'ncbi.nlm.nih.gov' in url.lower():
-                return "PubMed/NCBI"
-            elif 'nature.com' in url.lower():
-                return "Nature Publishing"
-            elif 'fda.gov' in url.lower():
-                return "U.S. Food and Drug Administration"
-            elif 'who.int' in url.lower():
-                return "World Health Organization"
-            elif 'nih.gov' in url.lower():
-                return "National Institutes of Health"
-            elif 'sciencedirect.com' in url.lower():
-                return "ScienceDirect"
-            else:
-                domain = urlparse(url).netloc.replace('www.', '')
-                return domain
-        except:
-            return "Scientific Database"
+        _, source = self._get_domain_info(url)
+        return source
+
+
+# Singleton instance for performance
+_citation_service_instance = None
+
+def get_citation_service() -> PerplexityCitationService:
+    """Get singleton instance of PerplexityCitationService."""
+    global _citation_service_instance
+    if _citation_service_instance is None:
+        _citation_service_instance = PerplexityCitationService()
+    return _citation_service_instance
 
 
 # Integration function for existing product assessment system
@@ -191,8 +224,8 @@ async def integrate_perplexity_citations(assessment_result: Dict[str, Any]) -> D
         logger.info("No high/moderate-risk ingredients found")
         return assessment_result
     
-    # Initialize citation service and get citations
-    citation_service = PerplexityCitationService()
+    # Use singleton citation service
+    citation_service = get_citation_service()
     
     # Filter ingredients that need citations
     filtered_ingredients = [
@@ -216,14 +249,15 @@ async def integrate_perplexity_citations(assessment_result: Dict[str, Any]) -> D
             if ingredient_name in citations_map:
                 ingredient["citations"] = [cite["id"] for cite in citations_map[ingredient_name]]
     
-    # Flatten citations for response
-    all_citations = []
-    citation_id = 1
-    for ingredient_citations in citations_map.values():
-        for citation in ingredient_citations:
-            citation["id"] = citation_id
-            all_citations.append(citation)
-            citation_id += 1
+    # Flatten citations for response with optimized ID assignment
+    all_citations = [
+        {**citation, "id": i}
+        for i, citation in enumerate(
+            (cite for ingredient_citations in citations_map.values() 
+             for cite in ingredient_citations), 
+            1
+        )
+    ]
     
     assessment_result["citations"] = all_citations
     logger.info(f"Added {len(all_citations)} citations to assessment")
