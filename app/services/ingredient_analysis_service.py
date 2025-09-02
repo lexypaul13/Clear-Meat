@@ -41,8 +41,14 @@ class IngredientAnalysisService:
             if "error" in analysis:
                 return analysis
             
-            # Step 2: Get risk level to determine if citations are needed
-            risk_level = analysis.get("risk_level", "unknown")
+            # Step 2: Extract risk level from analysis text to determine if citations are needed
+            analysis_text = analysis.get("analysis", "").lower()
+            if "high risk" in analysis_text or "dangerous" in analysis_text or "carcinogenic" in analysis_text:
+                risk_level = "high"
+            elif "moderate risk" in analysis_text or "concern" in analysis_text or "caution" in analysis_text:
+                risk_level = "moderate"
+            else:
+                risk_level = "low"
             
             # Step 3: Get Perplexity citations if needed
             citations = []
