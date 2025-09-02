@@ -230,7 +230,7 @@ async def integrate_perplexity_citations(assessment_result: Dict[str, Any]) -> D
     # Filter ingredients that need citations
     filtered_ingredients = [
         ing for ing in target_ingredients 
-        if citation_service.should_get_citations(ing, "high")
+        if citation_service.should_get_citations(ing, "moderate")  # This checks both high and moderate
     ]
     
     if not filtered_ingredients:
