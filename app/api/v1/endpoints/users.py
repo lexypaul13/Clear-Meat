@@ -456,6 +456,9 @@ async def get_explore_recommendations(
                     from datetime import datetime
                     product['created_at'] = datetime.now()
             
+            # Set id field from code for frontend compatibility
+            product['id'] = product.get('code', '')
+            
             recommended_product = models.RecommendedProduct(
                 product=models.Product.model_validate(product),
                 match_details=models.ProductMatch(
