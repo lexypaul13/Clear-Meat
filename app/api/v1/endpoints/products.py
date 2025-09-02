@@ -829,7 +829,8 @@ def get_products(
                     image_url=product_dict.get('image_url', ''),
                     image_data=None,  # Exclude massive base64 data - use image_url instead
                     last_updated=product_dict.get('last_updated'),
-                    created_at=product_dict.get('created_at')
+                    created_at=product_dict.get('created_at'),
+                    id=product_dict.get('code', '')  # Set id to code for frontend compatibility
                 )
                 result.append(product_model)
             except Exception as e:
@@ -966,7 +967,8 @@ async def get_product_recommendations(
                     image_url=product_dict.get('image_url', ''),
                     image_data=None,  # Exclude massive base64 data - use image_url instead
                     last_updated=product_dict.get('last_updated'),
-                    created_at=product_dict.get('created_at')
+                    created_at=product_dict.get('created_at'),
+                    id=product_dict.get('code', '')  # Set id to code for frontend compatibility
                 )
                 
                 # Create RecommendedProduct object

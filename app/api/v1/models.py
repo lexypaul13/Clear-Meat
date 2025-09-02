@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr, computed_field, model_validator
 
 
 # Product models
@@ -52,6 +52,16 @@ class ProductInDB(ProductBase):
 class Product(ProductInDB):
     """Product response model."""
     # Removed ingredients field
+    id: Optional[str] = None
+    
+    @model_validator(mode='before')
+    @classmethod
+    def set_id_from_code(cls, values):
+        """Set id field from code for frontend compatibility."""
+        if isinstance(values, dict):
+            if 'code' in values and 'id' not in values:
+                values['id'] = values['code']
+        return values
 
     class Config:
         """Pydantic config."""
