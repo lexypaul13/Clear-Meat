@@ -4,6 +4,7 @@ from sqlalchemy import Column, String, Float, Boolean, DateTime, Text, ForeignKe
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from datetime import datetime
+import uuid
 
 from app.db.session import Base
 
