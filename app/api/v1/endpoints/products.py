@@ -101,6 +101,14 @@ def _optimize_for_mobile(assessment: Dict[str, Any]) -> Dict[str, Any]:
     Also sanitizes text to remove markdown symbols, bracketed citation markers, and excessive whitespace.
     """
     try:
+        # Validate query early to avoid unnecessary downstream calls
+        full_query = (q or "").strip()
+        if not full_query or len(full_query) < 2:
+            raise HTTPException(status_code=400, detail="Query parameter 'q' must be at least 2 characters")
+
+        # Ensure Supabase service is available
+        if not supabase_service or not getattr(supabase_service, "client", None):
+            raise HTTPException(status_code=503, detail="Search service unavailable")
         # --- Helper extractors for enhanced ingredient details ---
         import re
 
@@ -441,6 +449,15 @@ async def search_products(
         Dict containing search results and metadata
     """
     try:
+        # Validate query early and prepare normalized string
+        full_query = (q or "").strip()
+        if not full_query or len(full_query) < 2:
+            raise HTTPException(status_code=400, detail="Query parameter 'q' must be at least 2 characters")
+
+        # Ensure Supabase service is available (offline/dev may disable it)
+        if not supabase_service or not getattr(supabase_service, "client", None):
+            raise HTTPException(status_code=503, detail="Search service unavailable")
+
         # Basic text search on multiple fields - exclude image_data for performance
         search_query = supabase_service.client.table('products').select(
             'code, name, brand, description, ingredients_text, calories, protein, fat, '
@@ -451,7 +468,6 @@ async def search_products(
         conditions = []
         
         # First, try exact match on the full query (more likely to find exact product names)
-        full_query = q.strip()
         if full_query:
             conditions.extend([
                 f'name.ilike.%{full_query}%',
@@ -514,10 +530,10 @@ async def search_products(
         
     except Exception as e:
         logger.error(f"Search failed for query '{q}': {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Search service temporarily unavailable"
-        )
+        if isinstance(e, HTTPException):
+            # Re-raise validation/availability errors as-is
+            raise
+        raise HTTPException(status_code=503, detail="Search service temporarily unavailable")
 
 # AI-Powered Natural Language Search endpoint (DEPRECATED - use /search instead)
 @router.get("/nlp-search", 
@@ -1728,5 +1744,3 @@ async def clear_health_assessment_cache() -> Dict[str, Any]:
         "total_keys_deleted": total_cleared,
         "cache_version_updated": "v28_no_citations"
     }
-
-

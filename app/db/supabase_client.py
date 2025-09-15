@@ -215,6 +215,14 @@ class SupabaseService:
     def _initialize_client(self):
         """Initialize the Supabase client."""
         try:
+            # Allow disabling Supabase in offline/dev environments
+            offline = os.getenv("OFFLINE_MODE", "false").lower() == "true" or \
+                      os.getenv("ENABLE_SUPABASE", "true").lower() == "false"
+            if offline:
+                logger.warning("Supabase initialization skipped due to OFFLINE_MODE/ENABLE_SUPABASE=false")
+                self.client = None
+                return
+
             if not settings.SUPABASE_URL or not settings.SUPABASE_KEY:
                 raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set")
             
@@ -227,6 +235,16 @@ class SupabaseService:
             
         except Exception as e:
             logger.error(f"Failed to initialize Supabase client: {e}")
+            # In non-production, allow app to continue with client=None
+            try:
+                env = settings.ENVIRONMENT
+            except Exception:
+                env = os.getenv("ENVIRONMENT", "development")
+            if str(env).lower() != "production":
+                logger.warning("Continuing without Supabase client (development mode)")
+                self.client = None
+                return
+            # In production, fail fast
             raise
     
     def get_client(self) -> Client:
