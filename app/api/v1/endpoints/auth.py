@@ -242,9 +242,16 @@ def login_access_token(
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        # Map network/DNS issues to service unavailable
+        # Map network/DNS issues to service unavailable, with dev fallback when enabled
         message = str(e)
-        if isinstance(e, httpx.HTTPError) or "nodename nor servname" in message or "Name or service not known" in message:
+        is_network = isinstance(e, httpx.HTTPError) or "nodename nor servname" in message or "Name or service not known" in message
+        if is_network:
+            # Development fallback: if auth bypass is enabled and not production, mint a local token
+            is_prod = os.getenv("ENVIRONMENT", "development").lower() == "production"
+            if os.getenv("ENABLE_AUTH_BYPASS", "false").lower() == "true" and not is_prod:
+                logger.warning("Auth service unreachable; issuing DEV token due to ENABLE_AUTH_BYPASS=true")
+                access_token = security.create_access_token(subject=form_data.username)
+                return {"access_token": access_token, "token_type": "bearer"}
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Authentication service unavailable. Please try again later.",
@@ -373,8 +380,14 @@ def register_user(
     except Exception as e:
         logger.error(f"Registration error: {str(e)}")
         message = str(e)
-        # Return 503 when admin/public auth calls fail due to network/DNS
-        if isinstance(e, httpx.HTTPError) or "nodename nor servname" in message or "Name or service not known" in message:
+        # Return 503 when admin/public auth calls fail due to network/DNS (with dev fallback)
+        is_network = isinstance(e, httpx.HTTPError) or "nodename nor servname" in message or "Name or service not known" in message
+        if is_network:
+            is_prod = os.getenv("ENVIRONMENT", "development").lower() == "production"
+            if os.getenv("ENABLE_AUTH_BYPASS", "false").lower() == "true" and not is_prod:
+                logger.warning("Registration service unreachable; issuing DEV token due to ENABLE_AUTH_BYPASS=true")
+                access_token = security.create_access_token(subject=user_in.email)
+                return {"access_token": access_token, "token_type": "bearer"}
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Registration service unavailable. Please try again later.",
