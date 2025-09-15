@@ -1012,6 +1012,143 @@ async def get_product_recommendations(
             detail=f"Failed to generate recommendations: {str(e)}"
         )
 
+# Public Explore endpoint moved above dynamic '/{code}' to avoid shadowing
+@router.get("/explore", 
+    response_model=models.RecommendationResponse,
+    summary="Get Public Product Recommendations with Pre-populated Health Assessments",
+    description="Get product recommendations with parallel-generated health assessments - perfect for app explore pages with instant loading",
+    responses={
+        200: {
+            "description": "Public recommendations generated successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "recommendations": [
+                            {
+                                "product": {
+                                    "code": "9876543210",
+                                    "name": "Organic Grass-Fed Ground Beef",
+                                    "brand": "Nature's Best",
+                                    "risk_rating": "Green",
+                                    "protein": 22.0,
+                                    "fat": 15.0,
+                                    "salt": 0.8
+                                },
+                                "match_details": {
+                                    "matches": ["High protein content", "Organic", "Low sodium"],
+                                    "concerns": []
+                                },
+                                "match_score": None
+                            }
+                        ],
+                        "total_matches": 25
+                    }
+                }
+            }
+        },
+        500: {"description": "Failed to generate recommendations"}
+    },
+    tags=["Products", "Public"]
+)
+@with_circuit_breaker(timeout=25.0)
+async def get_public_recommendations(
+    supabase_service = Depends(get_supabase_service),
+    limit: int = Query(30, ge=1, le=100, description="Maximum number of recommendations to return", example=20),
+) -> models.RecommendationResponse:
+    """
+    Get public product recommendations with parallel-generated health assessments.
+    
+    Perfect for app explore pages where users want to browse products before signing up.
+    Uses parallel processing to pre-populate health assessments for instant loading.
+    
+    Args:
+        supabase_service: Supabase service instance
+        limit: Maximum number of recommendations to return (1-100, default 30)
+        
+    Returns:
+        RecommendationResponse: List of recommended products with match details and pre-populated health assessments
+    """
+    try:
+        # Check cache first (5-minute aggressive caching for public endpoint)
+        cache_key = cache.generate_key(f"public_limit_{limit}", prefix="public_explore_recommendations")
+        cached_result = cache.get(cache_key)
+        if cached_result:
+            logger.info(f"Returning cached public explore recommendations (limit: {limit})")
+            return cached_result
+        
+        logger.info(f"Generating public explore recommendations with parallel health assessments (limit: {limit})")
+        
+        # Use default healthy preferences for anonymous users
+        default_preferences = {
+            "nutrition_focus": "protein",
+            "avoid_preservatives": True,
+            "prefer_organic_or_grass_fed": True,
+            "prefer_low_risk": True,
+            "meat_preferences": ["chicken", "turkey", "beef", "fish"]  # Show variety
+        }
+        
+        # Get total count using efficient database query
+        total_count = supabase_service.count_products()
+        
+        # Get recommendations using the same service but with default preferences
+        recommended_products = get_personalized_recommendations(
+            supabase_service, 
+            default_preferences, 
+            limit, 
+            0  # Start from beginning
+        )
+        
+        if not recommended_products:
+            logger.warning("No public recommendations found")
+            return models.RecommendationResponse(
+                recommendations=[],
+                total_matches=total_count
+            )
+        
+        logger.info(f"Returning {len(recommended_products)} public products (no pre-generation)")
+        
+        # Build response with match details (no health assessment generation)
+        from app.services.recommendation_service import analyze_product_match
+        result = []
+        for product in recommended_products:
+            try:
+                # Analyze why this product matches the default preferences
+                matches, concerns = analyze_product_match(product, default_preferences)
+                
+                # Create RecommendedProduct object
+                recommended_product = models.RecommendedProduct(
+                    product=models.Product(**product),
+                    match_details=models.ProductMatch(
+                        matches=matches,
+                        concerns=concerns
+                    ),
+                    match_score=None  # We don't expose raw scores to clients
+                )
+                
+                result.append(recommended_product)
+                
+            except Exception as e:
+                logger.warning(f"Error processing product {product.get('code', 'unknown')}: {e}")
+                continue
+        
+        logger.info(f"Returning {len(result)} public recommendations (no pre-generation)")
+        
+        response = models.RecommendationResponse(
+            recommendations=result,
+            total_matches=total_count
+        )
+        
+        # Cache the response for 5 minutes (300 seconds)
+        cache.set(cache_key, response, ttl=300)
+        
+        return response
+    except Exception as e:
+        logger.error(f"Error generating public recommendations: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate public recommendations: {str(e)}"
+        )
+
 @router.get("/{code}",
     response_model=models.ProductStructured,
     summary="Get Product Details",
@@ -1545,141 +1682,28 @@ async def debug_mcp_health_assessment(
         return debug_info
 
 
-@router.get("/explore", 
-    response_model=models.RecommendationResponse,
-    summary="Get Public Product Recommendations with Pre-populated Health Assessments",
-    description="Get product recommendations with parallel-generated health assessments - perfect for app explore pages with instant loading",
+@router.delete("/cache/health-assessments", 
+    summary="Clear Health Assessment Cache",
+    description="Clear all cached health assessments to force fresh generation",
     responses={
         200: {
-            "description": "Public recommendations generated successfully",
+            "description": "Cache cleared successfully",
             "content": {
                 "application/json": {
                     "example": {
-                        "recommendations": [
-                            {
-                                "product": {
-                                    "code": "9876543210",
-                                    "name": "Organic Grass-Fed Ground Beef",
-                                    "brand": "Nature's Best",
-                                    "risk_rating": "Green",
-                                    "protein": 22.0,
-                                    "fat": 15.0,
-                                    "salt": 0.8
-                                },
-                                "match_details": {
-                                    "matches": ["High protein content", "Organic", "Low sodium"],
-                                    "concerns": []
-                                },
-                                "match_score": None
-                            }
+                        "message": "Cleared 15 cached health assessments",
+                        "patterns_cleared": [
+                            "health_assessment*",
+                            "*health-assessment-mcp*"
                         ],
-                        "total_matches": 25
+                        "total_keys_deleted": 15
                     }
                 }
             }
-        },
-        500: {"description": "Failed to generate recommendations"}
-    },
-    tags=["Products", "Public"]
-)
-@with_circuit_breaker(timeout=25.0)
-async def get_public_recommendations(
-    supabase_service = Depends(get_supabase_service),
-    limit: int = Query(30, ge=1, le=100, description="Maximum number of recommendations to return", example=20),
-) -> models.RecommendationResponse:
-    """
-    Get public product recommendations with parallel-generated health assessments.
-    
-    Perfect for app explore pages where users want to browse products before signing up.
-    Uses parallel processing to pre-populate health assessments for instant loading.
-    
-    Args:
-        supabase_service: Supabase service instance
-        limit: Maximum number of recommendations to return (1-100, default 30)
-        
-    Returns:
-        RecommendationResponse: List of recommended products with match details and pre-populated health assessments
-    """
-    try:
-        # Check cache first (5-minute aggressive caching for public endpoint)
-        cache_key = cache.generate_key(f"public_limit_{limit}", prefix="public_explore_recommendations")
-        cached_result = cache.get(cache_key)
-        if cached_result:
-            logger.info(f"Returning cached public explore recommendations (limit: {limit})")
-            return cached_result
-        
-        logger.info(f"Generating public explore recommendations with parallel health assessments (limit: {limit})")
-        
-        # Use default healthy preferences for anonymous users
-        default_preferences = {
-            "nutrition_focus": "protein",
-            "avoid_preservatives": True,
-            "prefer_organic_or_grass_fed": True,
-            "prefer_low_risk": True,
-            "meat_preferences": ["chicken", "turkey", "beef", "fish"]  # Show variety
         }
-        
-        # Get total count using efficient database query
-        total_count = supabase_service.count_products()
-        
-        # Get recommendations using the same service but with default preferences
-        recommended_products = get_personalized_recommendations(
-            supabase_service, 
-            default_preferences, 
-            limit, 
-            0  # Start from beginning
-        )
-        
-        if not recommended_products:
-            logger.warning("No public recommendations found")
-            return models.RecommendationResponse(
-                recommendations=[],
-                total_matches=total_count
-            )
-        
-        logger.info(f"Returning {len(recommended_products)} public products (no pre-generation)")
-        
-        # Build response with match details (no health assessment generation)
-        from app.services.recommendation_service import analyze_product_match
-        result = []
-        for product in recommended_products:
-            try:
-                # Analyze why this product matches the default preferences
-                matches, concerns = analyze_product_match(product, default_preferences)
-                
-                # Create RecommendedProduct object
-                recommended_product = models.RecommendedProduct(
-                    product=models.Product(**product),
-                    match_details=models.ProductMatch(
-                        matches=matches,
-                        concerns=concerns
-                    ),
-                    match_score=None  # We don't expose raw scores to clients
-                )
-                
-                result.append(recommended_product)
-                
-            except Exception as e:
-                logger.warning(f"Error processing product {product.get('code', 'unknown')}: {e}")
-                continue
-        
-        logger.info(f"Returning {len(result)} public recommendations (no pre-generation)")
-        
-        response = models.RecommendationResponse(
-            recommendations=result,
-            total_matches=total_count
-        )
-        
-        # Cache the response for 5 minutes (300 seconds)
-        cache.set(cache_key, response, ttl=300)
-        
-        return response
-    except Exception as e:
-        logger.error(f"Error generating public recommendations: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to generate public recommendations: {str(e)}"
-        )
+    },
+    tags=["Cache Management"]
+)
 
 
 @router.delete("/cache/health-assessments", 
