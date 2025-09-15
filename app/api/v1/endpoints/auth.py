@@ -18,6 +18,7 @@ from app.services.social_auth_service import SocialAuthService
 from app.models import Token, UserCreate
 import re
 import os
+import httpx
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -241,6 +242,14 @@ def login_access_token(
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
+        # Map network/DNS issues to service unavailable
+        message = str(e)
+        if isinstance(e, httpx.HTTPError) or "nodename nor servname" in message or "Name or service not known" in message:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Authentication service unavailable. Please try again later.",
+            )
+        # Default to invalid credentials for other errors
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid login credentials",
@@ -363,6 +372,14 @@ def register_user(
         raise
     except Exception as e:
         logger.error(f"Registration error: {str(e)}")
+        message = str(e)
+        # Return 503 when admin/public auth calls fail due to network/DNS
+        if isinstance(e, httpx.HTTPError) or "nodename nor servname" in message or "Name or service not known" in message:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Registration service unavailable. Please try again later.",
+            )
+        # Otherwise treat as bad input
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Registration failed. Please check your information and try again."
