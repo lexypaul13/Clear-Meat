@@ -1328,7 +1328,7 @@ async def complete_ai_assessment_in_background(
         if assessment:
             # Cache the completed assessment
             try:
-                cache_key = CacheService.generate_key(code, prefix="health_assessment_mcp_v28_no_citations")
+                cache_key = mcp_service.get_assessment_cache_key(code)
                 cache.set(cache_key, assessment, ttl=86400)  # Cache for 24 hours
                 logger.info(f"[Background] ✅ Completed and cached AI assessment for {code}")
             except Exception as cache_error:
@@ -1514,8 +1514,8 @@ async def get_product_health_assessment_mcp(
         processing_key = CacheService.generate_key(f"{code}_processing", prefix="assessment_status")
         is_processing = cache.get(processing_key)
         
-        # Add timeout for mobile requests (15 seconds max)
-        timeout_seconds = 15 if format == "mobile" else 30
+        # Add timeout for mobile requests (extended for evidence generation)
+        timeout_seconds = 30 if format == "mobile" else 45
         
         try:
             # Use asyncio.wait_for to add timeout
@@ -1549,7 +1549,6 @@ async def get_product_health_assessment_mcp(
                 assessment = mcp_service.create_minimal_fallback_assessment(structured_product, existing_risk_rating)
                 assessment["metadata"]["assessment_status"] = "processing"
                 assessment["metadata"]["retry_after_seconds"] = 30
-                assessment["summary"] = assessment["summary"] + " Full AI analysis is being generated - check back in 30 seconds."
             else:
                 logger.info(f"AI processing already in progress for {code}")
                 assessment = mcp_service.create_minimal_fallback_assessment(structured_product, existing_risk_rating)
@@ -1744,6 +1743,7 @@ async def clear_health_assessment_cache() -> Dict[str, Any]:
         "health_assessment*",
         "*health-assessment-mcp*",
         "*mcp_v27*",  # Old version cache keys
+        "*mcp_v30_with_citations*",  # Current generation
         "*working_citations*"  # Citation-related cache keys
     ]
     
@@ -1766,5 +1766,5 @@ async def clear_health_assessment_cache() -> Dict[str, Any]:
         "message": f"Cleared {total_cleared} cached health assessments",
         "patterns_cleared": patterns_cleared,
         "total_keys_deleted": total_cleared,
-        "cache_version_updated": "v28_no_citations"
+        "cache_version_updated": "v30_with_citations"
     }

@@ -10,7 +10,7 @@ from typing import List, Dict, Any
 from app.db.supabase_client import get_supabase_service
 from app.services.health_assessment_mcp_service import HealthAssessmentMCPService
 from app.utils import helpers
-from app.core.cache import cache, CacheService
+from app.core.cache import cache
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ async def warm_cache_for_product(code: str, supabase_service, mcp_service) -> bo
         logger.info(f"Warming cache for product {code}")
         
         # Check if already cached
-        cache_key = CacheService.generate_key(code, prefix="health_assessment_mcp_v27_working_citations")
+        cache_key = mcp_service.get_assessment_cache_key(code)
         if cache.get(cache_key):
             logger.info(f"Product {code} already cached, skipping")
             return True

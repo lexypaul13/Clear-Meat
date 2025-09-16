@@ -29,7 +29,8 @@ logger = logging.getLogger(__name__)
 
 class HealthAssessmentMCPService:
     """Evidence-based health assessment service using Gemini with Google Search grounding for ingredient-specific citations."""
-    
+
+    CACHE_PREFIX = "health_assessment_mcp_v30_with_citations"
     # Trivial ingredients that don't need citation research (saves ~30-60 seconds)
     TRIVIAL_INGREDIENTS = {
         'water', 'salt', 'sugar', 'glucose', 'fructose', 'corn syrup', 'high fructose corn syrup',
@@ -73,7 +74,7 @@ class HealthAssessmentMCPService:
             # Generate cache key with version to force refresh with enhanced citation system
             # Add timestamp to force fresh generation for debugging
             import time
-            cache_key = cache.generate_key(product.product.code, prefix="health_assessment_mcp_v29_with_citations")
+            cache_key = self.get_assessment_cache_key(product.product.code)
             
             # Check cache first with fixed citation URLs
             cached_result = cache.get(cache_key)
@@ -682,38 +683,75 @@ class HealthAssessmentMCPService:
         return cleaned
     
     def _validate_ingredient_list(self, ingredients: List[str]) -> List[str]:
-        """Validate and clean an ingredient list, removing non-ingredient entries and markdown formatting."""
-        validated = []
-        
+        """Validate and clean ingredient names while preserving meaningful entries."""
+        validated: List[str] = []
+        seen = set()
+
         skip_patterns = [
-            'none', 'no ingredients', 'there are no', 'empty', 
+            'none', 'no ingredients', 'there are no', 'empty',
             'n/a', 'not applicable', 'nothing', 'nil', 'not found',
             'does not contain', 'free from', 'without'
         ]
-        
+
         for ingredient in ingredients:
-            # Clean markdown formatting
-            ingredient = ingredient.replace("**", "").replace("__", "").strip()
-            
-            # Skip empty or very short
-            if len(ingredient) < 2:
+            if not ingredient:
                 continue
-                
-            # Skip explanatory text
-            if any(pattern in ingredient.lower() for pattern in skip_patterns):
+
+            cleaned = ingredient.replace("**", "").replace("__", "").strip()
+            if len(cleaned) < 2:
                 continue
-                
-            # Skip overly long (likely sentences)
-            if len(ingredient) > 60:
+
+            if any(pattern in cleaned.lower() for pattern in skip_patterns):
                 continue
-                
-            # Skip entries with multiple sentences
-            if ingredient.count('.') > 1:
+
+            # Trim descriptive clauses while keeping the core ingredient name.
+            if '.' in cleaned:
+                primary_sentence = cleaned.split('.', 1)[0].strip()
+                if len(primary_sentence) >= 2:
+                    cleaned = primary_sentence
+
+            if ';' in cleaned:
+                cleaned = cleaned.split(';', 1)[0].strip()
+
+            max_length = 150
+            if len(cleaned) > max_length:
+                cleaned = cleaned[:max_length].rstrip(",; -") + '…'
+
+            cleaned_lower = cleaned.lower()
+            if cleaned_lower in seen:
                 continue
-                
-            validated.append(ingredient)
-            
+
+            seen.add(cleaned_lower)
+            validated.append(cleaned)
+
         return validated
+
+    def get_assessment_cache_key(self, product_code: str) -> str:
+        """Generate the cache key used for full MCP assessments."""
+        return cache.generate_key(product_code, prefix=self.CACHE_PREFIX)
+
+    def _normalize_micro_report(
+        self,
+        report: str,
+        max_sentences: int = 5,
+        max_chars: int = 500
+    ) -> str:
+        """Clamp AI micro-reports to a predictable length for mobile rendering."""
+        if not report:
+            return report
+
+        text = re.sub(r'\s+', ' ', report).strip()
+        if not text:
+            return text
+
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+        trimmed = sentences[:max_sentences]
+        normalized = ' '.join(trimmed).strip()
+
+        if len(normalized) > max_chars:
+            normalized = normalized[:max_chars].rstrip(' ,;') + '…'
+
+        return normalized
     
     def _get_fallback_categorization(self, product: ProductStructured) -> Dict[str, Any]:
         """Provide intelligent fallback ingredient categorization using known risk patterns."""
@@ -887,6 +925,12 @@ class HealthAssessmentMCPService:
             }
         }
         
+        assessment_data["summary"] = self._normalize_micro_report(
+            assessment_data["summary"],
+            max_sentences=3,
+            max_chars=320
+        )
+
         return assessment_data
     
     
@@ -1214,7 +1258,7 @@ RESPONSE FORMAT - RETURN VALID JSON ONLY:
         "name": "Ingredient Name",
         "risk_level": "high",
         "category": "preservative|additive|sweetener|etc",
-        "micro_report": "Detailed analysis (200-250 chars) with specific health effects found in research",
+        "micro_report": "Provide a medically factual 3-5 sentence summary (<=500 characters) covering mechanisms, documented risks, and guidance. Reference citations using bracketed numbers like [1].",
         "citations": [
           {{
             "id": 1,
@@ -1231,7 +1275,7 @@ RESPONSE FORMAT - RETURN VALID JSON ONLY:
         "name": "Ingredient Name", 
         "risk_level": "moderate",
         "category": "preservative|additive|etc",
-        "micro_report": "Detailed analysis with moderate health concerns",
+        "micro_report": "Provide a concise 3-4 sentence overview (<=400 characters) describing known concerns, typical exposure guidance, and cite sources using bracketed numbers like [1].",
         "citations": [
           {{
             "id": 2,
@@ -1289,6 +1333,22 @@ CRITICAL: Each ingredient MUST have its own specific citations array with source
                 ingredients_assessment = gemini_data.get("ingredients_assessment", {})
                 high_risk_with_citations = ingredients_assessment.get("high_risk", [])
                 moderate_risk_with_citations = ingredients_assessment.get("moderate_risk", [])
+
+                # Normalize AI micro reports to keep the UI concise and predictable
+                for entry in high_risk_with_citations:
+                    if isinstance(entry, dict):
+                        entry["micro_report"] = self._normalize_micro_report(
+                            entry.get("micro_report", ""),
+                            max_sentences=5,
+                            max_chars=500
+                        )
+                for entry in moderate_risk_with_citations:
+                    if isinstance(entry, dict):
+                        entry["micro_report"] = self._normalize_micro_report(
+                            entry.get("micro_report", ""),
+                            max_sentences=4,
+                            max_chars=400
+                        )
                 
                 logger.info(f"[Gemini JSON Parse] Found {len(high_risk_with_citations)} high-risk and {len(moderate_risk_with_citations)} moderate-risk ingredients with citations")
                 
@@ -1455,7 +1515,11 @@ CRITICAL: Each ingredient MUST have its own specific citations array with source
                 high_risk_ingredients, 
                 moderate_risk_ingredients
             )
-            assessment_data["summary"] = summary_template
+            assessment_data["summary"] = self._normalize_micro_report(
+                summary_template,
+                max_sentences=3,
+                max_chars=320
+            )
             
             # Update metadata with actual product information
             assessment_data["metadata"]["product_code"] = self._current_product.product.code
@@ -2059,4 +2123,3 @@ Generate {len(nutrition_data)} comments in the exact format above:"""
         except Exception as e:
             logger.warning(f"[URL Resolution] Failed to resolve redirect URL: {e}")
             return redirect_url  # Fallback to original URL
-
