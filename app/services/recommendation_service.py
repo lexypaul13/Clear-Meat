@@ -240,6 +240,9 @@ def _get_optimized_recommendations(
         else:
             # Default ordering: prefer green rating, then high protein, then low sodium
             query = query.order('risk_rating', desc=False).order('protein', desc=True).order('salt', desc=False)
+
+        # Add deterministic tie-breaker to ensure stable pagination across requests
+        query = query.order('code', desc=False)
         
         # Use strict pagination - fetch exactly what we need
         # Add offset and limit for true pagination
