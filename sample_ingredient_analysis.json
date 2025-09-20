@@ -1,0 +1,136 @@
+{
+  "summary": "Test Processed Meat Product contains Sodium Nitrite requiring caution. Moderate consumption recommended. [1][2]",
+  "risk_summary": {
+    "grade": "C",
+    "color": "Yellow"
+  },
+  "ingredients_assessment": {
+    "high_risk": [
+      {
+        "name": "Sodium Nitrite",
+        "micro_report": "Forms nitrosamines (carcinogens) upon reaction with amines during processing or digestion. Nitrosamines damage DNA, increasing cancer risk, particularly colorectal cancer. (Source: IARC Monographs, WHO).",
+        "citations": [1, 2, 3]
+      }
+    ],
+    "moderate_risk": [
+      {
+        "name": "Salt (Sodium Chloride)",
+        "micro_report": "High sodium intake links to hypertension, increasing stroke and heart disease risk. Moderation is key; recommended daily intake is <2300mg. (Source: American Heart Association)"
+      },
+      {
+        "name": "Monosodium Glutamate (MSG)",
+        "micro_report": "Can trigger headaches and other symptoms in sensitive individuals (MSG symptom complex). Most tolerate it well, but moderation is advised for susceptible people. (Source: FDA)",
+        "citations": [1, 2, 3]
+      },
+      {
+        "name": "BHA (Butylated Hydroxyanisole)",
+        "micro_report": "A preservative with potential endocrine-disrupting effects and links to some cancers in animal studies. Human data is less conclusive, but moderation is a prudent approach. (Source: EFSA)",
+        "citations": [1, 2, 3]
+      },
+      {
+        "name": "Sodium Phosphate",
+        "micro_report": "High intake can contribute to mineral imbalances and kidney problems, especially in individuals with pre-existing conditions. Moderation is advised. (Source: National Institutes of Health)",
+        "citations": [1, 2, 3]
+      }
+    ],
+    "low_risk": []
+  },
+  "nutrition_insights": [],
+  "metadata": {
+    "generated_at": "2025-09-03T00:53:27.993972",
+    "product_code": "00080897",
+    "product_name": "Test Processed Meat Product",
+    "product_brand": "Test Brand",
+    "ingredients": "Beef, Water, Salt, Sodium Nitrite, Sodium Phosphate, Monosodium Glutamate, Natural Flavors, BHA, Carrageenan",
+    "assessment_type": "Gemini Grounded Health Assessment with Ingredient-Specific Citations",
+    "product_image_url": "",
+    "grounding_enabled": true,
+    "grounding_source": "Google Search"
+  },
+  "citations": [
+    {
+      "id": 1,
+      "title": "Research study from oehha.ca.gov",
+      "source": "oehha.ca.gov",
+      "year": 2024,
+      "url": "https://oehha.ca.gov/sites/default/files/media/downloads/crnr/sodnithid.pdf"
+    },
+    {
+      "id": 2,
+      "title": "Research study from ejast.org",
+      "source": "ejast.org",
+      "year": 2024,
+      "url": "https://www.ejast.org/archive/view_article?pid=jast-63-5-955"
+    },
+    {
+      "id": 3,
+      "title": "PubMed Medical Research Study",
+      "source": "PubMed/NCBI",
+      "year": 2024,
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6893523/"
+    },
+    {
+      "id": 4,
+      "title": "PubMed Medical Research Study",
+      "source": "PubMed/NCBI",
+      "year": 2024,
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6952072/"
+    },
+    {
+      "id": 5,
+      "title": "Research study from irispublishers.com",
+      "source": "irispublishers.com",
+      "year": 2024,
+      "url": "https://irispublishers.com/gjnfs/fulltext/toxicological-effect-of-monosodium-glutamate-in-seasonings-on-human-health.ID.000522.php"
+    },
+    {
+      "id": 6,
+      "title": "PubMed Medical Research Study",
+      "source": "PubMed/NCBI",
+      "year": 2024,
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC5938543/"
+    },
+    {
+      "id": 7,
+      "title": "PubMed Medical Research Study",
+      "source": "PubMed/NCBI",
+      "year": 2024,
+      "url": "https://www.ncbi.nlm.nih.gov/books/NBK590883/"
+    },
+    {
+      "id": 8,
+      "title": "PubMed Medical Research Study",
+      "source": "PubMed/NCBI",
+      "year": 2024,
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7009650/"
+    },
+    {
+      "id": 9,
+      "title": "Research study from healthvermont.gov",
+      "source": "healthvermont.gov",
+      "year": 2024,
+      "url": "https://www.healthvermont.gov/sites/default/files/documents/pdf/ENV_CDP_25013_16_5_BHA.pdf"
+    },
+    {
+      "id": 10,
+      "title": "PubMed Medical Research Study",
+      "source": "PubMed/NCBI",
+      "year": 2024,
+      "url": "https://www.ncbi.nlm.nih.gov/books/NBK601526/"
+    },
+    {
+      "id": 11,
+      "title": "Research study from efsa.europa.eu",
+      "source": "efsa.europa.eu",
+      "year": 2024,
+      "url": "https://www.efsa.europa.eu/en/press/news/190612"
+    },
+    {
+      "id": 12,
+      "title": "PubMed Medical Research Study",
+      "source": "PubMed/NCBI",
+      "year": 2024,
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC3278747/"
+    }
+  ]
+}
