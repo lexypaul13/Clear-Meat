@@ -63,7 +63,7 @@ class IngredientAnalysisService:
                     # Use "moderate" to bypass low-risk gating while still skipping trivial terms
                     logger.info(f"[Ingredient Analysis] Fetching citations for ingredient: {ingredient_name}")
                     citations_map = await self.citation_service.get_citations_for_ingredients([ingredient_name])
-                    citations = citations_map.get(ingredient_name, [])
+                    citations = (citations_map.get(ingredient_name, []) or [])[:3]
                 else:
                     logger.info(f"[Ingredient Analysis] Skipping citations for trivial ingredient: {ingredient_name}")
             except Exception as e:
