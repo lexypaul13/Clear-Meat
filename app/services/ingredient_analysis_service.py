@@ -1,5 +1,6 @@
 """Service for analyzing individual ingredients with AI-generated health information and citations."""
 import logging
+import re
 from typing import Dict, Any
 import google.generativeai as genai
 from app.core.config import settings
@@ -88,13 +89,17 @@ class IngredientAnalysisService:
         
         prompt = f"""Analyze the food ingredient "{ingredient_name}" for health effects.
 
-Provide a comprehensive analysis covering safety profile, health implications, risk level, biological effects, and consumption guidance.
-Focus on evidence-based information suitable for health-conscious consumers.
+Provide a concise, evidence-based briefing suitable for health-conscious consumers.
 
 Ingredient: {ingredient_name}
 
-Respond in this format:
-ANALYSIS: [Detailed 2-3 paragraph analysis covering all aspects: risk level, health concerns, biological effects, and consumption guidance]"""
+RESPONSE REQUIREMENTS:
+1. Write exactly 3-5 sentences (max 550 characters) summarizing safety profile, key mechanisms, primary health risks, vulnerable populations, and consumption guidance.
+2. Mention authoritative sources inline when relevant (e.g., FDA, EFSA) but do NOT include bracketed citation numbers.
+3. Maintain a neutral, factual tone and avoid marketing language.
+
+FORMAT:
+ANALYSIS: Sentence 1. Sentence 2. Sentence 3. (Optionally Sentence 4-5.)"""
 
         try:
             logger.info(f"[Gemini Analysis] Generating analysis for: {ingredient_name}")
@@ -145,20 +150,41 @@ ANALYSIS: [Detailed 2-3 paragraph analysis covering all aspects: risk level, hea
             
             # Save final section
             if current_section == "analysis" and content_lines:
-                result["analysis"] = " ".join(content_lines)
+                result["analysis"] = self._normalize_analysis_text(" ".join(content_lines))
             
             # Fallback: if parsing fails, use entire response as analysis
             if not result["analysis"]:
-                result["analysis"] = response_text
+                result["analysis"] = self._normalize_analysis_text(response_text)
                 
             return result
             
         except Exception as e:
             logger.error(f"[Analysis Parsing] Error: {e}")
             return {
-                "analysis": response_text,
+                "analysis": self._normalize_analysis_text(response_text),
                 "risk_level": "unknown",
                 "primary_concern": "Requires further review",
                 "mechanism": "",
                 "recommendations": "Consult healthcare professionals for advice"
             }
+
+    def _normalize_analysis_text(self, text: str) -> str:
+        """Clamp AI analysis text to 3-5 sentences and target length."""
+        if not text:
+            return ""
+
+        normalized = re.sub(r'\s+', ' ', text).strip()
+        if not normalized:
+            return ""
+
+        sentences = re.split(r'(?<=[.!?])\s+', normalized)
+        trimmed = sentences[:5]
+        normalized = ' '.join(trimmed).strip()
+        normalized = re.sub('\\[\\d+\\]', '', normalized)
+        normalized = re.sub(r'\s+', ' ', normalized).strip()
+
+        max_chars = 550
+        if len(normalized) > max_chars:
+            normalized = normalized[:max_chars].rstrip(' ,;') + '…'
+
+        return normalized
