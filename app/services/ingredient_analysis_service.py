@@ -54,14 +54,20 @@ class IngredientAnalysisService:
             else:
                 risk_level = "low"
             
-            # Step 3: Get Perplexity citations if needed
+            # Step 3: Get Perplexity citations
+            # Frontend requires citations even for generally safe ingredients.
+            # We always fetch citations for non-trivial ingredients (cost-friendly via internal trivial filter).
             citations = []
-            if self.citation_service.should_get_citations(ingredient_name, risk_level):
-                logger.info(f"[Ingredient Analysis] Getting citations for {risk_level}-risk ingredient")
-                citations_map = await self.citation_service.get_citations_for_ingredients([ingredient_name])
-                citations = citations_map.get(ingredient_name, [])
-            else:
-                logger.info(f"[Ingredient Analysis] Skipping citations for {risk_level}-risk ingredient")
+            try:
+                if self.citation_service.should_get_citations(ingredient_name, "moderate"):
+                    # Use "moderate" to bypass low-risk gating while still skipping trivial terms
+                    logger.info(f"[Ingredient Analysis] Fetching citations for ingredient: {ingredient_name}")
+                    citations_map = await self.citation_service.get_citations_for_ingredients([ingredient_name])
+                    citations = citations_map.get(ingredient_name, [])
+                else:
+                    logger.info(f"[Ingredient Analysis] Skipping citations for trivial ingredient: {ingredient_name}")
+            except Exception as e:
+                logger.warning(f"[Ingredient Analysis] Citation fetch failed: {e}")
             
             # Step 4: Combine results (simplified response)
             result = {
