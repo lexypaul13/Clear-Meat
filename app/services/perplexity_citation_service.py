@@ -108,28 +108,19 @@ class PerplexityCitationService:
         logger.info(f"[Citation Research] Researching: {ingredient_name}")
         
         try:
-            # Use Perplexity's OpenAI-compatible API and explicitly request citations
             response = await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: self.client.chat.completions.create(
-                    model=self.model or "llama-3.1-sonar-small-online",
+                    model=self.model,
                     messages=[
-                        {
-                            "role": "system",
-                            "content": (
-                                "You are a medical research expert. Provide accurate, up-to-date,"
-                                " evidence-based information about food ingredient health effects."
-                            ),
-                        },
-                        {"role": "user", "content": query},
+                        {"role": "system", "content": "You are a medical research expert. Provide accurate information about food ingredient health effects."},
+                        {"role": "user", "content": query}
                     ],
-                    max_tokens=800,
-                    temperature=0.1,
-                    # Perplexity-specific: ensure citations are returned at the top level
-                    extra_body={"return_citations": True},
+                    max_tokens=1000,
+                    temperature=0.1
                 )
             )
-
+            
             citations = self._extract_citations_from_response(response)
             
             # Cache successful results for 24 hours
@@ -149,69 +140,29 @@ class PerplexityCitationService:
         return f"perplexity_citations_{ingredient_hash}"
     
     def _extract_citations_from_response(self, response) -> List[Dict[str, Any]]:
-        """Extract citations from a Perplexity ChatCompletion response robustly.
-
-        Supports both Perplexity's top-level `citations` array and fallbacks by
-        scanning choice content for URLs. Returns up to 3 citations, ranked by
-        source authority when possible.
-        """
-        urls: List[str] = []
+        """Extract citations from Perplexity response."""
+        citations = []
+        
         try:
-            # Prefer explicit top-level citations provided by Perplexity
-            # OpenAI SDK v1.x returns pydantic models; use model_dump() for extra fields
-            citations_attr = getattr(response, "citations", None)
-            if citations_attr:
-                urls = list(dict.fromkeys([u for u in citations_attr if isinstance(u, str)]))
-            else:
-                # Try dict view for extra fields
-                to_dict = getattr(response, "model_dump", None) or getattr(response, "to_dict", None)
-                if callable(to_dict):
-                    resp_dict = to_dict()
-                    raw = resp_dict.get("citations")
-                    if isinstance(raw, list):
-                        urls = list(dict.fromkeys([u for u in raw if isinstance(u, str)]))
-
-                # Fallback: scan assistant message content for URLs
-                if not urls:
-                    try:
-                        # choices[0].message.content can contain URLs in plaintext
-                        choice0 = response.choices[0]
-                        content = getattr(choice0.message, "content", "") or ""
-                        import re as _re
-                        urls = list(dict.fromkeys(_re.findall(r"https?://[^\s\)\]\}]+", content)))
-                    except Exception:
-                        pass
-
-            if not urls:
-                logger.info("No citations found in Perplexity response")
-                return []
-
-            # Build citation objects with lightweight enrichment and authority ranking
-            built: List[Dict[str, Any]] = []
-            for i, citation_url in enumerate(urls[:5], 1):  # consider a few, will sort and slice later
-                built.append(
-                    {
-                        "id": i,  # temporary; re-assigned by caller flattening
+            # Perplexity returns citations as an array of URLs
+            if hasattr(response, 'citations') and response.citations:
+                logger.info(f"Found {len(response.citations)} citations from Perplexity")
+                
+                for i, citation_url in enumerate(response.citations[:3], 1):
+                    citation_data = {
+                        "id": i,
                         "title": self._extract_title_from_url(citation_url),
                         "source": self._extract_source_from_url(citation_url),
                         "year": 2024,
-                        "url": citation_url,
-                        "_rank": self._authority_rank(citation_url),
+                        "url": citation_url
                     }
-                )
-
-            # Sort by authority rank (desc), then keep top 3
-            built.sort(key=lambda c: c.get("_rank", 0), reverse=True)
-            # Drop internal field
-            for c in built:
-                c.pop("_rank", None)
-            citations = built[:3]
-
-            logger.info(f"Selected {len(citations)} citations after ranking")
-            return citations
+                    citations.append(citation_data)
+                    logger.info(f"Processed citation {i}: {citation_data['title'][:50]}...")
+            
         except Exception as e:
             logger.error(f"Error extracting citations: {e}")
-            return []
+        
+        return citations[:3]
     
     @lru_cache(maxsize=128)
     def _get_domain_info(self, url: str) -> Tuple[str, str]:
@@ -250,27 +201,6 @@ class PerplexityCitationService:
         """Extract source information from URL."""
         _, source = self._get_domain_info(url)
         return source
-
-    def _authority_rank(self, url: str) -> int:
-        """Assign a rough authority score based on domain.
-
-        Higher scores indicate more medically authoritative sources. This is a
-        simple heuristic to prioritize PubMed/NIH/WHO/FDA/etc. without making
-        additional network calls.
-        """
-        domain = urlparse(url).netloc.lower()
-        # Ordered tiers by perceived authority for medical citations
-        tiers = [
-            (10, ("ncbi.nlm.nih.gov", "pubmed", "nejm.org", "thelancet.com", "jamanetwork.com")),
-            (9, ("who.int", "cdc.gov", "fda.gov", "efsa.europa.eu", "ema.europa.eu")),
-            (8, ("nih.gov", "nature.com", "sciencedirect.com", "springer.com", "cell.com")),
-            (7, ("harvard.edu", "stanford.edu", "ox.ac.uk", "cam.ac.uk")),
-        ]
-        for score, domains in tiers:
-            if any(d in domain for d in domains):
-                return score
-        # Default baseline
-        return 1
 
 
 # Singleton instance for performance
