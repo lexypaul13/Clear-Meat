@@ -187,7 +187,8 @@ class Settings(BaseSettings):
     
     # Perplexity AI for citations
     PERPLEXITY_API_KEY: str = os.getenv("PERPLEXITY_API_KEY", "")
-    PERPLEXITY_MODEL: str = os.getenv("PERPLEXITY_MODEL", "sonar")
+    # Use an online-capable model by default so the API returns citations
+    PERPLEXITY_MODEL: str = os.getenv("PERPLEXITY_MODEL", "llama-3.1-sonar-small-online")
     
     @field_validator("PERPLEXITY_API_KEY", mode="before")
     def warn_if_perplexity_missing(cls, v: str) -> str:
