@@ -383,6 +383,7 @@ async def get_explore_recommendations(
     supabase_service = Depends(get_supabase_service),
     current_user: db_models.User = Depends(get_current_active_user),
     limit: int = Query(30, ge=1, le=100, description="Maximum number of recommendations to return", example=20),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
 ) -> Any:
     """
     Get personalized product recommendations for the explore page.
@@ -401,7 +402,10 @@ async def get_explore_recommendations(
     """
     try:
         # Check cache first (5-minute aggressive caching to reduce DB load)
-        cache_key = cache.generate_key(f"user_{current_user.id}_limit_{limit}", prefix="explore_recommendations")
+        cache_key = cache.generate_key(
+            f"user_{current_user.id}_limit_{limit}_offset_{offset}",
+            prefix="explore_recommendations"
+        )
         cached_result = cache.get(cache_key)
         if cached_result:
             logger.info(f"Returning cached explore recommendations for user {current_user.id}")
@@ -425,21 +429,30 @@ async def get_explore_recommendations(
         preferences["_explore_page"] = True
         
         # Get personalized recommendations
-        recommended_products = get_personalized_recommendations(supabase_service, preferences, limit, 0)
-        
+        recommended_products = get_personalized_recommendations(
+            supabase_service,
+            preferences,
+            limit,
+            offset
+        )
+
         if not recommended_products:
             logger.warning("No explore recommendations found")
             return models.RecommendationResponse(
                 recommendations=[],
-                total_matches=0
+                total_matches=0,
+                offset=offset,
+                limit=limit,
+                has_more=False
             )
-        
+
         # Build response with match details
         result = []
+        seen_codes = set()
         for product in recommended_products:
             # Analyze why this product matches preferences
             matches, concerns = analyze_product_match(product, preferences)
-            
+
             # Create RecommendedProduct object with proper datetime handling
             # Convert string dates to datetime objects for model validation
             if isinstance(product.get('last_updated'), str):
@@ -458,7 +471,13 @@ async def get_explore_recommendations(
             
             # Set id field from code for frontend compatibility
             product['id'] = product.get('code', '')
-            
+
+            code = product.get('code')
+            if code and code in seen_codes:
+                continue
+            if code:
+                seen_codes.add(code)
+
             recommended_product = models.RecommendedProduct(
                 product=models.Product.model_validate(product),
                 match_details=models.ProductMatch(
@@ -471,12 +490,23 @@ async def get_explore_recommendations(
             result.append(recommended_product)
         
         logger.info(f"Returning {len(result)} explore recommendations")
-        
+
+        try:
+            total_count = supabase_service.count_products()
+        except Exception as count_error:
+            logger.warning(f"Unable to retrieve total product count: {count_error}")
+            total_count = len(result)
+
+        has_more = (offset + len(result)) < total_count if total_count is not None else None
+
         response = models.RecommendationResponse(
             recommendations=result,
-            total_matches=len(result)
+            total_matches=total_count,
+            offset=offset,
+            limit=limit,
+            has_more=has_more
         )
-        
+
         # Cache the response for 5 minutes (300 seconds)
         cache.set(cache_key, response, ttl=300)
         

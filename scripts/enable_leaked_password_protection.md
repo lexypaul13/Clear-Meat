@@ -3,7 +3,7 @@
 ## Steps to Enable via Supabase Dashboard
 
 1. **Navigate to Auth Settings:**
-   - Go to your Supabase Dashboard: https://supabase.com/dashboard/project/ksgxendfsejkxhrmfsbi
+   - Go to your Supabase Dashboard: https://supabase.com/dashboard/project/<project-ref>
    - Click on "Authentication" in the left sidebar
    - Go to "Auth Settings" tab
 
@@ -27,7 +27,7 @@
 
 ```bash
 # If you prefer to use the CLI (requires supabase CLI installed)
-supabase --project-ref ksgxendfsejkxhrmfsbi auth set --enable-pwned-check=true
+supabase --project-ref <project-ref> auth set --enable-pwned-check=true
 ```
 
 ## Verification

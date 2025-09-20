@@ -15,16 +15,12 @@ This project has been successfully migrated from a dev GitHub account to the per
 
 ### **Current Status**
 - **Repository**: https://github.com/lexypaul13/Clear-Meat (1,641 files, 14.31 MB)
-- **Supabase Project**: https://ksgxendfsejkxhrmfsbi.supabase.co
+- **Supabase Project**: https://<project-ref>.supabase.co
 - **Database**: ✅ Ready with products, profiles, and all supporting tables
 - **Sample Data**: 5 meat products loaded for testing
 
 ### **New Supabase Credentials**
-```bash
-SUPABASE_URL=https://ksgxendfsejkxhrmfsbi.supabase.co
-SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtzZ3hlbmRmc2Vqa3hocm1mc2JpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDgyMzAxODksImV4cCI6MjA2MzgwNjE4OX0.NJGVUga8oBHsy06u1COnz0p0kTbViz1we2nxxSw-5BY
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtzZ3hlbmRmc2Vqa3hocm1mc2JpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0ODIzMDE4OSwiZXhwIjoyMDYzODA2MTg5fQ.vCpVwhgXwgOrv_edxykymFhzYi7mCyPnuqrwhj92j7M
-```
+Store your Supabase keys in a secure secrets manager or `.env` file. Rotate any credentials that were previously shared in documentation and replace them with environment-specific placeholders instead of pasting real values in this repo.
 
 ## 🔧 **Quick Setup for Original Account**
 
@@ -115,7 +111,7 @@ The social authentication has been streamlined to use Supabase's built-in OAuth 
 
 ### **OAuth Setup**
 To configure OAuth providers, visit your Supabase dashboard:
-1. Go to: https://ksgxendfsejkxhrmfsbi.supabase.co/project/auth/providers
+1. Go to: https://<project-ref>.supabase.co/project/auth/providers
 2. Enable desired providers (Google, Facebook, Apple, Twitter)
 3. Add your OAuth app credentials
 4. Configure redirect URLs

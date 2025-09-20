@@ -39,8 +39,8 @@ Supabase Database (PostgreSQL)
 
 ### Key URLs
 - **Railway API**: `https://clear-meat-api-production.up.railway.app`
-- **Supabase Project**: `https://ksgxendfsejkxhrmfsbi.supabase.co`
-- **Edge Function**: `https://ksgxendfsejkxhrmfsbi.supabase.co/functions/v1/clear-meat-api`
+- **Supabase Project**: `https://<project-ref>.supabase.co`
+- **Edge Function**: `https://<project-ref>.supabase.co/functions/v1/clear-meat-api`
 
 ## 🔧 Environment Configuration
 
@@ -49,11 +49,11 @@ Supabase Database (PostgreSQL)
 ENVIRONMENT=development                    # Allows auth bypass
 ENABLE_AUTH_BYPASS=true                   # Disables auth middleware
 DATABASE_URL=postgresql://...             # Supabase connection
-SUPABASE_URL=https://...supabase.co      
-SUPABASE_KEY=eyJhbGciOiJIUzI1NiIs...     # Anon key
-SUPABASE_SERVICE_KEY=eyJhbGciOiJIUzI1... # Service role key
-GEMINI_API_KEY=AIzaSy...                 # Google Gemini API
-SECRET_KEY=...                           # JWT secret
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=<supabase-anon-key>
+SUPABASE_SERVICE_KEY=<supabase-service-role-key>
+GEMINI_API_KEY=<gemini-api-key>
+SECRET_KEY=<jwt-secret>
 ```
 
 ### Important Security Notes
@@ -360,8 +360,8 @@ railway up
 ```
 Dashboard > Settings > API:
 - URL: https://xxxxx.supabase.co
-- Anon Key: eyJhbGc...
-- Service Key: eyJhbGc... (keep secret!)
+- Anon Key: <supabase-anon-key>
+- Service Key: <supabase-service-role-key> (keep secret!)
 
 Dashboard > Settings > Database:
 - Connection String: postgresql://...
@@ -618,7 +618,7 @@ python -m uvicorn app.main:app --reload
 ENABLE_AUTH_BYPASS=true
 
 # Check JWT token format:
-# Must be: Bearer eyJhbGc...
+# Must be: Bearer <jwt-access-token>
 ```
 
 **Problem: Gemini API errors**

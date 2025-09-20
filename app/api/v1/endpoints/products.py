@@ -1054,6 +1054,7 @@ async def get_product_recommendations(
 async def get_public_recommendations(
     supabase_service = Depends(get_supabase_service),
     limit: int = Query(30, ge=1, le=100, description="Maximum number of recommendations to return", example=20),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
 ) -> models.RecommendationResponse:
     """
     Get public product recommendations with parallel-generated health assessments.
@@ -1070,7 +1071,10 @@ async def get_public_recommendations(
     """
     try:
         # Check cache first (5-minute aggressive caching for public endpoint)
-        cache_key = cache.generate_key(f"public_limit_{limit}", prefix="public_explore_recommendations")
+        cache_key = cache.generate_key(
+            f"public_limit_{limit}_offset_{offset}",
+            prefix="public_explore_recommendations"
+        )
         cached_result = cache.get(cache_key)
         if cached_result:
             logger.info(f"Returning cached public explore recommendations (limit: {limit})")
@@ -1095,14 +1099,17 @@ async def get_public_recommendations(
             supabase_service, 
             default_preferences, 
             limit, 
-            0  # Start from beginning
+            offset
         )
-        
+
         if not recommended_products:
             logger.warning("No public recommendations found")
             return models.RecommendationResponse(
                 recommendations=[],
-                total_matches=total_count
+                total_matches=total_count,
+                offset=offset,
+                limit=limit,
+                has_more=False
             )
         
         logger.info(f"Returning {len(recommended_products)} public products (no pre-generation)")
@@ -1110,12 +1117,19 @@ async def get_public_recommendations(
         # Build response with match details (no health assessment generation)
         from app.services.recommendation_service import analyze_product_match
         result = []
+        seen_codes = set()
         for product in recommended_products:
             try:
                 # Analyze why this product matches the default preferences
                 matches, concerns = analyze_product_match(product, default_preferences)
                 
                 # Create RecommendedProduct object
+                code = product.get('code')
+                if code and code in seen_codes:
+                    continue
+                if code:
+                    seen_codes.add(code)
+
                 recommended_product = models.RecommendedProduct(
                     product=models.Product(**product),
                     match_details=models.ProductMatch(
@@ -1124,20 +1138,25 @@ async def get_public_recommendations(
                     ),
                     match_score=None  # We don't expose raw scores to clients
                 )
-                
+
                 result.append(recommended_product)
-                
+
             except Exception as e:
                 logger.warning(f"Error processing product {product.get('code', 'unknown')}: {e}")
                 continue
-        
+
         logger.info(f"Returning {len(result)} public recommendations (no pre-generation)")
-        
+
+        has_more = (offset + len(result)) < total_count if total_count is not None else None
+
         response = models.RecommendationResponse(
             recommendations=result,
-            total_matches=total_count
+            total_matches=total_count,
+            offset=offset,
+            limit=limit,
+            has_more=has_more
         )
-        
+
         # Cache the response for 5 minutes (300 seconds)
         cache.set(cache_key, response, ttl=300)
         

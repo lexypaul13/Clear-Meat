@@ -20,7 +20,7 @@ echo ""
 # Create new .env file with remote Supabase settings
 cat > .env << EOL
 # Remote Supabase Settings
-SUPABASE_URL=https://szswmlkhirkmozwvhpnc.supabase.co
+SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_KEY=${SUPABASE_KEY}
 
 # Database URL for SQLAlchemy

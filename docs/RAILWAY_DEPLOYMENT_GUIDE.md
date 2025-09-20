@@ -124,15 +124,15 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --log-level i
 ```bash
 # Database
 DATABASE_URL=postgresql://...
-SUPABASE_URL=https://...supabase.co
-SUPABASE_KEY=eyJ...
-SUPABASE_SERVICE_KEY=eyJ...
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=<supabase-anon-key>
+SUPABASE_SERVICE_KEY=<supabase-service-role-key>
 
 # Security
 SECRET_KEY=your-secure-key
 
 # AI Services
-GEMINI_API_KEY=AIza...
+GEMINI_API_KEY=<gemini-api-key>
 
 # Environment
 ENVIRONMENT=production

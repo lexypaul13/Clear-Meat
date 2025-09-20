@@ -276,6 +276,18 @@ class RecommendationResponse(BaseModel):
         ...,
         description="Total number of products that match the criteria (before pagination)"
     )
+    offset: Optional[int] = Field(
+        default=None,
+        description="Offset used for pagination"
+    )
+    limit: Optional[int] = Field(
+        default=None,
+        description="Limit used for pagination"
+    )
+    has_more: Optional[bool] = Field(
+        default=None,
+        description="Indicates if more results are available beyond the current page"
+    )
 
 
 # Health Assessment Models
