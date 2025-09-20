@@ -1067,9 +1067,9 @@ class HealthAssessmentMCPService:
                         grounding_citations.sort(key=lambda x: x.get('priority', 0), reverse=True)
                         
                         # Convert to Citation model format for App Store compliance
-                        # QUALITY OVER QUANTITY: Limit to top 3 highest-authority citations
+                        # QUALITY OVER QUANTITY: Limit to top 2 highest-authority citations
                         citations = []
-                        for i, cite in enumerate(grounding_citations[:3], 1):  # Limit to top 3 citations
+                        for i, cite in enumerate(grounding_citations[:2], 1):  # Limit to top 2 citations
                             # URL is already resolved in the filtering step
                             citations.append({
                                 "id": i,

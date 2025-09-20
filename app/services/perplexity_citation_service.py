@@ -323,43 +323,24 @@ async def integrate_perplexity_citations(assessment_result: Dict[str, Any]) -> D
     # Get citations
     citations_map = await citation_service.get_citations_for_ingredients(filtered_ingredients)
     
-    # Build a unique, globally ranked set of citations (by URL) and keep only top 3
-    unique_by_url = {}
-    for ingredient_citations in citations_map.values():
-        for cite in ingredient_citations:
-            url = cite.get("url")
-            if url and url not in unique_by_url:
-                # Preserve minimal fields; authority score used for ranking
-                unique_by_url[url] = {
-                    "title": cite.get("title"),
-                    "source": cite.get("source"),
-                    "year": cite.get("year", 2024),
-                    "url": url,
-                    "_rank": citation_service._authority_rank(url),
-                }
-
-    # Sort by authority rank and take top 3
-    ranked = sorted(unique_by_url.values(), key=lambda c: c.get("_rank", 0), reverse=True)
-    final_top = ranked[:3]
-
-    # Assign stable IDs 1..3 to final citations
-    url_to_id = {}
-    final_citations = []
-    for i, c in enumerate(final_top, 1):
-        url_to_id[c["url"]] = i
-        c.pop("_rank", None)
-        final_citations.append({"id": i, **c})
-
-    # Set ingredient citation IDs mapped to the final (1..3) set
+    # Add citations to ingredients
     for category in ["high_risk", "moderate_risk"]:
         for ingredient in ingredients_assessment.get(category, []):
             ingredient_name = ingredient.get("name", "")
-            urls = [cite.get("url") for cite in citations_map.get(ingredient_name, [])]
-            mapped_ids = [url_to_id[u] for u in urls if u in url_to_id]
-            ingredient["citations"] = mapped_ids[:3]  # ensure at most 3 per ingredient
-
-    # Attach final citations to assessment (only 3)
-    assessment_result["citations"] = final_citations
-    logger.info(f"Added {len(final_citations)} citations to assessment (capped at 3)")
+            if ingredient_name in citations_map:
+                ingredient["citations"] = [cite["id"] for cite in citations_map[ingredient_name]]
+    
+    # Flatten citations for response with optimized ID assignment
+    all_citations = [
+        {**citation, "id": i}
+        for i, citation in enumerate(
+            (cite for ingredient_citations in citations_map.values() 
+             for cite in ingredient_citations), 
+            1
+        )
+    ]
+    
+    assessment_result["citations"] = all_citations
+    logger.info(f"Added {len(all_citations)} citations to assessment")
     
     return assessment_result
