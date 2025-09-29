@@ -66,11 +66,20 @@ async def get_ingredient_analysis(
         result = await ingredient_service.analyze_ingredient(ingredient_clean)
         
         if "error" in result:
-            logger.error(f"Ingredient analysis failed: {result['error']}")
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to analyze ingredient. Please try again."
-            )
+            error_msg = result['error']
+            logger.error(f"Ingredient analysis failed: {error_msg}")
+            
+            # Check if it's a model/AI service error (502) vs other errors (500)
+            if any(term in error_msg.lower() for term in ['ai analysis failed', 'model', 'gemini', 'not found', 'not supported']):
+                raise HTTPException(
+                    status_code=502,
+                    detail="AI analysis service temporarily unavailable. Please try again later."
+                )
+            else:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to analyze ingredient. Please try again."
+                )
         
         # Log success
         citation_count = len(result.get("citations", []))

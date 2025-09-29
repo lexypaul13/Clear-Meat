@@ -16,12 +16,22 @@ class IngredientAnalysisService:
         """Initialize the ingredient analysis service."""
         # Initialize Gemini
         genai.configure(api_key=settings.GEMINI_API_KEY)
-        self.gemini_model = genai.GenerativeModel(settings.GEMINI_MODEL or 'gemini-2.0-flash')
+        
+        # Model fallback chain: primary -> fallback -> emergency
+        self.model_chain = [
+            settings.GEMINI_MODEL or 'gemini-2.0-flash',
+            'gemini-2.0-flash-001',
+            'gemini-flash-latest'
+        ]
+        
+        # Initialize with primary model
+        self.gemini_model = genai.GenerativeModel(self.model_chain[0])
+        self.current_model = self.model_chain[0]
         
         # Use singleton Perplexity citation service
         self.citation_service = get_citation_service()
         
-        logger.info("IngredientAnalysisService initialized")
+        logger.info(f"IngredientAnalysisService initialized with model: {self.current_model}")
     
     async def analyze_ingredient(self, ingredient_name: str) -> Dict[str, Any]:
         """
@@ -85,7 +95,7 @@ class IngredientAnalysisService:
             }
     
     async def _generate_ingredient_analysis(self, ingredient_name: str) -> Dict[str, Any]:
-        """Generate AI analysis for the ingredient using Gemini."""
+        """Generate AI analysis for the ingredient using Gemini with fallback models."""
         
         prompt = f"""Analyze the food ingredient "{ingredient_name}" for health effects.
 
@@ -101,27 +111,53 @@ RESPONSE REQUIREMENTS:
 FORMAT:
 ANALYSIS: Sentence 1. Sentence 2. Sentence 3. (Optionally Sentence 4-5.)"""
 
-        try:
-            logger.info(f"[Gemini Analysis] Generating analysis for: {ingredient_name}")
-            
-            response = self.gemini_model.generate_content(
-                prompt,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=0.1,
-                    max_output_tokens=800
+        # Try each model in the fallback chain
+        for model_index, model_name in enumerate(self.model_chain):
+            try:
+                logger.info(f"[Gemini Analysis] Attempting with model {model_name} for: {ingredient_name}")
+                
+                # Create model instance for this attempt
+                current_model = genai.GenerativeModel(model_name)
+                
+                response = current_model.generate_content(
+                    prompt,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=0.1,
+                        max_output_tokens=800
+                    )
                 )
-            )
-            
-            if not response.text:
-                logger.warning(f"[Gemini Analysis] Empty response for {ingredient_name}")
-                return {"error": "No analysis generated"}
-            
-            # Parse the structured response
-            return self._parse_analysis_response(response.text)
-            
-        except Exception as e:
-            logger.error(f"[Gemini Analysis] Error for {ingredient_name}: {e}")
-            return {"error": f"AI analysis failed: {str(e)}"}
+                
+                if not response.text:
+                    logger.warning(f"[Gemini Analysis] Empty response from {model_name} for {ingredient_name}")
+                    if model_index < len(self.model_chain) - 1:
+                        continue  # Try next model
+                    return {"error": "No analysis generated"}
+                
+                # Success - update current model and log
+                if model_name != self.current_model:
+                    logger.info(f"[Gemini Analysis] Switched to fallback model: {model_name}")
+                    self.current_model = model_name
+                    self.gemini_model = current_model
+                
+                # Parse the structured response
+                return self._parse_analysis_response(response.text)
+                
+            except Exception as e:
+                error_msg = str(e)
+                logger.error(f"[Gemini Analysis] Model {model_name} failed for {ingredient_name}: {error_msg}")
+                
+                # Check if it's a model not found error
+                if "not found" in error_msg.lower() or "not supported" in error_msg.lower():
+                    if model_index < len(self.model_chain) - 1:
+                        logger.info(f"[Gemini Analysis] Model {model_name} not available, trying next model")
+                        continue  # Try next model in chain
+                
+                # If this is the last model or non-model error, return error
+                if model_index == len(self.model_chain) - 1:
+                    return {"error": f"AI analysis failed with all models: {error_msg}"}
+        
+        # Should never reach here, but safety fallback
+        return {"error": "AI analysis failed: All models unavailable"}
     
     def _parse_analysis_response(self, response_text: str) -> Dict[str, Any]:
         """Parse the structured Gemini response into components."""
