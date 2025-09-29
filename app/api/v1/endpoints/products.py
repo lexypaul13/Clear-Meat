@@ -1095,6 +1095,8 @@ async def get_public_recommendations(
         total_count = supabase_service.count_products()
         
         # Get recommendations using the same service but with default preferences
+        # For public explore, we don't track previously returned products across requests
+        # since each request is independent and cached
         recommended_products = get_personalized_recommendations(
             supabase_service, 
             default_preferences, 

@@ -36,7 +36,8 @@ def get_personalized_recommendations(
     supabase_service, 
     user_preferences: Dict[str, Any],
     page_size: int = 10,
-    offset: int = 0
+    offset: int = 0,
+    exclude_codes: set = None
 ) -> List[Dict[str, Any]]:
     """
     Generate personalized product recommendations with pagination support.
@@ -63,7 +64,7 @@ def get_personalized_recommendations(
         logger.info(f"Generating personalized recommendations using optimized query")
         
         # Get optimized recommendations using SQL-based filtering and scoring
-        recommendations = _get_optimized_recommendations(supabase_service, user_preferences, page_size, offset)
+        recommendations = _get_optimized_recommendations(supabase_service, user_preferences, page_size, offset, exclude_codes)
         
         # Cache the results
         _cache_recommendations(cache_key, recommendations)
@@ -168,7 +169,8 @@ def _get_optimized_recommendations(
     supabase_service,
     user_preferences: Dict[str, Any],
     page_size: int = 10,
-    offset: int = 0
+    offset: int = 0,
+    exclude_codes: set = None
 ) -> List[Dict[str, Any]]:
     """
     Get personalized recommendations using optimized SQL queries.
@@ -208,6 +210,11 @@ def _get_optimized_recommendations(
         else:
             logger.info("🥩 No meat type filter applied - showing all types")
         
+        # Exclude previously returned product codes to prevent duplicates across pages
+        if exclude_codes:
+            logger.info(f"🚫 Excluding {len(exclude_codes)} previously returned products")
+            query = query.not_.in_('code', list(exclude_codes))
+        
         # Apply nutritional filters with page-based flexibility
         nutrition_thresholds = _get_flexible_nutrition_thresholds(nutrition_focus, user_preferences, page_num)
         
@@ -230,19 +237,9 @@ def _get_optimized_recommendations(
             query = query.in_('risk_rating', risk_ratings)
             logger.info(f"🚦 Risk ratings: {risk_ratings} (page {page_num})")
         
-        # Order by multiple factors for better recommendations
-        if nutrition_focus == "protein":
-            query = query.order('protein', desc=True).order('salt', desc=False)
-        elif nutrition_focus == "salt":
-            query = query.order('salt', desc=False).order('protein', desc=True)
-        elif nutrition_focus == "fat":
-            query = query.order('fat', desc=False).order('protein', desc=True)
-        else:
-            # Default ordering: prefer green rating, then high protein, then low sodium
-            query = query.order('risk_rating', desc=False).order('protein', desc=True).order('salt', desc=False)
-
-        # Add deterministic tie-breaker to ensure stable pagination across requests
-        query = query.order('code', desc=False)
+        # Add deterministic ordering to ensure stable pagination across requests
+        # Order by multiple fields to ensure consistent results across pages
+        query = query.order('risk_rating', desc=False).order('protein', desc=True).order('salt', desc=False).order('code', desc=False)
         
         # Use strict pagination - fetch exactly what we need
         # Add offset and limit for true pagination
