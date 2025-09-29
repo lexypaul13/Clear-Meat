@@ -59,7 +59,11 @@ class IngredientAnalysisService:
                 risk_level = "high"
             elif ("moderate risk" in analysis_text or "concern" in analysis_text or 
                   "caution" in analysis_text or "cancer" in analysis_text or
-                  "carcinogenic compounds" in analysis_text or "increased risk" in analysis_text):
+                  "carcinogenic compounds" in analysis_text or "increased risk" in analysis_text or
+                  "elevates" in analysis_text or "cardiovascular disease" in analysis_text or
+                  "blood pressure" in analysis_text or "stroke" in analysis_text or
+                  "hypertension" in analysis_text or "kidney disease" in analysis_text or
+                  "sensitive individuals" in analysis_text or "limit" in analysis_text):
                 risk_level = "moderate"
             else:
                 risk_level = "low"
