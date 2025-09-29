@@ -83,7 +83,7 @@ class IngredientAnalysisService:
                 "analysis": analysis.get("analysis", ""),
                 "citations": citations,
                 "metadata": {
-                    "ai_model": "gemini-pro",
+                    "ai_model": analysis.get("model_used", "gemini-2.0-flash"),
                     "citation_source": "perplexity-ai" if citations else "none"
                 }
             }
@@ -144,7 +144,9 @@ ANALYSIS: Sentence 1. Sentence 2. Sentence 3. (Optionally Sentence 4-5.)"""
                     self.gemini_model = current_model
                 
                 # Parse the structured response
-                return self._parse_analysis_response(response.text)
+                result = self._parse_analysis_response(response.text)
+                result["model_used"] = model_name
+                return result
                 
             except Exception as e:
                 error_msg = str(e)
