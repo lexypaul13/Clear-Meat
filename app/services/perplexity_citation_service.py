@@ -17,7 +17,7 @@ class PerplexityCitationService:
     
     # Trivial ingredients that don't need citations (cost optimization)
     TRIVIAL_INGREDIENTS = frozenset({
-        'water', 'salt', 'sugar', 'glucose', 'fructose', 'spices', 'herbs', 'herb',
+        'water', 'sugar', 'glucose', 'fructose', 'spices', 'herbs', 'herb',
         'natural flavors', 'natural flavor', 'garlic', 'onion', 'pepper', 'paprika',
         'vinegar', 'lemon juice', 'lime juice', 'citric acid', 'ascorbic acid',
         'beef', 'pork', 'chicken', 'turkey', 'lamb', 'fish', 'salmon', 'tuna',
