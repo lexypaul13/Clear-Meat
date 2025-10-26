@@ -701,19 +701,14 @@ class HealthAssessmentMCPService:
             if len(cleaned) < 2:
                 continue
 
-            if any(pattern in cleaned.lower() for pattern in skip_patterns):
+            lower_cleaned = cleaned.lower()
+            if any(pattern in lower_cleaned for pattern in skip_patterns):
                 continue
 
-            # Trim descriptive clauses while keeping the core ingredient name.
-            if '.' in cleaned:
-                primary_sentence = cleaned.split('.', 1)[0].strip()
-                if len(primary_sentence) >= 2:
-                    cleaned = primary_sentence
+            # Normalize whitespace and remove leading/trailing punctuation while keeping full content
+            cleaned = re.sub(r'\s+', ' ', cleaned).strip(",; ")
 
-            if ';' in cleaned:
-                cleaned = cleaned.split(';', 1)[0].strip()
-
-            max_length = 150
+            max_length = 800  # Allow nearly full ingredient strings for mobile display
             if len(cleaned) > max_length:
                 cleaned = cleaned[:max_length].rstrip(",; -") + '…'
 
