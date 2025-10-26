@@ -241,13 +241,33 @@ def _get_optimized_recommendations(
         # Order by multiple fields to ensure consistent results across pages
         query = query.order('risk_rating', desc=False).order('protein', desc=True).order('salt', desc=False).order('code', desc=False)
         
-        # Use strict pagination - fetch exactly what we need
-        # Add offset and limit for true pagination
-        query = query.range(offset, offset + page_size - 1)
+        # Use over-fetching to support cross-page de-duplication by code
+        # Fetch items from the beginning up to the end of this page window,
+        # then perform a stable de-duplication by product code and slice.
+        fetch_end = max(page_size - 1, offset + page_size - 1)
+        # Optionally be a bit generous to better absorb duplicates at page boundaries
+        fetch_end = min(fetch_end + page_size - 1, fetch_end + page_size - 1)
+        query = query.range(0, fetch_end)
         
         # Execute the optimized query
         response = query.execute()
         products = response.data or []
+
+        # Stable de-duplication by product code across the fetched window
+        seen_codes = set()
+        unique_products = []
+        for p in products:
+            code = p.get('code')
+            if not code:
+                unique_products.append(p)
+                continue
+            if code in seen_codes:
+                continue
+            seen_codes.add(code)
+            unique_products.append(p)
+
+        # Slice the page after de-duplication
+        page_products = unique_products[offset: offset + page_size]
         
         logger.info(f"🔍 Backend query details:")
         logger.info(f"   - Requested page_size: {page_size}, offset: {offset}")
@@ -257,8 +277,8 @@ def _get_optimized_recommendations(
         logger.debug(f"Optimized query returned {len(products)} products")
         
         # Apply preference-based variety for better content discovery
-        if products:
-            varied_products = _apply_preference_variety(products, user_preferences, page_size, offset)
+        if page_products:
+            varied_products = _apply_preference_variety(page_products, user_preferences, page_size, offset)
             logger.info(f"📦 Returning {len(varied_products)} products with preference variety")
             return varied_products
         else:
